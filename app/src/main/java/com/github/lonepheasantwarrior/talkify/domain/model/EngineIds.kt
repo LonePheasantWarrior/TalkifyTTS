@@ -1,5 +1,10 @@
 package com.github.lonepheasantwarrior.talkify.domain.model
 
+import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.Qwen3Tts.displayName
+import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.Qwen3Tts.provider
+import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.Qwen3Tts.value
+
+
 /**
  * 引擎 ID 密封类
  *

@@ -187,8 +187,7 @@ class TalkifyTtsService : TextToSpeechService() {
             return
         }
 
-        @Suppress("DEPRECATION")
-        val text = request.text
+        val text = request.charSequenceText?.toString()
         if (text.isNullOrBlank()) {
             TtsLogger.w("onSynthesizeText: empty text")
             callback.error(TextToSpeech.ERROR_INVALID_REQUEST)
@@ -218,7 +217,6 @@ class TalkifyTtsService : TextToSpeechService() {
         }
 
         try {
-            @Suppress("DEPRECATION")
             callback.start(DEFAULT_SAMPLE_RATE, DEFAULT_AUDIO_FORMAT, DEFAULT_CHANNEL_COUNT)
             TtsLogger.d("Synthesis started")
 

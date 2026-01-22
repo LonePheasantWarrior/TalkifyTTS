@@ -2,8 +2,8 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.repo
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import androidx.core.content.edit
+import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 
 /**
  * 基于 SharedPreferences 的应用配置仓储实现
