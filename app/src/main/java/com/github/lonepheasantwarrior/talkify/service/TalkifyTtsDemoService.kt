@@ -51,7 +51,6 @@ class TalkifyTtsDemoService(
         stateListener = listener
     }
 
-    @SuppressLint("MissingPermission")
     fun speak(
         text: String,
         config: EngineConfig,

@@ -121,11 +121,10 @@ fun MainScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var isConfigSheetOpen by remember { mutableStateOf(false) }
 
-    val savedConfig = remember(currentEngine) {
-        configRepository.getConfig(currentEngine)
-    }
+    var savedConfig by remember { mutableStateOf(configRepository.getConfig(currentEngine)) }
 
     LaunchedEffect(currentEngine) {
+        savedConfig = configRepository.getConfig(currentEngine)
         val voices = voiceRepository.getVoicesForEngine(currentEngine)
         availableVoices = voices
         selectedVoice = availableVoices.find { it.voiceId == savedConfig.voiceId } ?: voices.firstOrNull()
@@ -247,6 +246,9 @@ fun MainScreen(
         onDismiss = { isConfigSheetOpen = false },
         currentEngine = currentEngine,
         configRepository = configRepository,
-        voiceRepository = voiceRepository
+        voiceRepository = voiceRepository,
+        onConfigSaved = {
+            savedConfig = configRepository.getConfig(currentEngine)
+        }
     )
 }

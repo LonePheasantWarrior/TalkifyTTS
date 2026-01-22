@@ -53,6 +53,7 @@ fun ConfigBottomSheet(
     currentEngine: TtsEngine,
     configRepository: EngineConfigRepository,
     voiceRepository: VoiceRepository,
+    onConfigSaved: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState()
@@ -171,6 +172,7 @@ fun ConfigBottomSheet(
                         )
                         configRepository.saveConfig(currentEngine, newConfig)
                         isConfigModified = false
+                        onConfigSaved?.invoke()
                         onDismiss()
                     },
                     onVoiceSelected = { voice ->

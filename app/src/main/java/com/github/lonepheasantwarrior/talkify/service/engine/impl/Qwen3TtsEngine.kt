@@ -5,6 +5,7 @@ import com.alibaba.dashscope.aigc.multimodalconversation.AudioParameters
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversation
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationResult
+import com.alibaba.dashscope.audio.ttsv2.SpeechSynthesisAudioFormat
 import com.alibaba.dashscope.exception.ApiException
 import com.alibaba.dashscope.exception.NoApiKeyException
 import com.alibaba.dashscope.exception.UploadFileException
