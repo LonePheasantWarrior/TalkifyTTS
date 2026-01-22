@@ -27,7 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
+import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngineRegistry
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
@@ -53,15 +53,23 @@ fun MainScreen(
         AlibabaCloudConfigRepository(context)
     }
 
-    val defaultEngine = TtsEngine(
-        id = "ali_bailian_tongyi",
-        name = "通义千问3语音合成",
-        provider = "阿里云百炼"
-    )
+    val availableEngines = TtsEngineRegistry.availableEngines
+    val defaultEngine = TtsEngineRegistry.defaultEngine
 
-    val availableEngines = listOf(defaultEngine)
+    var currentEngine by remember {
+        mutableStateOf(defaultEngine)
+    }
 
-    var currentEngine by remember { mutableStateOf(defaultEngine) }
+    LaunchedEffect(configRepository) {
+        val savedEngineId = configRepository.getSelectedEngineId()
+        if (savedEngineId != null) {
+            TtsEngineRegistry.getEngine(savedEngineId)?.let { engine ->
+                currentEngine = engine
+            }
+        } else {
+            configRepository.saveSelectedEngineId(defaultEngine.id)
+        }
+    }
     var availableVoices by remember { mutableStateOf<List<VoiceInfo>>(emptyList()) }
     var selectedVoice by remember { mutableStateOf<VoiceInfo?>(null) }
     var inputText by remember { mutableStateOf("你好，这是语音合成的测试文本。") }
@@ -128,7 +136,10 @@ fun MainScreen(
             EngineSelector(
                 currentEngine = currentEngine,
                 availableEngines = availableEngines,
-                onEngineSelected = { engine -> currentEngine = engine },
+                onEngineSelected = { engine ->
+                    currentEngine = engine
+                    configRepository.saveSelectedEngineId(engine.id)
+                },
                 modifier = Modifier.fillMaxWidth()
             )
 

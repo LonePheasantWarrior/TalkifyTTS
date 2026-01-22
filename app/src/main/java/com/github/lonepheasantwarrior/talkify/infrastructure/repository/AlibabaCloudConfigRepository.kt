@@ -35,6 +35,20 @@ class AlibabaCloudConfigRepository(
                 sharedPreferences.contains("${prefsKey}_$KEY_VOICE_ID")
     }
 
+    override fun getSelectedEngineId(): String? {
+        return sharedPreferences.getString(KEY_SELECTED_ENGINE, null)
+    }
+
+    override fun saveSelectedEngineId(engineId: String) {
+        sharedPreferences.edit()
+            .putString(KEY_SELECTED_ENGINE, engineId)
+            .apply()
+    }
+
+    override fun hasSelectedEngine(): Boolean {
+        return sharedPreferences.contains(KEY_SELECTED_ENGINE)
+    }
+
     private fun getPrefsKey(engine: TtsEngine): String {
         return "engine_${engine.id}"
     }
@@ -43,5 +57,6 @@ class AlibabaCloudConfigRepository(
         private const val PREFS_NAME = "talkify_engine_configs"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_VOICE_ID = "voice_id"
+        private const val KEY_SELECTED_ENGINE = "selected_engine"
     }
 }
