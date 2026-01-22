@@ -3,5 +3,13 @@
     <voices>
         <voice language="zh" />
         <voice language="en" />
+        <voice language="de" />
+        <voice language="it" />
+        <voice language="pt" />
+        <voice language="es" />
+        <voice language="ja" />
+        <voice language="ko" />
+        <voice language="fr" />
+        <voice language="ru" />
     </voices>
 </tts_engine>

@@ -246,7 +246,7 @@ class TalkifyTtsService : TextToSpeechService() {
         }
 
         val result = when (locale.language) {
-            "zh", "en" -> {
+            "zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru" -> {
                 TtsLogger.d("Language available: ${locale.language}")
                 TextToSpeech.LANG_AVAILABLE
             }
@@ -283,7 +283,7 @@ class TalkifyTtsService : TextToSpeechService() {
         }
 
         val result = when (locale.language) {
-            "zh", "en" -> {
+            "zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru" -> {
                 TtsLogger.i("Language loaded: ${locale.language}")
                 TextToSpeech.LANG_AVAILABLE
             }
@@ -324,7 +324,7 @@ class TalkifyTtsService : TextToSpeechService() {
         }
 
         TtsLogger.d("onGetLanguage: returning supported languages")
-        return arrayOf("zh", "en")
+        return arrayOf("zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru")
     }
 
     override fun onSynthesizeText(
