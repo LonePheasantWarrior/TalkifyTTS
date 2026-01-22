@@ -8,12 +8,12 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 
 /**
- * 阿里云百炼语音仓库实现
+ * 通义千问3语音合成引擎 - 声音仓储实现
  *
- * 负责从应用资源中加载阿里云引擎对应的声音列表
+ * 负责从应用资源中加载通义千问3引擎对应的声音列表
  * 遵循 [VoiceRepository] 接口，便于后续扩展其他引擎服务
  */
-class AlibabaCloudVoiceRepository(
+class Qwen3TtsVoiceRepository(
     private val context: Context
 ) : VoiceRepository {
 

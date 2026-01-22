@@ -6,10 +6,10 @@ package com.github.lonepheasantwarrior.talkify.domain.model
  * 提供类型安全的引擎标识定义
  * 使用密封类确保只有定义的引擎 ID 可用，防止无效的引擎 ID
  *
- * 引擎 ID 命名规范：`{provider}_{service}_{version}`
- * - provider: 服务提供商（如 ali_bailian）
- * - service: 服务名称（如 qwen3_tts）
- * - version: 版本号（可选）
+ * ID 直接使用云服务的官方产品标识符：
+ * - qwen3-tts：阿里云百炼"通义千问3语音合成"服务
+ *
+ * 设计原则：直接采用云服务提供商的官方服务标识，便于 API 调用对接
  */
 sealed class EngineIds {
     /**

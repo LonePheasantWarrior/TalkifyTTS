@@ -7,12 +7,12 @@ import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 
 /**
- * 阿里云百炼配置仓储实现
+ * 通义千问3语音合成引擎 - 配置仓储实现
  *
  * 使用 Android SharedPreferences 持久化存储引擎配置
  * 遵循 [EngineConfigRepository] 接口，便于后续扩展其他存储方式
  */
-class AlibabaCloudConfigRepository(
+class Qwen3TtsConfigRepository(
     context: Context
 ) : EngineConfigRepository {
 

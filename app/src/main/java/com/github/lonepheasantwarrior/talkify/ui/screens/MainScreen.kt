@@ -31,8 +31,8 @@ import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngineRegistry
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.repository.AlibabaCloudConfigRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.repository.AlibabaCloudVoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.repository.Qwen3TtsConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.repository.Qwen3TtsVoiceRepository
 import com.github.lonepheasantwarrior.talkify.ui.components.ConfigBottomSheet
 import com.github.lonepheasantwarrior.talkify.ui.components.EngineSelector
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
@@ -46,11 +46,11 @@ fun MainScreen(
     val context = LocalContext.current
 
     val voiceRepository: VoiceRepository = remember {
-        AlibabaCloudVoiceRepository(context)
+        Qwen3TtsVoiceRepository(context)
     }
 
     val configRepository: EngineConfigRepository = remember {
-        AlibabaCloudConfigRepository(context)
+        Qwen3TtsConfigRepository(context)
     }
 
     val availableEngines = TtsEngineRegistry.availableEngines
