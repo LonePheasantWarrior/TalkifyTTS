@@ -7,14 +7,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,9 +27,12 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
+import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.repository.AlibabaCloudConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.repository.AlibabaCloudVoiceRepository
+import com.github.lonepheasantwarrior.talkify.ui.components.ConfigDrawer
 import com.github.lonepheasantwarrior.talkify.ui.components.EngineSelector
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
 
@@ -42,6 +48,10 @@ fun MainScreen(
         AlibabaCloudVoiceRepository(context)
     }
 
+    val configRepository: EngineConfigRepository = remember {
+        AlibabaCloudConfigRepository(context)
+    }
+
     val defaultEngine = TtsEngine(
         id = "ali_bailian_tongyi",
         name = "通义千问3语音合成",
@@ -55,11 +65,16 @@ fun MainScreen(
     var selectedVoice by remember { mutableStateOf<VoiceInfo?>(null) }
     var inputText by remember { mutableStateOf("你好，这是语音合成的测试文本。") }
     var isPlaying by remember { mutableStateOf(false) }
+    var isDrawerOpen by remember { mutableStateOf(false) }
 
-    LaunchedEffect(currentEngine) {
+    val savedConfig = remember(currentEngine) {
+        configRepository.getConfig(currentEngine)
+    }
+
+    androidx.compose.runtime.LaunchedEffect(currentEngine) {
         val voices = voiceRepository.getVoicesForEngine(currentEngine)
         availableVoices = voices
-        selectedVoice = voices.firstOrNull()
+        selectedVoice = availableVoices.find { it.voiceId == savedConfig.voiceId } ?: voices.firstOrNull()
     }
 
     Scaffold(
@@ -76,6 +91,14 @@ fun MainScreen(
                             text = "AI 语音合成",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { isDrawerOpen = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "设置"
                         )
                     }
                 },
@@ -118,4 +141,12 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+
+    ConfigDrawer(
+        isDrawerOpen = isDrawerOpen,
+        onDrawerClose = { isDrawerOpen = false },
+        currentEngine = currentEngine,
+        configRepository = configRepository,
+        voiceRepository = voiceRepository
+    )
 }
