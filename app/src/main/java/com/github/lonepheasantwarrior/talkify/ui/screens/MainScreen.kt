@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,6 +18,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,7 +33,7 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.repository.AlibabaCloudConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.repository.AlibabaCloudVoiceRepository
-import com.github.lonepheasantwarrior.talkify.ui.components.ConfigDrawer
+import com.github.lonepheasantwarrior.talkify.ui.components.ConfigBottomSheet
 import com.github.lonepheasantwarrior.talkify.ui.components.EngineSelector
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
 
@@ -65,13 +66,13 @@ fun MainScreen(
     var selectedVoice by remember { mutableStateOf<VoiceInfo?>(null) }
     var inputText by remember { mutableStateOf("你好，这是语音合成的测试文本。") }
     var isPlaying by remember { mutableStateOf(false) }
-    var isDrawerOpen by remember { mutableStateOf(false) }
+    var isConfigSheetOpen by remember { mutableStateOf(false) }
 
     val savedConfig = remember(currentEngine) {
         configRepository.getConfig(currentEngine)
     }
 
-    androidx.compose.runtime.LaunchedEffect(currentEngine) {
+    LaunchedEffect(currentEngine) {
         val voices = voiceRepository.getVoicesForEngine(currentEngine)
         availableVoices = voices
         selectedVoice = availableVoices.find { it.voiceId == savedConfig.voiceId } ?: voices.firstOrNull()
@@ -94,10 +95,10 @@ fun MainScreen(
                         )
                     }
                 },
-                actions = {
-                    IconButton(onClick = { isDrawerOpen = true }) {
+                navigationIcon = {
+                    IconButton(onClick = { isConfigSheetOpen = true }) {
                         Icon(
-                            imageVector = Icons.Default.Settings,
+                            imageVector = Icons.Filled.Menu,
                             contentDescription = "设置"
                         )
                     }
@@ -142,9 +143,9 @@ fun MainScreen(
         }
     }
 
-    ConfigDrawer(
-        isDrawerOpen = isDrawerOpen,
-        onDrawerClose = { isDrawerOpen = false },
+    ConfigBottomSheet(
+        isOpen = isConfigSheetOpen,
+        onDismiss = { isConfigSheetOpen = false },
         currentEngine = currentEngine,
         configRepository = configRepository,
         voiceRepository = voiceRepository
