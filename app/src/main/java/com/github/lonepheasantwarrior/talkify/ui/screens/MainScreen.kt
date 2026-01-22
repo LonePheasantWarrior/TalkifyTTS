@@ -15,13 +15,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -37,9 +41,12 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3TtsConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3TtsVoiceRepository
+import com.github.lonepheasantwarrior.talkify.service.TalkifyTtsDemoService
+import com.github.lonepheasantwarrior.talkify.service.engine.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.ui.components.ConfigBottomSheet
 import com.github.lonepheasantwarrior.talkify.ui.components.EngineSelector
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +55,8 @@ fun MainScreen(
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val voiceRepository: VoiceRepository = remember {
         Qwen3TtsVoiceRepository(context)
@@ -68,6 +77,10 @@ fun MainScreen(
         mutableStateOf(defaultEngine)
     }
 
+    val demoService = remember(currentEngine.id) {
+        TalkifyTtsDemoService(currentEngine.id)
+    }
+
     LaunchedEffect(appConfigRepository) {
         val savedEngineId = appConfigRepository.getSelectedEngineId()
         if (savedEngineId != null) {
@@ -78,6 +91,29 @@ fun MainScreen(
             appConfigRepository.saveSelectedEngineId(defaultEngine.id)
         }
     }
+
+    DisposableEffect(currentEngine.id) {
+        demoService.setStateListener { state ->
+            when (state) {
+                TalkifyTtsDemoService.STATE_IDLE -> {
+                    // 空闲状态，不做处理
+                }
+                TalkifyTtsDemoService.STATE_PLAYING -> {
+                    // 播放中
+                }
+                TalkifyTtsDemoService.STATE_STOPPED -> {
+                    // 已停止
+                }
+                TalkifyTtsDemoService.STATE_ERROR -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("播放失败，请检查配置")
+                    }
+                }
+            }
+        }
+        onDispose { }
+    }
+
     var availableVoices by remember { mutableStateOf<List<VoiceInfo>>(emptyList()) }
     var selectedVoice by remember { mutableStateOf<VoiceInfo?>(null) }
     val defaultInputText = stringResource(R.string.default_text)
@@ -93,6 +129,12 @@ fun MainScreen(
         val voices = voiceRepository.getVoicesForEngine(currentEngine)
         availableVoices = voices
         selectedVoice = availableVoices.find { it.voiceId == savedConfig.voiceId } ?: voices.firstOrNull()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            demoService.release()
+        }
     }
 
     Scaffold(
@@ -131,7 +173,8 @@ fun MainScreen(
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -159,8 +202,39 @@ fun MainScreen(
                 selectedVoice = selectedVoice,
                 onVoiceSelected = { voice -> selectedVoice = voice },
                 isPlaying = isPlaying,
-                onPlayClick = { isPlaying = true },
-                onStopClick = { isPlaying = false },
+                onPlayClick = {
+                    if (inputText.isBlank()) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("请输入要合成的文本")
+                        }
+                        return@VoicePreview
+                    }
+
+                    val config = savedConfig.copy(
+                        voiceId = selectedVoice?.voiceId ?: savedConfig.voiceId
+                    )
+
+                    if (config.apiKey.isBlank()) {
+                        scope.launch {
+                            snackbarHostState.showSnackbar("请先配置 API Key")
+                        }
+                        isConfigSheetOpen = true
+                        return@VoicePreview
+                    }
+
+                    val params = SynthesisParams(
+                        pitch = 1.0f,
+                        speechRate = 1.0f,
+                        volume = 1.0f
+                    )
+
+                    demoService.speak(inputText, config, params)
+                    isPlaying = true
+                },
+                onStopClick = {
+                    demoService.stop()
+                    isPlaying = false
+                },
                 modifier = Modifier.fillMaxWidth()
             )
 
