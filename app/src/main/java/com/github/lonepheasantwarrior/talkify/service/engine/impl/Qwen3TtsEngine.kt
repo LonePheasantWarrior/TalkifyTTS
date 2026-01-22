@@ -104,13 +104,33 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         params: SynthesisParams,
         config: EngineConfig
     ): MultiModalConversationParam {
+        val voice = if (config.voiceId.isNotEmpty()) {
+            parseVoice(config.voiceId)
+        } else {
+            logWarning("Voice ID not configured, using default CHERRY")
+            AudioParameters.Voice.CHERRY
+        }
+
         return MultiModalConversationParam.builder()
             .apiKey(config.apiKey)
             .model(MODEL_QWEN3_TTS_FLASH)
             .text(text)
-            .voice(AudioParameters.Voice.CHERRY)
+            .voice(voice)
             .languageType(DEFAULT_LANGUAGE)
             .build()
+    }
+
+    private fun parseVoice(voiceId: String): AudioParameters.Voice {
+        return try {
+            AudioParameters.Voice.valueOf(voiceId)
+        } catch (_: IllegalArgumentException) {
+            try {
+                AudioParameters.Voice.valueOf(voiceId.uppercase())
+            } catch (_: IllegalArgumentException) {
+                logWarning("Invalid voice ID: $voiceId, using default CHERRY")
+                AudioParameters.Voice.CHERRY
+            }
+        }
     }
 
     private fun createSubscriber(listener: TtsSynthesisListener): DisposableSubscriber<MultiModalConversationResult> {
