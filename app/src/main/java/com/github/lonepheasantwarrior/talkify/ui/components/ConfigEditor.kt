@@ -25,16 +25,38 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 
+/**
+ * 配置编辑器状态
+ *
+ * @param items 配置项列表
+ * @param availableVoices 可选声音列表
+ * @param isModified 是否已修改
+ */
 data class ConfigEditorState(
     val items: List<ConfigItem> = emptyList(),
     val availableVoices: List<VoiceInfo> = emptyList(),
     val isModified: Boolean = false
 )
 
+/**
+ * 配置编辑器组件
+ *
+ * 展示并编辑引擎配置，包括 API Key 输入和声音选择
+ *
+ * @param engineName 引擎名称
+ * @param configItems 配置项列表
+ * @param availableVoices 可选声音列表
+ * @param onItemValueChange 配置项值变化的回调
+ * @param onSaveClick 保存按钮点击的回调
+ * @param onVoiceSelected 声音选择的回调
+ * @param modifier 修饰符
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigEditor(

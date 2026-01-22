@@ -28,6 +28,19 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 
+/**
+ * 配置底部弹窗
+ *
+ * 展示引擎配置编辑界面，包含 API Key 输入和声音选择
+ * 通过右下角悬浮按钮唤出
+ *
+ * @param isOpen 是否展开弹窗
+ * @param onDismiss 关闭弹窗的回调
+ * @param currentEngine 当前选中的引擎
+ * @param configRepository 配置仓储
+ * @param voiceRepository 声音仓储
+ * @param modifier 修饰符
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConfigBottomSheet(
