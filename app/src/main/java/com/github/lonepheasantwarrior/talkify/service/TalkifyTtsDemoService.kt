@@ -53,7 +53,7 @@ class TalkifyTtsDemoService(
     fun speak(
         text: String,
         config: EngineConfig,
-        params: SynthesisParams = SynthesisParams()
+        params: SynthesisParams = SynthesisParams(language = "Auto")
     ) {
         if (currentState == STATE_PLAYING) {
             stop()

@@ -36,7 +36,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
         const val MODEL_QWEN3_TTS_FLASH = "qwen3-tts-flash"
 
-        private const val DEFAULT_LANGUAGE = "Chinese"
+        private const val DEFAULT_LANGUAGE = "Auto"
 
         private const val MAX_TEXT_LENGTH = 500
     }
@@ -259,7 +259,6 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
     private fun findBestSplitPos(text: String, startPos: Int, maxLength: Int): Int {
         val searchEnd = minOf(startPos + maxLength, text.length)
-        var bestPos = -1
 
         for (i in searchEnd - 1 downTo startPos + 1) {
             if (checkMidPause(text, i)) {
@@ -289,13 +288,32 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             AudioParameters.Voice.CHERRY
         }
 
+        val languageType = convertToQwenLanguageType(params.language)
+
         return MultiModalConversationParam.builder()
             .apiKey(config.apiKey)
             .model(MODEL_QWEN3_TTS_FLASH)
             .text(text)
             .voice(voice)
-            .languageType(DEFAULT_LANGUAGE)
+            .languageType(languageType)
             .build()
+    }
+
+    private fun convertToQwenLanguageType(language: String?): String {
+        if (language.isNullOrBlank()) return DEFAULT_LANGUAGE
+        return when (language.lowercase()) {
+            "zh", "zho", "chi" -> "Chinese"
+            "en", "eng" -> "English"
+            "de", "ger", "deu" -> "German"
+            "it", "ita" -> "Italian"
+            "pt", "por" -> "Portuguese"
+            "es", "spa" -> "Spanish"
+            "ja", "jpn" -> "Japanese"
+            "ko", "kor" -> "Korean"
+            "fr", "fra", "fre" -> "French"
+            "ru", "rus" -> "Russian"
+            else -> DEFAULT_LANGUAGE
+        }
     }
 
     private fun parseVoice(voiceId: String): AudioParameters.Voice {

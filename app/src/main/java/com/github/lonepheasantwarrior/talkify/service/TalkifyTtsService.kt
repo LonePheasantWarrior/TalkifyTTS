@@ -130,7 +130,8 @@ class TalkifyTtsService : TextToSpeechService() {
         val params = SynthesisParams(
             pitch = request.pitch.toFloat(),
             speechRate = request.speechRate.toFloat(),
-            volume = 1.0f
+            volume = 1.0f,
+            language = request.language
         )
 
         try {
