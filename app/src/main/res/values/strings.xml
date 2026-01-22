@@ -1,3 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Talkify</string>
+
+    <!-- 通用 -->
+    <string name="settings">设置</string>
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+    <string name="confirm">确认</string>
+    <string name="error">错误</string>
+    <string name="success">成功</string>
+    <string name="loading">加载中…</string>
+    <string name="retry">重试</string>
+
+    <!-- 主界面 -->
+    <string name="app_subtitle">AI 语音合成</string>
+    <string name="synthesis_engine">合成引擎</string>
+    <string name="select_engine">选择合成引擎</string>
+    <string name="provider_format">提供商: %1$s</string>
+    <string name="default_text">你好，这是语音合成的测试文本。</string>
+
+    <!-- 语音预览 -->
+    <string name="voice_preview">语音预览</string>
+    <string name="input_text_label">输入要合成的文本</string>
+    <string name="input_text_placeholder">在这里输入文本…</string>
+    <string name="select_voice">选择声音</string>
+    <string name="play">播放</string>
+    <string name="stop">停止</string>
+    <string name="no_voices_available">暂无可用声音</string>
+    <string name="voice_loading">正在加载声音列表…</string>
+
+    <!-- 配置编辑 -->
+    <string name="config_title_format">%1$s 配置</string>
+    <string name="api_key_label">API Key</string>
+    <string name="voice_select_label">声音选择</string>
+    <string name="voice_select_placeholder">请选择声音</string>
+    <string name="save_config">保存配置</string>
+    <string name="save_success">配置保存成功</string>
+    <string name="save_failed">配置保存失败</string>
+    <string name="config_not_saved">配置尚未保存，是否放弃？</string>
+
+    <!-- 错误提示 -->
+    <string name="error_voice_load_failed">加载声音列表失败</string>
+    <string name="error_config_load_failed">加载配置失败</string>
+    <string name="error_invalid_api_key">API Key 格式无效</string>
+    <string name="error_voice_not_selected">请先选择声音</string>
+    <string name="error_empty_api_key">API Key 不能为空</string>
+
+    <!-- 内容描述（辅助功能） -->
+    <string name="cd_play_button">播放语音</string>
+    <string name="cd_stop_button">停止播放</string>
+    <string name="cd_settings_button">打开设置</string>
+    <string name="cd_engine_selector">选择合成引擎</string>
 </resources>

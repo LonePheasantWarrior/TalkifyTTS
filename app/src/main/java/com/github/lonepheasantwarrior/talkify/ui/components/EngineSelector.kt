@@ -21,7 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,7 +47,7 @@ fun EngineSelector(
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "合成引擎",
+                text = stringResource(R.string.synthesis_engine),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -64,7 +66,7 @@ fun EngineSelector(
             }
 
             Text(
-                text = "提供商: ${currentEngine.provider}",
+                text = stringResource(R.string.provider_format, currentEngine.provider),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
@@ -83,7 +85,7 @@ fun EngineSelector(
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "选择合成引擎",
+                    text = stringResource(R.string.select_engine),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
@@ -114,7 +116,7 @@ fun EngineSelector(
                         .align(Alignment.End)
                         .padding(top = 16.dp)
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             }
         }

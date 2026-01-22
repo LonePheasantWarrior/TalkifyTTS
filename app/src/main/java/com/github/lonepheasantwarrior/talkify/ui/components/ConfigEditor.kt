@@ -25,24 +25,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
-
-/**
- * 配置编辑器状态
- *
- * @param items 配置项列表
- * @param availableVoices 可选声音列表
- * @param isModified 是否已修改
- */
-data class ConfigEditorState(
-    val items: List<ConfigItem> = emptyList(),
-    val availableVoices: List<VoiceInfo> = emptyList(),
-    val isModified: Boolean = false
-)
 
 /**
  * 配置编辑器组件
@@ -84,7 +73,7 @@ fun ConfigEditor(
                 .verticalScroll(rememberScrollState())
         ) {
             Text(
-                text = "$engineName 配置",
+                text = stringResource(R.string.config_title_format, engineName),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -117,7 +106,7 @@ fun ConfigEditor(
                     onClick = onSaveClick,
                     enabled = isModified
                 ) {
-                    Text("保存配置")
+                    Text(stringResource(R.string.save_config))
                 }
             }
         }
@@ -143,7 +132,7 @@ private fun ConfigItemEditor(
             modifier = modifier
         ) {
             OutlinedTextField(
-                value = selectedVoice?.displayName ?: "请选择声音",
+                value = selectedVoice?.displayName ?: stringResource(R.string.voice_select_placeholder),
                 onValueChange = {},
                 readOnly = true,
                 label = { Text(item.label) },

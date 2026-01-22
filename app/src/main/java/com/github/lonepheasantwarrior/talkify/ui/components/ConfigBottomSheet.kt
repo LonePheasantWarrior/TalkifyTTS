@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -19,8 +20,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
@@ -67,18 +71,21 @@ fun ConfigBottomSheet(
         configRepository.getConfig(currentEngine)
     }
 
-    var configItems by remember(currentEngine, savedConfig, isOpen) {
+    val apiKeyLabel = stringResource(R.string.api_key_label)
+    val voiceLabel = stringResource(R.string.voice_select_label)
+
+    var configItems by remember(currentEngine, savedConfig, isOpen, apiKeyLabel, voiceLabel) {
         mutableStateOf(
             listOf(
                 ConfigItem(
                     key = "api_key",
-                    label = "API Key",
+                    label = apiKeyLabel,
                     value = savedConfig.apiKey,
                     isPassword = true
                 ),
                 ConfigItem(
                     key = "voice_id",
-                    label = "声音选择",
+                    label = voiceLabel,
                     value = savedConfig.voiceId,
                     isVoiceSelector = true
                 )
@@ -89,9 +96,15 @@ fun ConfigBottomSheet(
     var availableVoices by remember(currentEngine, isOpen) {
         mutableStateOf<List<VoiceInfo>>(emptyList())
     }
+    var isVoicesLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentEngine, isOpen) {
-        availableVoices = voiceRepository.getVoicesForEngine(currentEngine)
+        isVoicesLoading = true
+        try {
+            availableVoices = voiceRepository.getVoicesForEngine(currentEngine)
+        } finally {
+            isVoicesLoading = false
+        }
     }
 
     var isConfigModified by remember { mutableStateOf(false) }
@@ -111,7 +124,7 @@ fun ConfigBottomSheet(
                 TopAppBar(
                     title = {
                         Text(
-                            text = "设置",
+                            text = stringResource(R.string.settings),
                             style = MaterialTheme.typography.titleLarge
                         )
                     },
@@ -123,6 +136,23 @@ fun ConfigBottomSheet(
                 HorizontalDivider()
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                if (isVoicesLoading) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.voice_loading),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
 
                 ConfigEditor(
                     engineName = currentEngine.name,
@@ -154,6 +184,7 @@ fun ConfigBottomSheet(
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
+                }
             }
         }
     }

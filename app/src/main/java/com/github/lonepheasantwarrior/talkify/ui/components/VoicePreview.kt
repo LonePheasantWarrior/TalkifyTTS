@@ -28,7 +28,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 
 @Composable
@@ -55,7 +57,7 @@ fun VoicePreview(
                 .padding(16.dp)
         ) {
             Text(
-                text = "语音预览",
+                text = stringResource(R.string.voice_preview),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -65,8 +67,8 @@ fun VoicePreview(
             OutlinedTextField(
                 value = inputText,
                 onValueChange = onInputTextChange,
-                label = { Text("输入要合成的文本") },
-                placeholder = { Text("在这里输入文本...") },
+                label = { Text(stringResource(R.string.input_text_label)) },
+                placeholder = { Text(stringResource(R.string.input_text_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 maxLines = 5
@@ -75,23 +77,32 @@ fun VoicePreview(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "选择声音",
+                text = stringResource(R.string.select_voice),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(horizontal = 4.dp)
-            ) {
-                items(availableVoices) { voice ->
-                    VoiceItem(
-                        voiceInfo = voice,
-                        isSelected = voice.voiceId == selectedVoice?.voiceId,
-                        onClick = { onVoiceSelected(voice) }
-                    )
+            if (availableVoices.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.no_voices_available),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            } else {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    items(availableVoices) { voice ->
+                        VoiceItem(
+                            voiceInfo = voice,
+                            isSelected = voice.voiceId == selectedVoice?.voiceId,
+                            onClick = { onVoiceSelected(voice) }
+                        )
+                    }
                 }
             }
 
@@ -179,7 +190,7 @@ private fun PlayStopButton(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = if (isPlaying) "停止" else "播放",
+            text = if (isPlaying) stringResource(R.string.stop) else stringResource(R.string.play),
             style = MaterialTheme.typography.labelLarge,
             color = if (isPlaying) {
                 MaterialTheme.colorScheme.onErrorContainer
