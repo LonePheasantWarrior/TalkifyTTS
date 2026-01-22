@@ -12,7 +12,15 @@ import com.github.lonepheasantwarrior.talkify.service.engine.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineApi
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineFactory
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsSynthesisListener
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.util.Locale
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Talkify TTS 服务
@@ -31,17 +39,144 @@ import java.util.Locale
  */
 class TalkifyTtsService : TextToSpeechService() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val requestQueue = LinkedBlockingQueue<SynthesisRequestWrapper>()
+    private val isProcessing = AtomicBoolean(false)
+    private val processingSemaphore = Semaphore(1)
+    private var isStopped = AtomicBoolean(false)
+
     private var appConfigRepository: AppConfigRepository? = null
     private var engineConfigRepository: EngineConfigRepository? = null
     private var currentEngine: TtsEngineApi? = null
     private var currentEngineId: String? = null
     private var currentConfig: EngineConfig? = null
 
+    private data class SynthesisRequestWrapper(
+        val request: android.speech.tts.SynthesisRequest,
+        val callback: android.speech.tts.SynthesisCallback
+    )
+
     override fun onCreate() {
         super.onCreate()
         TtsLogger.i("TalkifyTtsService onCreate")
         initializeRepositories()
         initializeEngine()
+        startRequestProcessor()
+    }
+
+    private fun startRequestProcessor() {
+        serviceScope.launch {
+            while (!isStopped.get()) {
+                try {
+                    val wrapper = requestQueue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    if (wrapper != null) {
+                        processingSemaphore.acquire()
+                        processRequestInternal(wrapper)
+                    }
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                } catch (e: Exception) {
+                    TtsLogger.e("Error processing request", e)
+                }
+            }
+        }
+    }
+
+    private fun processRequestInternal(wrapper: SynthesisRequestWrapper) {
+        val (request, callback) = wrapper
+
+        if (isStopped.get()) {
+            TtsLogger.d("processRequestInternal: service is stopped, skipping request")
+            callback.error(TextToSpeech.ERROR_INVALID_REQUEST)
+            processingSemaphore.release()
+            return
+        }
+
+        val text = request.charSequenceText?.toString()
+
+        if (text.isNullOrBlank()) {
+            TtsLogger.w("processRequestInternal: empty text")
+            callback.error(TextToSpeech.ERROR_INVALID_REQUEST)
+            processingSemaphore.release()
+            return
+        }
+
+        TtsLogger.d("processRequestInternal: text length = ${text.length}")
+
+        val engine = currentEngine
+        if (engine == null) {
+            TtsLogger.e("processRequestInternal: no engine available")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
+            processingSemaphore.release()
+            return
+        }
+
+        val config = currentConfig
+        if (config == null) {
+            TtsLogger.e("processRequestInternal: no config available")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_CONFIG_NOT_FOUND))
+            processingSemaphore.release()
+            return
+        }
+
+        if (!engine.isConfigured(config)) {
+            TtsLogger.w("processRequestInternal: engine not configured")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED))
+            processingSemaphore.release()
+            return
+        }
+
+        val params = SynthesisParams(
+            pitch = request.pitch.toFloat(),
+            speechRate = request.speechRate.toFloat(),
+            volume = 1.0f
+        )
+
+        try {
+            val audioConfig = engine.getAudioConfig()
+            callback.start(audioConfig.sampleRate, audioConfig.audioFormat, audioConfig.channelCount)
+            TtsLogger.d("Synthesis started")
+
+            engine.synthesize(text, params, config, object : TtsSynthesisListener {
+                override fun onSynthesisStarted() {
+                    TtsLogger.d("Synthesis started callback")
+                }
+
+                override fun onAudioAvailable(
+                    audioData: ByteArray,
+                    sampleRate: Int,
+                    audioFormat: Int,
+                    channelCount: Int
+                ) {
+                    val maxChunkSize = 4096
+                    var offset = 0
+                    while (offset < audioData.size) {
+                        val chunkSize = minOf(maxChunkSize, audioData.size - offset)
+                        val chunk = audioData.copyOfRange(offset, offset + chunkSize)
+                        callback.audioAvailable(chunk, 0, chunk.size)
+                        offset += chunkSize
+                    }
+                }
+
+                override fun onSynthesisCompleted() {
+                    TtsLogger.d("Synthesis completed")
+                    callback.done()
+                    processingSemaphore.release()
+                }
+
+                override fun onError(error: String) {
+                    TtsLogger.e("Synthesis error: $error")
+                    callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
+                    processingSemaphore.release()
+                }
+            })
+        } catch (e: Exception) {
+            TtsLogger.e("Synthesis failed", e)
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
+            processingSemaphore.release()
+        }
     }
 
     private fun initializeRepositories() {
@@ -94,12 +229,12 @@ class TalkifyTtsService : TextToSpeechService() {
         val locale = when {
             lang != null && country != null && variant != null -> Locale.Builder()
                 .setLanguage(lang)
-                .setRegion(country)
+                .setRegion(convertToValidRegionCode(country))
                 .setVariant(variant)
                 .build()
             lang != null && country != null -> Locale.Builder()
                 .setLanguage(lang)
-                .setRegion(country)
+                .setRegion(convertToValidRegionCode(country))
                 .build()
             lang != null -> Locale.Builder()
                 .setLanguage(lang)
@@ -131,12 +266,12 @@ class TalkifyTtsService : TextToSpeechService() {
         val locale = when {
             lang != null && country != null && variant != null -> Locale.Builder()
                 .setLanguage(lang)
-                .setRegion(country)
+                .setRegion(convertToValidRegionCode(country))
                 .setVariant(variant)
                 .build()
             lang != null && country != null -> Locale.Builder()
                 .setLanguage(lang)
-                .setRegion(country)
+                .setRegion(convertToValidRegionCode(country))
                 .build()
             lang != null -> Locale.Builder()
                 .setLanguage(lang)
@@ -158,6 +293,19 @@ class TalkifyTtsService : TextToSpeechService() {
             }
         }
         return result
+    }
+
+    private fun convertToValidRegionCode(country: String): String {
+        return when (country.uppercase()) {
+            "CHN", "CN" -> "CN"
+            "USA", "US" -> "US"
+            "GBR", "GB" -> "GB"
+            "JPN", "JP" -> "JP"
+            "DEU", "DE" -> "DE"
+            "FRA", "FR" -> "FR"
+            "KOR", "KR" -> "KR"
+            else -> if (country.length == 2) country.uppercase() else "US"
+        }
     }
 
     override fun onGetLanguage(): Array<String>? {
@@ -188,89 +336,31 @@ class TalkifyTtsService : TextToSpeechService() {
             return
         }
 
-        val text = request.charSequenceText?.toString()
-        if (text.isNullOrBlank()) {
-            TtsLogger.w("onSynthesizeText: empty text")
-            callback.error(TextToSpeech.ERROR_INVALID_REQUEST)
-            return
-        }
+        requestQueue.clear()
+        TtsLogger.d("onSynthesizeText: queuing request, queue size = 1")
+        requestQueue.put(SynthesisRequestWrapper(request, callback))
+    }
 
-        TtsLogger.d("onSynthesizeText: text length = ${text.length}")
-
-        val engine = currentEngine
-        if (engine == null) {
-            TtsLogger.e("onSynthesizeText: no engine available")
-            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
-            return
-        }
-
-        val config = currentConfig
-        if (config == null) {
-            TtsLogger.e("onSynthesizeText: no config available")
-            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_CONFIG_NOT_FOUND))
-            return
-        }
-
-        if (!engine.isConfigured(config)) {
-            TtsLogger.w("onSynthesizeText: engine not configured")
-            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED))
-            return
-        }
-
-        val params = SynthesisParams(
-            pitch = request.pitch.toFloat(),
-            speechRate = request.speechRate.toFloat(),
-            volume = 1.0f
-        )
-        TtsLogger.d("onSynthesizeText: params - pitch=${params.pitch}, speechRate=${params.speechRate}, volume=${params.volume}")
-
-        try {
-            callback.start(DEFAULT_SAMPLE_RATE, DEFAULT_AUDIO_FORMAT, DEFAULT_CHANNEL_COUNT)
-            TtsLogger.d("Synthesis started")
-
-            engine.synthesize(text, params, config, object : TtsSynthesisListener {
-                override fun onSynthesisStarted() {
-                    TtsLogger.d("Synthesis started callback")
-                }
-
-                override fun onAudioAvailable(
-                    audioData: ByteArray,
-                    sampleRate: Int,
-                    audioFormat: Int,
-                    channelCount: Int
-                ) {
-                    TtsLogger.d("Audio available: ${audioData.size} bytes")
-                    callback.audioAvailable(audioData, 0, audioData.size)
-                }
-
-                override fun onSynthesisCompleted() {
-                    TtsLogger.d("Synthesis completed")
-                    callback.done()
-                }
-
-                override fun onError(error: String) {
-                    TtsLogger.e("Synthesis error: $error")
-                    callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
-                }
-            })
-        } catch (e: Exception) {
-            TtsLogger.e("Synthesis failed", e)
-            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
-        }
+    override fun onDestroy() {
+        TtsLogger.i("TalkifyTtsService onDestroy")
+        isStopped.set(true)
+        currentEngine?.stop()
+        currentEngine?.release()
+        currentEngine = null
+        currentConfig = null
+        currentEngineId = null
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     override fun onStop() {
         TtsLogger.d("onStop called")
         currentEngine?.stop()
-    }
 
-    override fun onDestroy() {
-        TtsLogger.i("TalkifyTtsService onDestroy")
-        currentEngine?.release()
-        currentEngine = null
-        currentConfig = null
-        currentEngineId = null
-        super.onDestroy()
+        requestQueue.clear()
+        if (processingSemaphore.availablePermits() == 0) {
+            processingSemaphore.release()
+        }
     }
 
     companion object {

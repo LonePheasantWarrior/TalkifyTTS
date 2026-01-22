@@ -37,6 +37,8 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         const val MODEL_QWEN3_TTS_FLASH = "qwen3-tts-flash"
 
         private const val DEFAULT_LANGUAGE = "Chinese"
+
+        private const val MAX_TEXT_LENGTH = 500
     }
 
     @Volatile
@@ -47,7 +49,8 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
     private var hasCompleted = false
 
-    private val audioConfig: AudioConfig
+    val audioConfig: AudioConfig
+        @JvmName("getAudioConfigProperty")
         get() = AudioConfig.QWEN3_TTS
 
     init {
@@ -72,18 +75,48 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             return
         }
 
-        logInfo("Starting streaming synthesis: textLength=${text.length}, pitch=${params.pitch}, speechRate=${params.speechRate}")
+        val textChunks = splitTextIntoChunks(text, MAX_TEXT_LENGTH)
+        if (textChunks.isEmpty()) {
+            listener.onError("文本为空")
+            return
+        }
+
+        logInfo("Starting streaming synthesis: textLength=${text.length}, chunks=${textChunks.size}, pitch=${params.pitch}, speechRate=${params.speechRate}")
         logDebug("Audio config: ${audioConfig.getFormatDescription()}")
 
         isCancelled = false
         hasCompleted = false
 
+        processNextChunk(textChunks, 0, params, config, listener)
+    }
+
+    private fun processNextChunk(
+        chunks: List<String>,
+        index: Int,
+        params: SynthesisParams,
+        config: EngineConfig,
+        listener: TtsSynthesisListener
+    ) {
+        if (isCancelled || hasCompleted) {
+            return
+        }
+
+        if (index >= chunks.size) {
+            logDebug("All chunks processed")
+            hasCompleted = true
+            listener.onSynthesisCompleted()
+            return
+        }
+
+        val chunk = chunks[index]
+        logDebug("Processing chunk $index/${chunks.size}, length=${chunk.length}")
+
         try {
             val conversation = MultiModalConversation()
-            val param = buildConversationParam(text, params, config)
+            val param = buildConversationParam(chunk, params, config)
             val resultFlowable: Flowable<MultiModalConversationResult> = conversation.streamCall(param)
 
-            currentDisposable = resultFlowable.subscribeWith(createSubscriber(listener))
+            currentDisposable = resultFlowable.subscribeWith(createChunkSubscriber(chunks, index, params, config, listener))
         } catch (e: NoApiKeyException) {
             logError("API key error", e)
             listener.onError("API Key 配置错误：${e.message}")
@@ -97,6 +130,151 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             logError("Unexpected error", e)
             listener.onError("发生错误：${e.message}")
         }
+    }
+
+    private fun createChunkSubscriber(
+        chunks: List<String>,
+        index: Int,
+        params: SynthesisParams,
+        config: EngineConfig,
+        listener: TtsSynthesisListener
+    ): DisposableSubscriber<MultiModalConversationResult> {
+        return object : DisposableSubscriber<MultiModalConversationResult>() {
+            private var isFirstChunk = index == 0
+
+            override fun onStart() {
+                super.onStart()
+                if (isFirstChunk) {
+                    listener.onSynthesisStarted()
+                    isFirstChunk = false
+                }
+            }
+
+            override fun onNext(result: MultiModalConversationResult) {
+                if (isCancelled || hasCompleted) {
+                    return
+                }
+
+                try {
+                    val audioData = extractAudioData(result)
+                    if (audioData != null && audioData.isNotEmpty()) {
+                        logDebug("Received audio chunk: ${audioData.size} bytes")
+                        listener.onAudioAvailable(
+                            audioData,
+                            audioConfig.sampleRate,
+                            audioConfig.audioFormat,
+                            audioConfig.channelCount
+                        )
+                    }
+                } catch (e: Exception) {
+                    logError("Error processing audio chunk", e)
+                    listener.onError("处理音频数据失败：${e.message}")
+                    dispose()
+                }
+            }
+
+            override fun onError(throwable: Throwable) {
+                logError("Stream error for chunk $index", throwable)
+                val errorMessage = when (throwable) {
+                    is ApiException -> "API 错误：${throwable.message}"
+                    else -> "合成失败：${throwable.message}"
+                }
+                listener.onError(errorMessage)
+            }
+
+            override fun onComplete() {
+                logDebug("Chunk $index completed")
+                if (!isCancelled && !hasCompleted) {
+                    processNextChunk(chunks, index + 1, params, config, listener)
+                }
+            }
+        }
+    }
+
+    private fun splitTextIntoChunks(text: String, maxLength: Int): List<String> {
+        if (text.isEmpty()) return emptyList()
+        if (text.length <= maxLength) return listOf(text)
+
+        val chunks = mutableListOf<String>()
+        var lastSplitPos = 0
+
+        var i = 0
+        while (i < text.length) {
+            text[i]
+            val remainingLength = text.length - lastSplitPos
+
+            if (remainingLength <= maxLength) {
+                chunks.add(text.substring(lastSplitPos))
+                break
+            }
+
+            val isSentenceEnd = checkSentenceEnd(text, i)
+            val isMidPause = checkMidPause(text, i)
+
+            if (isSentenceEnd || isMidPause) {
+                val chunkLength = i - lastSplitPos + 1
+                if (chunkLength <= maxLength) {
+                    chunks.add(text.substring(lastSplitPos, i + 1))
+                    lastSplitPos = i + 1
+                    i++
+                    continue
+                }
+            }
+
+            val splitPos = findBestSplitPos(text, lastSplitPos, maxLength)
+            if (splitPos > lastSplitPos) {
+                chunks.add(text.substring(lastSplitPos, splitPos))
+                lastSplitPos = splitPos
+            } else {
+                chunks.add(text.substring(lastSplitPos, lastSplitPos + maxLength))
+                lastSplitPos += maxLength
+            }
+            i = lastSplitPos
+        }
+
+        return chunks
+    }
+
+    private fun checkSentenceEnd(text: String, index: Int): Boolean {
+        if (index < 0) return false
+        val sentenceEnds = listOf("。", "！", "？", ".", "!", "?")
+        for (ender in sentenceEnds) {
+            if (text.regionMatches(index, ender, 0, ender.length)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun checkMidPause(text: String, index: Int): Boolean {
+        if (index < 0) return false
+        val midPauses = listOf("，", "、", ",", ";", "；", "：", ":")
+        for (pause in midPauses) {
+            if (text.regionMatches(index, pause, 0, pause.length)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun findBestSplitPos(text: String, startPos: Int, maxLength: Int): Int {
+        val searchEnd = minOf(startPos + maxLength, text.length)
+        var bestPos = -1
+
+        for (i in searchEnd - 1 downTo startPos + 1) {
+            if (checkMidPause(text, i)) {
+                return i + 1
+            }
+        }
+
+        for (i in searchEnd - 1 downTo startPos + 1) {
+            val char = text[i]
+            if (char == ' ' || char == '\n' || char == '\t') {
+                return i + 1
+            }
+        }
+
+        return searchEnd
     }
 
     private fun buildConversationParam(
@@ -129,55 +307,6 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             } catch (_: IllegalArgumentException) {
                 logWarning("Invalid voice ID: $voiceId, using default CHERRY")
                 AudioParameters.Voice.CHERRY
-            }
-        }
-    }
-
-    private fun createSubscriber(listener: TtsSynthesisListener): DisposableSubscriber<MultiModalConversationResult> {
-        return object : DisposableSubscriber<MultiModalConversationResult>() {
-            override fun onStart() {
-                super.onStart()
-                listener.onSynthesisStarted()
-            }
-
-            override fun onNext(result: MultiModalConversationResult) {
-                if (isCancelled || hasCompleted) {
-                    return
-                }
-
-                try {
-                    val audioData = extractAudioData(result)
-                    if (audioData != null && audioData.isNotEmpty()) {
-                        logDebug("Received audio chunk: ${audioData.size} bytes")
-                        listener.onAudioAvailable(
-                            audioData,
-                            audioConfig.sampleRate,
-                            audioConfig.audioFormat,
-                            audioConfig.channelCount
-                        )
-                    }
-                } catch (e: Exception) {
-                    logError("Error processing audio chunk", e)
-                    listener.onError("处理音频数据失败：${e.message}")
-                    dispose()
-                }
-            }
-
-            override fun onError(throwable: Throwable) {
-                logError("Stream error", throwable)
-                val errorMessage = when (throwable) {
-                    is ApiException -> "API 错误：${throwable.message}"
-                    else -> "合成失败：${throwable.message}"
-                }
-                listener.onError(errorMessage)
-            }
-
-            override fun onComplete() {
-                logDebug("Stream completed")
-                if (!isCancelled && !hasCompleted) {
-                    hasCompleted = true
-                    listener.onSynthesisCompleted()
-                }
             }
         }
     }

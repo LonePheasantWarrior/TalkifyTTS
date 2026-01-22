@@ -75,6 +75,13 @@ interface TtsEngineApi {
      * 释放引擎资源
      */
     fun release()
+
+    /**
+     * 获取引擎音频配置
+     *
+     * @return 音频配置，包含采样率、格式、通道数等
+     */
+    fun getAudioConfig(): AudioConfig
 }
 
 /**

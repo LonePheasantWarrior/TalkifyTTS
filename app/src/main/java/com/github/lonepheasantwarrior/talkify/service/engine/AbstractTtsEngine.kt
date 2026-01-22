@@ -33,6 +33,10 @@ abstract class AbstractTtsEngine : TtsEngineApi {
         isReleased = true
     }
 
+    override fun getAudioConfig(): AudioConfig {
+        return AudioConfig()
+    }
+
     protected fun checkNotReleased() {
         if (isReleased) {
             val message = "Engine has been released"
