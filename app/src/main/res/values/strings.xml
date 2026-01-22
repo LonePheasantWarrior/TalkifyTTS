@@ -46,6 +46,19 @@
     <string name="error_voice_not_selected">请先选择声音</string>
     <string name="error_empty_api_key">API Key 不能为空</string>
 
+    <!-- TTS 服务错误 -->
+    <string name="tts_error_no_engine">未找到可用的 TTS 引擎</string>
+    <string name="tts_error_engine_not_found">引擎不存在</string>
+    <string name="tts_error_engine_not_configured">请先配置 API Key</string>
+    <string name="tts_error_synthesis_failed">语音合成失败</string>
+    <string name="tts_error_network_unavailable">网络不可用，请检查网络连接</string>
+    <string name="tts_error_invalid_request">无效的合成请求</string>
+    <string name="tts_error_engine_init_failed">引擎初始化失败</string>
+    <string name="tts_error_config_not_found">未找到引擎配置</string>
+    <string name="tts_error_unknown">发生未知错误</string>
+    <string name="tts_error_not_implemented">该引擎功能尚未实现</string>
+    <string name="tts_config_suggestion">请前往应用设置页面配置 API Key</string>
+
     <!-- 内容描述（辅助功能） -->
     <string name="cd_play_button">播放语音</string>
     <string name="cd_stop_button">停止播放</string>

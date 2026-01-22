@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.service.engine
 
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
 /**
  * TTS 引擎抽象基类
@@ -14,20 +15,45 @@ abstract class AbstractTtsEngine : TtsEngineApi {
     protected var isReleased: Boolean = false
         private set
 
+    protected open val tag: String
+        get() = javaClass.simpleName
+
     override fun isConfigured(config: EngineConfig): Boolean {
-        return config.apiKey.isNotBlank()
+        val result = config.apiKey.isNotBlank()
+        TtsLogger.d("$tag: isConfigured = $result")
+        return result
     }
 
     override fun stop() {
+        TtsLogger.d("$tag: stop called")
     }
 
     override fun release() {
+        TtsLogger.i("$tag: release called")
         isReleased = true
     }
 
     protected fun checkNotReleased() {
         if (isReleased) {
-            throw IllegalStateException("Engine has been released")
+            val message = "Engine has been released"
+            TtsLogger.e("$tag: $message")
+            throw IllegalStateException(message)
         }
+    }
+
+    protected fun logDebug(message: String) {
+        TtsLogger.d("$tag: $message")
+    }
+
+    protected fun logInfo(message: String) {
+        TtsLogger.i("$tag: $message")
+    }
+
+    protected fun logWarning(message: String) {
+        TtsLogger.w("$tag: $message")
+    }
+
+    protected fun logError(message: String, throwable: Throwable? = null) {
+        TtsLogger.e("$tag: $message", throwable)
     }
 }
