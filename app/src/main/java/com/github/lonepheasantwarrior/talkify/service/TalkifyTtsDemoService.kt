@@ -1,6 +1,5 @@
 package com.github.lonepheasantwarrior.talkify.service
 
-import android.annotation.SuppressLint
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
