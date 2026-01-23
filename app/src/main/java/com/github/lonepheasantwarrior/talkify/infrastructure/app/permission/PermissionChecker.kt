@@ -1,8 +1,8 @@
-package com.github.lonepheasantwarrior.talkify.infrastructure.permission
+package com.github.lonepheasantwarrior.talkify.infrastructure.app.permission
 
+import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import androidx.core.content.ContextCompat
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
@@ -25,7 +25,7 @@ object PermissionChecker {
     fun hasInternetPermission(context: Context): Boolean {
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
-            android.Manifest.permission.INTERNET
+            Manifest.permission.INTERNET
         ) == PackageManager.PERMISSION_GRANTED
         TtsLogger.d(TAG) { "hasInternetPermission: $hasPermission" }
         return hasPermission
@@ -40,7 +40,7 @@ object PermissionChecker {
     fun hasNetworkStatePermission(context: Context): Boolean {
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
-            android.Manifest.permission.ACCESS_NETWORK_STATE
+            Manifest.permission.ACCESS_NETWORK_STATE
         ) == PackageManager.PERMISSION_GRANTED
         TtsLogger.d(TAG) { "hasNetworkStatePermission: $hasPermission" }
         return hasPermission
@@ -55,7 +55,7 @@ object PermissionChecker {
     fun hasWifiStatePermission(context: Context): Boolean {
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
-            android.Manifest.permission.ACCESS_WIFI_STATE
+            Manifest.permission.ACCESS_WIFI_STATE
         ) == PackageManager.PERMISSION_GRANTED
         TtsLogger.d(TAG) { "hasWifiStatePermission: $hasPermission" }
         return hasPermission
@@ -84,7 +84,7 @@ object PermissionChecker {
         val missingPermissions = mutableListOf<String>()
 
         if (!hasInternetPermission(context)) {
-            missingPermissions.add(android.Manifest.permission.INTERNET)
+            missingPermissions.add(Manifest.permission.INTERNET)
             TtsLogger.w(TAG) { "getMissingPermissions: 缺失权限 - INTERNET" }
         }
 

@@ -1,16 +1,12 @@
-package com.github.lonepheasantwarrior.talkify.infrastructure.permission
+package com.github.lonepheasantwarrior.talkify.infrastructure.app.permission
 
+import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
-import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.os.Build
 import androidx.core.content.ContextCompat
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -37,7 +33,7 @@ object NetworkConnectivityChecker {
     fun hasInternetPermission(context: Context): Boolean {
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
-            android.Manifest.permission.INTERNET
+            Manifest.permission.INTERNET
         ) == PackageManager.PERMISSION_GRANTED
         TtsLogger.d(TAG) { "hasInternetPermission: $hasPermission" }
         return hasPermission
