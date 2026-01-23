@@ -23,6 +23,9 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 ├── infrastructure/              # 基础设施层（外部服务集成）
 │   ├── engine/                  # 引擎特定实现
 │   └── app/                     # 应用级配置实现
+│       └── permission/          # 权限检查
+│           ├── PermissionChecker.kt         # 权限检查工具类
+│           └── NetworkConnectivityChecker.kt # 网络连通性检查工具类
 ├── service/                     # 服务层（TTS 引擎服务）
 │   └── engine/                  # 引擎抽象层
 └── ui/                          # 表现层（UI 组件）
