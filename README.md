@@ -5,6 +5,11 @@
 
 在阿里云百炼的[密钥管理](https://bailian.console.aliyun.com/cn-beijing/?spm=a2c4g.11186623.nav-v2-dropdown-menu-0.d_main_2_0.57a349e5ACzyY3&tab=model&scm=20140722.M_10904463._.V_1#/api-key)页面下申请对应的`ApiKey`以使用该应用。
 
+## 应用截图
+<div style="text-align: left;">
+  <img src="images/Screenshot_talkify.webp" width="260" style="margin-right: 10px;"  alt="应用截图"/>
+</div>
+
 ## 技术栈
 
 - **语言**: Kotlin
