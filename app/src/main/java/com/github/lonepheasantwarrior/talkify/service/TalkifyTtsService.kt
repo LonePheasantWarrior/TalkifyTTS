@@ -77,7 +77,13 @@ class TalkifyTtsService : TextToSpeechService() {
                     Thread.currentThread().interrupt()
                     break
                 } catch (e: Exception) {
-                    TtsLogger.e("Error processing request", e)
+                    TtsLogger.e("Critical error in request processor", e)
+                    try {
+                        Thread.sleep(1000)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
                 }
             }
         }
@@ -168,7 +174,8 @@ class TalkifyTtsService : TextToSpeechService() {
 
                 override fun onError(error: String) {
                     TtsLogger.e("Synthesis error: $error")
-                    callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
+                    val errorCode = inferErrorCodeFromMessage(error)
+                    callback.error(TtsErrorCode.toAndroidError(errorCode))
                     processingSemaphore.release()
                 }
             })
@@ -187,6 +194,43 @@ class TalkifyTtsService : TextToSpeechService() {
             TtsLogger.i("Repositories initialized successfully")
         } catch (e: Exception) {
             TtsLogger.e("Failed to initialize repositories", e)
+        }
+    }
+
+    private fun inferErrorCodeFromMessage(errorMessage: String): Int {
+        return when {
+            errorMessage.contains("API Key", ignoreCase = true) ||
+            errorMessage.contains("认证", ignoreCase = true) ||
+            errorMessage.contains("auth", ignoreCase = true) -> {
+                TtsErrorCode.ERROR_API_AUTH_FAILED
+            }
+            errorMessage.contains("超时", ignoreCase = true) ||
+            errorMessage.contains("timeout", ignoreCase = true) -> {
+                TtsErrorCode.ERROR_NETWORK_TIMEOUT
+            }
+            errorMessage.contains("网络", ignoreCase = true) ||
+            errorMessage.contains("连接", ignoreCase = true) ||
+            errorMessage.contains("network", ignoreCase = true) ||
+            errorMessage.contains("connect", ignoreCase = true) -> {
+                TtsErrorCode.ERROR_NETWORK_UNAVAILABLE
+            }
+            errorMessage.contains("频率", ignoreCase = true) ||
+            errorMessage.contains("rate limit", ignoreCase = true) ||
+            errorMessage.contains("429", ignoreCase = true) -> {
+                TtsErrorCode.ERROR_API_RATE_LIMITED
+            }
+            errorMessage.contains("服务器", ignoreCase = true) ||
+            errorMessage.contains("server", ignoreCase = true) ||
+            errorMessage.contains("500", ignoreCase = true) ||
+            errorMessage.contains("502", ignoreCase = true) ||
+            errorMessage.contains("503", ignoreCase = true) -> {
+                TtsErrorCode.ERROR_API_SERVER_ERROR
+            }
+            errorMessage.contains("API Key", ignoreCase = true) ||
+            errorMessage.contains("配置", ignoreCase = true) -> {
+                TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED
+            }
+            else -> TtsErrorCode.ERROR_SYNTHESIS_FAILED
         }
     }
 

@@ -18,6 +18,8 @@ import com.github.lonepheasantwarrior.talkify.service.engine.TtsSynthesisListene
 import io.reactivex.Flowable
 import io.reactivex.disposables.Disposable
 import io.reactivex.subscribers.DisposableSubscriber
+import java.net.SocketTimeoutException
+import java.net.ConnectException
 
 /**
  * 阿里云百炼 - 通义千问3语音合成引擎实现
@@ -117,18 +119,53 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             val resultFlowable: Flowable<MultiModalConversationResult> = conversation.streamCall(param)
 
             currentDisposable = resultFlowable.subscribeWith(createChunkSubscriber(chunks, index, params, config, listener))
-        } catch (e: NoApiKeyException) {
-            logError("API key error", e)
-            listener.onError("API Key 配置错误：${e.message}")
-        } catch (e: UploadFileException) {
-            logError("Upload file error", e)
-            listener.onError("上传文件失败：${e.message}")
-        } catch (e: ApiException) {
-            logError("API error: ${e.message}", e)
-            listener.onError("API 调用失败：${e.message}")
         } catch (e: Exception) {
-            logError("Unexpected error", e)
-            listener.onError("发生错误：${e.message}")
+            val (errorCode, errorMessage) = mapExceptionToErrorCode(e)
+            logError("Synthesis error: $errorMessage", e)
+            listener.onError(TtsErrorCode.getErrorMessage(errorCode))
+        }
+    }
+
+    private fun mapExceptionToErrorCode(e: Exception): Pair<Int, String> {
+        return when (e) {
+            is NoApiKeyException -> {
+                TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED to "API Key 未配置"
+            }
+            is UploadFileException -> {
+                TtsErrorCode.ERROR_SYNTHESIS_FAILED to "上传文件失败：${e.message}"
+            }
+            is ApiException -> {
+                val message = e.message ?: ""
+                when {
+                    message.contains("rate limit", ignoreCase = true) ||
+                    message.contains("429", ignoreCase = true) -> {
+                        TtsErrorCode.ERROR_API_RATE_LIMITED to "API 调用频率超限，请稍后重试"
+                    }
+                    message.contains("401", ignoreCase = true) ||
+                    message.contains("Unauthorized", ignoreCase = true) ||
+                    message.contains("invalid api_key", ignoreCase = true) -> {
+                        TtsErrorCode.ERROR_API_AUTH_FAILED to "API Key 无效或已过期"
+                    }
+                    message.contains("500", ignoreCase = true) ||
+                    message.contains("502", ignoreCase = true) ||
+                    message.contains("503", ignoreCase = true) ||
+                    message.contains("504", ignoreCase = true) -> {
+                        TtsErrorCode.ERROR_API_SERVER_ERROR to "服务器暂时不可用，请稍后重试"
+                    }
+                    else -> {
+                        TtsErrorCode.ERROR_SYNTHESIS_FAILED to "API 调用失败：${e.message}"
+                    }
+                }
+            }
+            is SocketTimeoutException -> {
+                TtsErrorCode.ERROR_NETWORK_TIMEOUT to "网络连接超时，请检查网络设置"
+            }
+            is ConnectException -> {
+                TtsErrorCode.ERROR_NETWORK_UNAVAILABLE to "无法连接到服务器，请检查网络连接"
+            }
+            else -> {
+                TtsErrorCode.ERROR_GENERIC to "发生错误：${e.message ?: "未知错误"}"
+            }
         }
     }
 
@@ -168,18 +205,16 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
                     }
                 } catch (e: Exception) {
                     logError("Error processing audio chunk", e)
-                    listener.onError("处理音频数据失败：${e.message}")
+                    val (errorCode, errorMessage) = mapExceptionToErrorCode(e)
+                    listener.onError(TtsErrorCode.getErrorMessage(errorCode))
                     dispose()
                 }
             }
 
             override fun onError(throwable: Throwable) {
                 logError("Stream error for chunk $index", throwable)
-                val errorMessage = when (throwable) {
-                    is ApiException -> "API 错误：${throwable.message}"
-                    else -> "合成失败：${throwable.message}"
-                }
-                listener.onError(errorMessage)
+                val (errorCode, errorMessage) = mapExceptionToErrorCode(throwable as Exception)
+                listener.onError(TtsErrorCode.getErrorMessage(errorCode))
             }
 
             override fun onComplete() {

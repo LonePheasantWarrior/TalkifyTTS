@@ -76,4 +76,35 @@ object TtsErrorHelper {
     fun getConfigurationSuggestion(): String {
         return "请前往应用设置页面配置 API Key"
     }
+
+    /**
+     * 获取错误的建议操作
+     */
+    fun getSuggestion(errorCode: Int): String {
+        return TtsErrorCode.getSuggestion(errorCode)
+    }
+
+    /**
+     * 显示带有建议操作的错误提示
+     *
+     * @param context 上下文
+     * @param errorCode 错误码
+     */
+    fun showErrorWithSuggestion(context: Context, errorCode: Int) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastErrorTime < ERROR_COOLDOWN_MS) {
+            return
+        }
+        lastErrorTime = currentTime
+
+        val message = TtsErrorCode.getErrorMessage(errorCode)
+        val suggestion = TtsErrorCode.getSuggestion(errorCode)
+        val fullMessage = if (suggestion.isNotEmpty() && suggestion != "请稍后重试") {
+            "$message\n$suggestion"
+        } else {
+            message
+        }
+        Toast.makeText(context, fullMessage, Toast.LENGTH_LONG).show()
+        TtsLogger.e("TTS Error: $message (code: $errorCode), Suggestion: $suggestion")
+    }
 }

@@ -41,11 +41,16 @@ class TalkifyTtsDemoService(
     @Volatile
     private var currentState = STATE_IDLE
 
-    private var stateListener: ((Int) -> Unit)? = null
+    @Volatile
+    private var lastErrorMessage: String? = null
 
-    fun setStateListener(listener: (Int) -> Unit) {
+    private var stateListener: ((Int, String?) -> Unit)? = null
+
+    fun setStateListener(listener: (Int, String?) -> Unit) {
         stateListener = listener
     }
+
+    fun getLastErrorMessage(): String? = lastErrorMessage
 
     fun speak(
         text: String,
@@ -58,6 +63,7 @@ class TalkifyTtsDemoService(
 
         isStopped.set(false)
         currentState = STATE_IDLE
+        lastErrorMessage = null
         notifyStateChange()
 
         val engine = TtsEngineFactory.createEngine(engineId)
@@ -152,6 +158,7 @@ class TalkifyTtsDemoService(
 
             override fun onError(error: String) {
                 TtsLogger.e("Synthesis error: $error")
+                lastErrorMessage = error
                 stopPlayback()
             }
         }
@@ -177,19 +184,24 @@ class TalkifyTtsDemoService(
             currentEngine = null
 
             if (currentState != STATE_STOPPED) {
-                currentState = STATE_IDLE
+                if (lastErrorMessage != null) {
+                    currentState = STATE_ERROR
+                } else {
+                    currentState = STATE_IDLE
+                }
                 notifyStateChange()
             }
         }
     }
 
     private fun onError(message: String) {
+        lastErrorMessage = message
         currentState = STATE_ERROR
         notifyStateChange()
     }
 
     private fun notifyStateChange() {
-        stateListener?.invoke(currentState)
+        stateListener?.invoke(currentState, lastErrorMessage)
     }
 
     fun release() {
@@ -197,6 +209,7 @@ class TalkifyTtsDemoService(
         stop()
         serviceScope.cancel()
         currentState = STATE_IDLE
+        lastErrorMessage = null
     }
 
     fun getState(): Int = currentState

@@ -100,7 +100,7 @@ fun MainScreen(
     }
 
     DisposableEffect(currentEngine.id) {
-        demoService.setStateListener { state ->
+        demoService.setStateListener { state, errorMessage ->
             when (state) {
                 TalkifyTtsDemoService.STATE_IDLE -> {
                     isPlaying = false
@@ -113,8 +113,9 @@ fun MainScreen(
                 }
                 TalkifyTtsDemoService.STATE_ERROR -> {
                     isPlaying = false
+                    val displayMessage = errorMessage ?: "播放失败，请检查配置"
                     scope.launch {
-                        snackbarHostState.showSnackbar("播放失败，请检查配置")
+                        snackbarHostState.showSnackbar(displayMessage)
                     }
                 }
             }

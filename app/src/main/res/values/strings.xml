@@ -88,4 +88,10 @@
     <string name="update_check_failed_server">GitHub 服务暂时不可用，请稍后再试</string>
     <string name="update_already_latest">当前已是最新版本</string>
     <string name="update_no_release">暂无可用版本</string>
+
+    <!-- 崩溃处理 -->
+    <string name="crash_dialog_title">应用出现错误</string>
+    <string name="crash_dialog_message">很抱歉，应用发生了意外错误。\n\n错误信息：\n%1$s\n\n请选择操作：</string>
+    <string name="crash_dialog_restart">重启应用</string>
+    <string name="crash_dialog_report">关闭</string>
 </resources>

@@ -20,6 +20,12 @@ object TtsErrorCode {
     const val ERROR_CONFIG_NOT_FOUND = 1008
     const val ERROR_UNKNOWN = 1099
 
+    const val ERROR_GENERIC = 1100
+    const val ERROR_NETWORK_TIMEOUT = 1101
+    const val ERROR_API_RATE_LIMITED = 1102
+    const val ERROR_API_SERVER_ERROR = 1103
+    const val ERROR_API_AUTH_FAILED = 1104
+
     fun getErrorMessage(errorCode: Int): String {
         return when (errorCode) {
             ERROR_NO_ENGINE -> "未找到可用的 TTS 引擎"
@@ -31,7 +37,12 @@ object TtsErrorCode {
             ERROR_ENGINE_INIT_FAILED -> "引擎初始化失败"
             ERROR_CONFIG_NOT_FOUND -> "未找到引擎配置"
             ERROR_UNKNOWN -> "发生未知错误"
-            else -> "错误码: $errorCode"
+            ERROR_GENERIC -> "操作失败，请稍后重试"
+            ERROR_NETWORK_TIMEOUT -> "网络连接超时，请检查网络设置"
+            ERROR_API_RATE_LIMITED -> "请求过于频繁，请稍后重试"
+            ERROR_API_SERVER_ERROR -> "服务暂时不可用，请稍后重试"
+            ERROR_API_AUTH_FAILED -> "认证失败，请检查 API Key 配置"
+            else -> "发生错误（错误码：$errorCode）"
         }
     }
 
@@ -39,8 +50,21 @@ object TtsErrorCode {
         return when (errorCode) {
             ERROR_INVALID_REQUEST -> android.speech.tts.TextToSpeech.ERROR_INVALID_REQUEST
             ERROR_NETWORK_UNAVAILABLE -> android.speech.tts.TextToSpeech.ERROR_NETWORK
+            ERROR_NETWORK_TIMEOUT -> android.speech.tts.TextToSpeech.ERROR_NETWORK
             ERROR_SYNTHESIS_FAILED -> android.speech.tts.TextToSpeech.ERROR_SYNTHESIS
+            ERROR_API_SERVER_ERROR -> android.speech.tts.TextToSpeech.ERROR_SERVICE
             else -> android.speech.tts.TextToSpeech.ERROR_INVALID_REQUEST
+        }
+    }
+
+    fun getSuggestion(errorCode: Int): String {
+        return when (errorCode) {
+            ERROR_ENGINE_NOT_CONFIGURED, ERROR_API_AUTH_FAILED -> "请前往应用设置页面配置正确的 API Key"
+            ERROR_NETWORK_UNAVAILABLE, ERROR_NETWORK_TIMEOUT -> "请检查网络连接后重试"
+            ERROR_API_RATE_LIMITED -> "请等待片刻后重试"
+            ERROR_API_SERVER_ERROR -> "请稍后重试，或联系服务提供商"
+            ERROR_ENGINE_NOT_FOUND, ERROR_CONFIG_NOT_FOUND -> "请重启应用或重新选择引擎"
+            else -> "请稍后重试"
         }
     }
 }
