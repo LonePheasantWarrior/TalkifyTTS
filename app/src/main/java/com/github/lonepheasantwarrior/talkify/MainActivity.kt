@@ -12,6 +12,9 @@ import android.app.AlertDialog
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.NetworkConnectivityChecker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.PermissionChecker
@@ -29,16 +32,20 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "TalkifyMain"
-        private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        private const val PENDING_DIALOG_KEY = "pending_network_dialog"
     }
 
+    private val activityScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main) }
     private var pendingDialog: AlertDialog? = null
-    private var hasShownNetworkBlockedDialog = false
-    private var isReturningFromSettings = false
+    private var hasShownNetworkBlockedDialog by mutableStateOf(false)
+    private var isReturningFromSettings by mutableStateOf(false)
+    private var isCheckingNetwork by mutableStateOf(false)
+    private var isActivityDestroyed by mutableStateOf(false)
 
     private val settingsLauncher: ActivityResultLauncher<Intent> = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
+        if (isActivityDestroyed) return@registerForActivityResult
         TtsLogger.d(TAG) { "settingsLauncher: 用户从系统设置返回" }
         hasShownNetworkBlockedDialog = false
         isReturningFromSettings = true
@@ -56,7 +63,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MainScreen(modifier = Modifier.fillMaxSize())
+                    MainScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        isCheckingNetwork = isCheckingNetwork
+                    )
                 }
             }
         }
@@ -78,8 +88,19 @@ class MainActivity : ComponentActivity() {
         TtsLogger.d(TAG) { "MainActivity.onPause" }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(PENDING_DIALOG_KEY, hasShownNetworkBlockedDialog)
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+        hasShownNetworkBlockedDialog = savedInstanceState.getBoolean(PENDING_DIALOG_KEY, false)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        isActivityDestroyed = true
         TtsLogger.d(TAG) { "MainActivity.onDestroy" }
         activityScope.cancel()
         pendingDialog?.dismiss()
@@ -87,38 +108,47 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkNetworkStatus() {
+        if (isCheckingNetwork) {
+            TtsLogger.d(TAG) { "checkNetworkStatus: 检查已在进行中，跳过" }
+            return
+        }
+
         TtsLogger.d(TAG) { "checkNetworkStatus: 开始检查网络状态..." }
+        isCheckingNetwork = true
 
         activityScope.launch {
-            val hasPermission = PermissionChecker.hasInternetPermission(this@MainActivity)
-            TtsLogger.d(TAG) { "checkNetworkStatus: hasPermission = $hasPermission" }
+            try {
+                val hasPermission = PermissionChecker.hasInternetPermission(this@MainActivity)
+                TtsLogger.d(TAG) { "checkNetworkStatus: hasPermission = $hasPermission" }
 
-            if (!hasPermission) {
-                TtsLogger.w(TAG) { "checkNetworkStatus: 无联网权限" }
-                showPermissionDeniedDialog()
-                return@launch
-            }
+                if (!hasPermission) {
+                    TtsLogger.w(TAG) { "checkNetworkStatus: 无联网权限" }
+                    showPermissionDeniedDialog()
+                    return@launch
+                }
 
-            val canAccess = withContext(Dispatchers.IO) {
-                NetworkConnectivityChecker.canAccessInternet(this@MainActivity)
-            }
-            TtsLogger.d(TAG) { "checkNetworkStatus: canAccess = $canAccess" }
+                val canAccess = withContext(Dispatchers.IO) {
+                    NetworkConnectivityChecker.canAccessInternet(this@MainActivity)
+                }
+                TtsLogger.d(TAG) { "checkNetworkStatus: canAccess = $canAccess" }
 
-            if (canAccess) {
-                TtsLogger.i(TAG) { "checkNetworkStatus: 网络可用，继续启动" }
-                dismissDialog()
-            } else {
-                val reason = NetworkConnectivityChecker.getNetworkUnavailableReason(this@MainActivity)
-                TtsLogger.w(TAG) { "checkNetworkStatus: 网络不可用，原因为: $reason" }
-                showNetworkBlockedDialog()
+                if (canAccess) {
+                    TtsLogger.i(TAG) { "checkNetworkStatus: 网络可用，继续启动" }
+                    dismissDialog()
+                } else {
+                    val reason = NetworkConnectivityChecker.getNetworkUnavailableReason(this@MainActivity)
+                    TtsLogger.w(TAG) { "checkNetworkStatus: 网络不可用，原因为: $reason" }
+                    showNetworkBlockedDialog()
+                }
+            } finally {
+                isCheckingNetwork = false
             }
         }
     }
 
     private fun showPermissionDeniedDialog() {
-        if (pendingDialog?.isShowing == true) {
-            return
-        }
+        if (isActivityDestroyed) return
+        if (pendingDialog?.isShowing == true) return
 
         val title = getString(R.string.permission_required_title)
         val message = getString(R.string.permission_required_message)
@@ -141,11 +171,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showNetworkBlockedDialog() {
+        if (isActivityDestroyed) return
         if (hasShownNetworkBlockedDialog) {
             TtsLogger.d(TAG) { "showNetworkBlockedDialog: 弹窗已显示过，跳过" }
             return
         }
-
         if (pendingDialog?.isShowing == true) {
             TtsLogger.d(TAG) { "showNetworkBlockedDialog: 弹窗已在显示中，跳过" }
             return

@@ -30,21 +30,15 @@ object NetworkConnectivityChecker {
      * @return 是否可以访问互联网
      */
     suspend fun canAccessInternet(context: Context): Boolean {
-        TtsLogger.d(TAG) { "canAccessInternet: 开始检查网络访问能力..." }
+        TtsLogger.d(TAG) { "canAccessInternet: 开始检查..." }
 
-        val hasPermission = PermissionChecker.hasInternetPermission(context)
-        TtsLogger.d(TAG) { "canAccessInternet: hasPermission = $hasPermission" }
-
-        if (!hasPermission) {
+        if (!PermissionChecker.hasInternetPermission(context)) {
             TtsLogger.w(TAG) { "canAccessInternet: 无联网权限" }
             return false
         }
 
-        val canConnect = ConnectivityMonitor.canAccessInternet(context)
-        TtsLogger.d(TAG) { "canAccessInternet: canConnect = $canConnect" }
-
-        val result = canConnect
-        TtsLogger.d(TAG) { "canAccessInternet: 最终结果 = $result" }
+        val result = ConnectivityMonitor.canAccessInternet(context)
+        TtsLogger.d(TAG) { "canAccessInternet: 结果 = $result" }
         return result
     }
 
@@ -55,41 +49,18 @@ object NetworkConnectivityChecker {
      * @return 不可用原因描述
      */
     fun getNetworkUnavailableReason(context: Context): NetworkUnavailableReason {
-        TtsLogger.d(TAG) { "getNetworkUnavailableReason: 开始检查网络不可用原因..." }
-
-        val hasPermission = PermissionChecker.hasInternetPermission(context)
-        TtsLogger.d(TAG) { "getNetworkUnavailableReason: hasPermission = $hasPermission" }
-
-        if (!hasPermission) {
-            TtsLogger.w(TAG) { "getNetworkUnavailableReason: 原因 = NO_PERMISSION" }
+        if (!PermissionChecker.hasInternetPermission(context)) {
             return NetworkUnavailableReason.NO_PERMISSION
         }
 
         val status = ConnectivityMonitor.getCurrentNetworkStatus(context)
-        TtsLogger.d(TAG) {
-            "getNetworkUnavailableReason: status = " +
-                "hasNetwork=${status.hasNetwork}, " +
-                "hasInternetCapability=${status.hasInternetCapability}, " +
-                "isBlockedBySystem=${status.isBlockedBySystem}"
-        }
 
-        if (!status.hasNetwork) {
-            TtsLogger.w(TAG) { "getNetworkUnavailableReason: 原因 = NO_NETWORK" }
-            return NetworkUnavailableReason.NO_NETWORK
+        return when {
+            !status.hasNetwork -> NetworkUnavailableReason.NO_NETWORK
+            status.isBlockedBySystem -> NetworkUnavailableReason.BLOCKED_BY_SYSTEM
+            !status.isValidated -> NetworkUnavailableReason.NO_INTERNET_ACCESS
+            else -> NetworkUnavailableReason.NONE
         }
-
-        if (status.isBlockedBySystem) {
-            TtsLogger.w(TAG) { "getNetworkUnavailableReason: 原因 = BLOCKED_BY_SYSTEM" }
-            return NetworkUnavailableReason.BLOCKED_BY_SYSTEM
-        }
-
-        if (!status.isValidated) {
-            TtsLogger.w(TAG) { "getNetworkUnavailableReason: 原因 = NO_INTERNET_ACCESS" }
-            return NetworkUnavailableReason.NO_INTERNET_ACCESS
-        }
-
-        TtsLogger.d(TAG) { "getNetworkUnavailableReason: 原因 = NONE (网络可用)" }
-        return NetworkUnavailableReason.NONE
     }
 
     /**

@@ -32,48 +32,6 @@ object PermissionChecker {
     }
 
     /**
-     * 检查是否具有网络状态访问权限
-     *
-     * @param context 上下文
-     * @return 是否具有网络状态访问权限
-     */
-    fun hasNetworkStatePermission(context: Context): Boolean {
-        val hasPermission = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_NETWORK_STATE
-        ) == PackageManager.PERMISSION_GRANTED
-        TtsLogger.d(TAG) { "hasNetworkStatePermission: $hasPermission" }
-        return hasPermission
-    }
-
-    /**
-     * 检查是否具有 WiFi 状态访问权限
-     *
-     * @param context 上下文
-     * @return 是否具有 WiFi 状态访问权限
-     */
-    fun hasWifiStatePermission(context: Context): Boolean {
-        val hasPermission = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_WIFI_STATE
-        ) == PackageManager.PERMISSION_GRANTED
-        TtsLogger.d(TAG) { "hasWifiStatePermission: $hasPermission" }
-        return hasPermission
-    }
-
-    /**
-     * 检查所有必需的网络相关权限
-     *
-     * @param context 上下文
-     * @return 是否具有所有必需的网络权限
-     */
-    fun hasAllNetworkPermissions(context: Context): Boolean {
-        val result = hasInternetPermission(context)
-        TtsLogger.d(TAG) { "hasAllNetworkPermissions: $result" }
-        return result
-    }
-
-    /**
      * 获取缺失的权限列表
      *
      * @param context 上下文

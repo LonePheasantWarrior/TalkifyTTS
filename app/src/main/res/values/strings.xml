@@ -18,6 +18,7 @@
     <string name="select_engine">选择合成引擎</string>
     <string name="provider_format">提供商: %1$s</string>
     <string name="default_text">你好，这是语音合成的测试文本。</string>
+    <string name="checking_network">正在检查网络连接…</string>
 
     <!-- 语音预览 -->
     <string name="voice_preview">语音预览</string>
@@ -72,6 +73,6 @@
     <string name="permission_exit">退出应用</string>
     <string name="permission_denied_message">未授予联网权限，应用将退出。</string>
     <string name="network_blocked_title">无法连接网络</string>
-    <string name="network_blocked_message">无法访问互联网。请检查以下内容：\n\n1. 确认网络连接正常\n2. 确认系统设置中已开启「允许网络访问」\n\n检查完成后应用将自动继续。</string>
+    <string name="network_blocked_message">无法访问互联网，请检查网络设置后重试。</string>
     <string name="network_open_settings">打开系统设置</string>
 </resources>

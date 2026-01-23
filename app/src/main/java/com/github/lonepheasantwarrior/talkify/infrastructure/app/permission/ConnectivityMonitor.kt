@@ -9,8 +9,10 @@ import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 
 /**
  * 网络连接状态监控器
@@ -29,9 +31,9 @@ object ConnectivityMonitor {
 
     private const val TAG = "TalkifyNetwork"
 
-    private const val TEST_HOST = "www.aliyun.com"
-    private const val TEST_PORT = 443
-    private const val TIMEOUT_MS = 1000L
+    private const val DEFAULT_TEST_HOST = "www.aliyun.com"
+    private const val DEFAULT_TEST_PORT = 443
+    private const val DEFAULT_TIMEOUT_MS = 3000L
 
     data class NetworkStatus(
         val hasNetwork: Boolean,
@@ -100,26 +102,6 @@ object ConnectivityMonitor {
     }
 
     /**
-     * 检查是否有网络连接
-     *
-     * @param context 上下文
-     * @return 是否有活动网络
-     */
-    fun hasNetwork(context: Context): Boolean {
-        return getCurrentNetworkStatus(context).hasNetwork
-    }
-
-    /**
-     * 检查网络是否有互联网能力
-     *
-     * @param context 上下文
-     * @return 网络是否有 internet capability
-     */
-    fun hasInternetCapability(context: Context): Boolean {
-        return getCurrentNetworkStatus(context).hasInternetCapability
-    }
-
-    /**
      * 检查是否实际可以访问互联网
      *
      * 这是最严格的检查，确认实际能够访问外部网络
@@ -153,24 +135,46 @@ object ConnectivityMonitor {
      * @return 是否可以实际建立网络连接
      */
     suspend fun testActualConnection(): Boolean {
+        return testConnection(
+            host = DEFAULT_TEST_HOST,
+            port = DEFAULT_TEST_PORT,
+            timeoutMs = DEFAULT_TIMEOUT_MS
+        )
+    }
+
+    /**
+     * 测试网络连接（可配置参数）
+     *
+     * @param host 目标主机
+     * @param port 目标端口
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 是否可以建立连接
+     */
+    suspend fun testConnection(
+        host: String = DEFAULT_TEST_HOST,
+        port: Int = DEFAULT_TEST_PORT,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS
+    ): Boolean {
+        TtsLogger.d(TAG) { "testConnection: 尝试连接到 $host:$port，超时 ${timeoutMs}ms..." }
+
+        val socket = Socket()
         return try {
-            TtsLogger.d(TAG) { "testActualConnection: 尝试连接到 $TEST_HOST:$TEST_PORT..." }
-            val socket = Socket()
-            try {
-                socket.connect(InetSocketAddress(TEST_HOST, TEST_PORT), TIMEOUT_MS.toInt())
-                TtsLogger.d(TAG) { "testActualConnection: 连接成功" }
-                true
-            } catch (e: Exception) {
-                TtsLogger.w(TAG) { "testActualConnection: 连接失败 - ${e.message}" }
-                false
-            } finally {
-                try {
-                    socket.close()
-                } catch (_: Exception) {}
-            }
-        } catch (e: Exception) {
-            TtsLogger.w(TAG) { "testActualConnection: 异常 - ${e.message}" }
+            socket.connect(InetSocketAddress(host, port), timeoutMs.toInt())
+            TtsLogger.d(TAG) { "testConnection: 连接成功" }
+            true
+        } catch (e: ConnectException) {
+            TtsLogger.w(TAG) { "testConnection: 连接被拒绝 - ${e.message}" }
             false
+        } catch (e: SocketTimeoutException) {
+            TtsLogger.w(TAG) { "testConnection: 连接超时 - ${e.message}" }
+            false
+        } catch (e: Exception) {
+            TtsLogger.w(TAG) { "testConnection: 连接失败 - ${e.message}" }
+            false
+        } finally {
+            try {
+                socket.close()
+            } catch (_: Exception) {}
         }
     }
 

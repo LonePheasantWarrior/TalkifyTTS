@@ -22,10 +22,16 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 │   └── repository/              # 仓储接口定义
 ├── infrastructure/              # 基础设施层（外部服务集成）
 │   ├── engine/                  # 引擎特定实现
+│   │   └── repo/
+│   │       ├── Qwen3TtsVoiceRepository.kt   # 通义千问3语音仓储实现
+│   │       └── Qwen3TtsConfigRepository.kt  # 通义千问3配置仓储实现
 │   └── app/                     # 应用级配置实现
-│       └── permission/          # 权限检查
-│           ├── PermissionChecker.kt         # 权限检查工具类
-│           └── NetworkConnectivityChecker.kt # 网络连通性检查工具类
+│       ├── permission/          # 权限与网络检查
+│       │   ├── PermissionChecker.kt         # 权限检查工具类
+│       │   ├── NetworkConnectivityChecker.kt # 网络连通性检查（统一入口）
+│       │   └── ConnectivityMonitor.kt       # 网络状态监控器
+│       └── repo/
+│           └── SharedPreferencesAppConfigRepository.kt # 应用配置实现
 ├── service/                     # 服务层（TTS 引擎服务）
 │   └── engine/                  # 引擎抽象层
 └── ui/                          # 表现层（UI 组件）
@@ -46,6 +52,10 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 | **infrastructure/** | |
 | `Qwen3Tts*Repository.kt` | 通义千问3仓储实现 |
 | `SharedPreferencesAppConfigRepository.kt` | 应用配置实现 |
+| **permission/** | |
+| `PermissionChecker.kt` | 运行时权限检查 |
+| `NetworkConnectivityChecker.kt` | 网络连通性检测（统一入口） |
+| `ConnectivityMonitor.kt` | 网络状态监控与 TCP 连接测试 |
 | **service/** | |
 | `TalkifyTtsService.kt` | TTS 服务（继承 TextToSpeechService） |
 | `TalkifyTtsDemoService.kt` | 语音预览服务 |
@@ -57,12 +67,30 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 | `*Preview.kt` | 语音预览 |
 | `*Selector.kt` | 引擎选择器 |
 
+## 启动网络检查
+
+应用启动时自动检查网络访问能力，确保 TTS 功能可用：
+
+```
+应用启动 → 检查联网权限 → 检查网络可用性 → TCP 连接测试
+    ↓ 无权限 → 弹窗提示，授权后跳转系统设置
+    ↓ 无网络 → 弹窗提示，查看系统设置
+    ↓ 被系统阻止（Android 16 开关）→ 弹窗提示
+    ↓ 连接成功 → 正常启动
+```
+
+**检测模块**：
+- `PermissionChecker`：检查 INTERNET 权限
+- `ConnectivityMonitor`：监控网络状态，执行 TCP 连接测试
+- `NetworkConnectivityChecker`：统一入口，整合权限和网络检查
+
 ## 已实现功能
 
 1. **引擎切换** - SegmentedButton 风格引擎选择
 2. **语音预览** - 文本输入 + 声音选择 + 播放控制
 3. **引擎配置** - API Key 管理 + 声音选择 + 持久化存储
 4. **系统 TTS** - 请求队列 + 速率控制 + 错误处理
+5. **启动网络检查** - 权限检查 + 网络状态检测 + Android 16 兼容
 
 ## 构建
 

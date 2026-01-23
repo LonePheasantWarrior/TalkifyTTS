@@ -1,14 +1,17 @@
 package com.github.lonepheasantwarrior.talkify.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -27,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +55,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCheckingNetwork: Boolean = false
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -177,69 +182,96 @@ fun MainScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            EngineSelector(
-                currentEngine = currentEngine,
-                availableEngines = availableEngines,
-                onEngineSelected = { engine ->
-                    currentEngine = engine
-                    appConfigRepository.saveSelectedEngineId(engine.id)
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            VoicePreview(
-                inputText = inputText,
-                onInputTextChange = { inputText = it },
-                availableVoices = availableVoices,
-                selectedVoice = selectedVoice,
-                onVoiceSelected = { voice -> selectedVoice = voice },
-                isPlaying = isPlaying,
-                onPlayClick = {
-                    if (inputText.isBlank()) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar("请输入要合成的文本")
-                        }
-                        return@VoicePreview
+            if (isCheckingNetwork) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.checking_network),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    val config = savedConfig.copy(
-                        voiceId = selectedVoice?.voiceId ?: savedConfig.voiceId
+                    EngineSelector(
+                        currentEngine = currentEngine,
+                        availableEngines = availableEngines,
+                        onEngineSelected = { engine ->
+                            currentEngine = engine
+                            appConfigRepository.saveSelectedEngineId(engine.id)
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    if (config.apiKey.isBlank()) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar("请先配置 API Key")
-                        }
-                        isConfigSheetOpen = true
-                        return@VoicePreview
-                    }
+                    VoicePreview(
+                        inputText = inputText,
+                        onInputTextChange = { inputText = it },
+                        availableVoices = availableVoices,
+                        selectedVoice = selectedVoice,
+                        onVoiceSelected = { voice -> selectedVoice = voice },
+                        isPlaying = isPlaying,
+                        onPlayClick = {
+                            if (inputText.isBlank()) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("请输入要合成的文本")
+                                }
+                                return@VoicePreview
+                            }
 
-                    val params = SynthesisParams(
-                        pitch = 1.0f,
-                        speechRate = 1.0f,
-                        volume = 1.0f
+                            val config = savedConfig.copy(
+                                voiceId = selectedVoice?.voiceId ?: savedConfig.voiceId
+                            )
+
+                            if (config.apiKey.isBlank()) {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("请先配置 API Key")
+                                }
+                                isConfigSheetOpen = true
+                                return@VoicePreview
+                            }
+
+                            val params = SynthesisParams(
+                                pitch = 1.0f,
+                                speechRate = 1.0f,
+                                volume = 1.0f
+                            )
+
+                            demoService.speak(inputText, config, params)
+                            isPlaying = true
+                        },
+                        onStopClick = {
+                            demoService.stop()
+                            isPlaying = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     )
 
-                    demoService.speak(inputText, config, params)
-                    isPlaying = true
-                },
-                onStopClick = {
-                    demoService.stop()
-                    isPlaying = false
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
         }
     }
 
