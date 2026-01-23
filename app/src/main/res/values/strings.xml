@@ -64,4 +64,14 @@
     <string name="cd_stop_button">停止播放</string>
     <string name="cd_settings_button">打开设置</string>
     <string name="cd_engine_selector">选择合成引擎</string>
+
+    <!-- 权限检查 -->
+    <string name="permission_required_title">权限请求</string>
+    <string name="permission_required_message">联网权限是本应用正常运行所必需的。请授予权限以继续使用应用。</string>
+    <string name="permission_grant">授予权限</string>
+    <string name="permission_exit">退出应用</string>
+    <string name="permission_denied_message">未授予联网权限，应用将退出。</string>
+    <string name="network_blocked_title">无法连接网络</string>
+    <string name="network_blocked_message">无法访问互联网。请检查以下内容：\n\n1. 确认网络连接正常\n2. 确认系统设置中已开启「允许网络访问」\n\n检查完成后应用将自动继续。</string>
+    <string name="network_open_settings">打开系统设置</string>
 </resources>
