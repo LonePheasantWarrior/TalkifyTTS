@@ -125,7 +125,10 @@ fun MainScreen(
 
     var availableVoices by remember { mutableStateOf<List<VoiceInfo>>(emptyList()) }
     var selectedVoice by remember { mutableStateOf<VoiceInfo?>(null) }
-    val defaultInputText = stringResource(R.string.default_text)
+    val defaultInputText = remember {
+        val texts = context.resources.getStringArray(R.array.texts)
+        texts.random()
+    }
     var inputText by remember { mutableStateOf(defaultInputText) }
     var isConfigSheetOpen by remember { mutableStateOf(false) }
 
