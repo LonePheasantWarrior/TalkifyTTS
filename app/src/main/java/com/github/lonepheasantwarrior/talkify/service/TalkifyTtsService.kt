@@ -380,8 +380,7 @@ class TalkifyTtsService : TextToSpeechService() {
             return
         }
 
-        requestQueue.clear()
-        TtsLogger.d("onSynthesizeText: queuing request, queue size = 1")
+        TtsLogger.d("onSynthesizeText: queuing request, queue size = ${requestQueue.size + 1}")
         requestQueue.put(SynthesisRequestWrapper(request, callback))
     }
 
