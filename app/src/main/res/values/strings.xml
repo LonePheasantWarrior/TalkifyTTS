@@ -17,7 +17,7 @@
     <string name="synthesis_engine">合成引擎</string>
     <string name="select_engine">选择合成引擎</string>
     <string name="provider_format">提供商: %1$s</string>
-    <string name="default_text">你好，这是语音合成的测试文本。</string>
+    <string name="default_text">你好，我是Talkify。虽然我只是由0和1构成的虚拟存在，但此时此刻，我所读出的每一个字，都倾注了开发者对文字的热爱。感谢你选择我，让我为你发声。</string>
     <string name="checking_network">正在检查网络连接…</string>
 
     <!-- 语音预览 -->
