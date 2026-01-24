@@ -33,8 +33,19 @@ class SharedPreferencesAppConfigRepository(
         return sharedPreferences.contains(KEY_SELECTED_ENGINE)
     }
 
+    override fun isCompatibilityModeEnabled(): Boolean {
+        return sharedPreferences.getBoolean(KEY_COMPATIBILITY_MODE, false)
+    }
+
+    override fun setCompatibilityModeEnabled(enabled: Boolean) {
+        sharedPreferences.edit {
+            putBoolean(KEY_COMPATIBILITY_MODE, enabled)
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "talkify_app_config"
         private const val KEY_SELECTED_ENGINE = "selected_engine"
+        private const val KEY_COMPATIBILITY_MODE = "compatibility_mode"
     }
 }

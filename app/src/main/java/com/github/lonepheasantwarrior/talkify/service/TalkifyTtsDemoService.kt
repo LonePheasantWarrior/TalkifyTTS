@@ -1,13 +1,11 @@
 package com.github.lonepheasantwarrior.talkify.service
 
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
 import com.github.lonepheasantwarrior.talkify.service.engine.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineApi
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineFactory
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.util.TalkifyAudioPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +23,8 @@ class TalkifyTtsDemoService(
         const val STATE_PLAYING = 1
         const val STATE_STOPPED = 2
         const val STATE_ERROR = 3
+
+        private const val PROGRESS_THRESHOLD_FOR_COMPLETION = 0.95f
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -33,7 +33,7 @@ class TalkifyTtsDemoService(
     private var currentEngine: TtsEngineApi? = null
 
     @Volatile
-    private var audioTrack: AudioTrack? = null
+    private var audioPlayer: TalkifyAudioPlayer? = null
 
     @Volatile
     private var isStopped = AtomicBoolean(false)
@@ -49,8 +49,6 @@ class TalkifyTtsDemoService(
     fun setStateListener(listener: (Int, String?) -> Unit) {
         stateListener = listener
     }
-
-    fun getLastErrorMessage(): String? = lastErrorMessage
 
     fun speak(
         text: String,
@@ -82,41 +80,22 @@ class TalkifyTtsDemoService(
 
         serviceScope.launch {
             try {
-                val channelMask = if (audioConfig.channelCount == 1) {
-                    AudioFormat.CHANNEL_OUT_MONO
-                } else {
-                    AudioFormat.CHANNEL_OUT_STEREO
-                }
-                
-                val bufferSize = AudioTrack.getMinBufferSize(
-                    audioConfig.sampleRate,
-                    channelMask,
-                    audioConfig.audioFormat
+                audioPlayer = TalkifyAudioPlayer(
+                    sampleRate = audioConfig.sampleRate,
+                    channelCount = audioConfig.channelCount,
+                    audioFormat = audioConfig.audioFormat
                 )
 
-                if (bufferSize <= 0) {
-                    throw IllegalArgumentException("Invalid buffer size: $bufferSize. Audio parameters may be unsupported.")
+                audioPlayer?.setErrorListener { errorMessage ->
+                    TtsLogger.e("Audio player error: $errorMessage")
+                    lastErrorMessage = errorMessage
+                    stopPlayback()
                 }
 
-                audioTrack = AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setSampleRate(audioConfig.sampleRate)
-                            .setChannelMask(channelMask)
-                            .setEncoding(audioConfig.audioFormat)
-                            .build()
-                    )
-                    .setBufferSizeInBytes(bufferSize * 2)
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build()
-
-                audioTrack?.play()
+                val created = audioPlayer?.createPlayer()
+                if (created != true) {
+                    throw IllegalStateException("Failed to create audio player")
+                }
 
                 engine.synthesize(text, params, config, createListener())
 
@@ -145,7 +124,7 @@ class TalkifyTtsDemoService(
                 }
 
                 try {
-                    audioTrack?.write(audioData, 0, audioData.size)
+                    audioPlayer?.play(audioData)
                 } catch (e: Exception) {
                     TtsLogger.e("Audio playback error: ${e.message}", e)
                 }
@@ -167,17 +146,18 @@ class TalkifyTtsDemoService(
     fun stop() {
         TtsLogger.d("Stopping playback")
         isStopped.set(true)
+        audioPlayer?.stop()
         stopPlayback()
     }
 
     private fun stopPlayback() {
         serviceScope.launch(Dispatchers.IO) {
             try {
-                audioTrack?.stop()
-                audioTrack?.release()
-                audioTrack = null
+                audioPlayer?.stop()
+                audioPlayer?.release()
+                audioPlayer = null
             } catch (e: Exception) {
-                TtsLogger.e("Error stopping audio track: ${e.message}", e)
+                TtsLogger.e("Error stopping audio player: ${e.message}", e)
             }
 
             currentEngine?.release()

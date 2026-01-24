@@ -28,4 +28,19 @@ interface AppConfigRepository {
      * @return 是否已选择过引擎
      */
     fun hasSelectedEngine(): Boolean
+
+    /**
+     * 获取兼容模式开关状态
+     *
+     * 用于适配不遵守谷歌 TTS 调用规范的阅读工具
+     * @return 是否开启兼容模式，默认返回 false
+     */
+    fun isCompatibilityModeEnabled(): Boolean
+
+    /**
+     * 保存兼容模式开关状态
+     *
+     * @param enabled 是否开启兼容模式
+     */
+    fun setCompatibilityModeEnabled(enabled: Boolean)
 }

@@ -1,16 +1,26 @@
 package com.github.lonepheasantwarrior.talkify.ui.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -28,9 +38,12 @@ import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
+import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.Icons
 
 /**
  * 配置底部弹窗
@@ -43,6 +56,7 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
  * @param currentEngine 当前选中的引擎
  * @param configRepository 配置仓储
  * @param voiceRepository 声音仓储
+ * @param appConfigRepository 应用配置仓储（用于兼容模式开关）
  * @param modifier 修饰符
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -53,6 +67,7 @@ fun ConfigBottomSheet(
     currentEngine: TtsEngine,
     configRepository: EngineConfigRepository,
     voiceRepository: VoiceRepository,
+    appConfigRepository: AppConfigRepository,
     onConfigSaved: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -107,6 +122,35 @@ fun ConfigBottomSheet(
     }
 
     var isConfigModified by remember { mutableStateOf(false) }
+    var isCompatibilityModeEnabled by remember { mutableStateOf(false) }
+    var showCompatibilityModeHelpDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(appConfigRepository) {
+        isCompatibilityModeEnabled = appConfigRepository.isCompatibilityModeEnabled()
+    }
+
+    if (showCompatibilityModeHelpDialog) {
+        AlertDialog(
+            onDismissRequest = { showCompatibilityModeHelpDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.compatibility_mode),
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.compatibility_mode_description),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showCompatibilityModeHelpDialog = false }) {
+                    Text(stringResource(R.string.confirm))
+                }
+            }
+        )
+    }
 
     if (isOpen) {
         ModalBottomSheet(
@@ -135,6 +179,46 @@ fun ConfigBottomSheet(
                 HorizontalDivider()
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.compatibility_mode),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { showCompatibilityModeHelpDialog = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.HelpOutline,
+                                contentDescription = stringResource(R.string.cd_compatibility_mode_help),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = isCompatibilityModeEnabled,
+                        onCheckedChange = { enabled ->
+                            isCompatibilityModeEnabled = enabled
+                            appConfigRepository.setCompatibilityModeEnabled(enabled)
+                        }
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                 if (isVoicesLoading) {
                     Column(
