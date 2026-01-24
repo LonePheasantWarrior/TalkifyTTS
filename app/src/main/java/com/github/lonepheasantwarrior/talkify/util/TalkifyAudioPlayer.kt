@@ -278,9 +278,16 @@ class TalkifyAudioPlayer(
         playbackCompleteListener = null
     }
 
-    fun waitForPlaybackComplete(timeoutSeconds: Int = 60): Boolean {
+    fun waitForPlaybackComplete(timeoutSeconds: Int = 60, shouldStop: (() -> Boolean)? = null): Boolean {
         if (totalAudioBytes <= 0) {
             return true
+        }
+
+        if (shouldStop != null && shouldStop()) {
+            TtsLogger.d("waitForPlaybackComplete: stop requested, aborting")
+            isPlaying.set(false)
+            isPlaybackStarted.set(false)
+            return false
         }
 
         val bytesPerFrame = if (audioFormat == AudioFormat.ENCODING_PCM_16BIT) {
@@ -295,6 +302,13 @@ class TalkifyAudioPlayer(
 
         return try {
             while (isPlaying.get() && audioTrack != null) {
+                if (shouldStop != null && shouldStop()) {
+                    TtsLogger.d("waitForPlaybackComplete: stop requested, aborting")
+                    isPlaying.set(false)
+                    isPlaybackStarted.set(false)
+                    return false
+                }
+
                 val elapsed = System.currentTimeMillis() - startTime
                 if (elapsed >= timeoutMs) {
                     TtsLogger.w("waitForPlaybackComplete: timeout after ${timeoutSeconds}s")

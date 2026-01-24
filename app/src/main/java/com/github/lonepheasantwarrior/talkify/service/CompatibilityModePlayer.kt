@@ -33,6 +33,9 @@ class CompatibilityModePlayer(
      */
     private var audioPlayer: TalkifyAudioPlayer? = null
 
+    @Volatile
+    private var isStopped = false
+
     /**
      * 音频通道掩码
      *
@@ -92,6 +95,11 @@ class CompatibilityModePlayer(
             return true
         }
 
+        if (isStopped) {
+            TtsLogger.d("playAllAndWait: playback stopped, aborting")
+            return false
+        }
+
         val player = audioPlayer ?: return false
 
         val success = player.play(audioData)
@@ -99,7 +107,7 @@ class CompatibilityModePlayer(
             return false
         }
 
-        return player.waitForPlaybackComplete(60)
+        return player.waitForPlaybackComplete(60) { isStopped }
     }
 
     /**
@@ -109,6 +117,7 @@ class CompatibilityModePlayer(
      * 在服务销毁或停止时应调用此方法。
      */
     fun release() {
+        isStopped = false
         try {
             audioPlayer?.stop()
             audioPlayer?.release()
@@ -124,4 +133,20 @@ class CompatibilityModePlayer(
      * @return 错误信息，如果无错误则返回 null
      */
     fun hasError(): String? = null
+
+    /**
+     * 停止当前播放
+     *
+     * 立即停止当前正在进行的音频播放，并重置播放器状态。
+     * 用于在收到新的合成请求时中断当前的播放作业。
+     */
+    fun stop() {
+        isStopped = true
+        try {
+            audioPlayer?.stop()
+            TtsLogger.d("CompatibilityModePlayer: playback stopped")
+        } catch (e: Exception) {
+            TtsLogger.e("Error stopping compatibility player: ${e.message}", e)
+        }
+    }
 }

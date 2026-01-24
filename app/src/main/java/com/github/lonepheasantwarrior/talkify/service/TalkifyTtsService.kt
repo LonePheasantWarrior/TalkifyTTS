@@ -44,6 +44,8 @@ class TalkifyTtsService : TextToSpeechService() {
     private val requestQueue = LinkedBlockingQueue<SynthesisRequestWrapper>()
     private val processingSemaphore = Semaphore(1)
     private var isStopped = AtomicBoolean(false)
+    private var isSynthesisInProgress = AtomicBoolean(false)
+    private var synthesisLatch: java.util.concurrent.CountDownLatch? = null
 
     private var appConfigRepository: AppConfigRepository? = null
     private var engineConfigRepository: EngineConfigRepository? = null
@@ -492,6 +494,12 @@ class TalkifyTtsService : TextToSpeechService() {
 
         TtsLogger.d("processRequestSynchronously: compatibility mode, text length = ${text.length}")
 
+        if (isSynthesisInProgress.getAndSet(true)) {
+            TtsLogger.d("processRequestSynchronously: synthesis in progress, stopping current playback")
+            currentPlayer?.stop()
+            synthesisLatch = null
+        }
+
         val engine = currentEngine
         if (engine == null) {
             TtsLogger.e("processRequestSynchronously: no engine available")
@@ -534,7 +542,7 @@ class TalkifyTtsService : TextToSpeechService() {
 
             val player = currentPlayer!!
 
-            val synthesisLatch = java.util.concurrent.CountDownLatch(1)
+            synthesisLatch = java.util.concurrent.CountDownLatch(1)
             var synthesisError: String? = null
 
             engine.synthesize(text, params, config, object : TtsSynthesisListener {
@@ -553,24 +561,26 @@ class TalkifyTtsService : TextToSpeechService() {
 
                 override fun onSynthesisCompleted() {
                     TtsLogger.d("processRequestSynchronously: synthesis completed")
-                    synthesisLatch.countDown()
+                    synthesisLatch?.countDown()
                 }
 
                 override fun onError(error: String) {
                     TtsLogger.e("processRequestSynchronously: synthesis error: $error")
                     synthesisError = error
-                    synthesisLatch.countDown()
+                    synthesisLatch?.countDown()
                 }
             })
 
             try {
-                synthesisLatch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+                synthesisLatch?.await(120, java.util.concurrent.TimeUnit.SECONDS)
             } catch (e: InterruptedException) {
                 Thread.currentThread().interrupt()
+                isSynthesisInProgress.set(false)
                 callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
                 return
             }
 
+            isSynthesisInProgress.set(false)
             if (synthesisError != null) {
                 val code = inferErrorCodeFromMessage(synthesisError!!)
                 callback.error(TtsErrorCode.toAndroidError(code))
@@ -579,6 +589,7 @@ class TalkifyTtsService : TextToSpeechService() {
             }
         } catch (e: Exception) {
             TtsLogger.e("processRequestSynchronously: Synthesis failed", e)
+            isSynthesisInProgress.set(false)
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
         }
     }
@@ -599,6 +610,15 @@ class TalkifyTtsService : TextToSpeechService() {
 
     override fun onStop() {
         TtsLogger.d("onStop called")
+        isSynthesisInProgress.set(false)
+
+        val latch = synthesisLatch
+        if (latch != null && latch.count > 0) {
+            TtsLogger.d("onStop: counting down synthesis latch")
+            latch.countDown()
+        }
+        synthesisLatch = null
+
         currentEngine?.stop()
 
         currentPlayer?.release()
