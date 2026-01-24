@@ -34,7 +34,7 @@ class SharedPreferencesAppConfigRepository(
     }
 
     override fun isCompatibilityModeEnabled(): Boolean {
-        return sharedPreferences.getBoolean(KEY_COMPATIBILITY_MODE, false)
+        return sharedPreferences.getBoolean(KEY_COMPATIBILITY_MODE, true)
     }
 
     override fun setCompatibilityModeEnabled(enabled: Boolean) {

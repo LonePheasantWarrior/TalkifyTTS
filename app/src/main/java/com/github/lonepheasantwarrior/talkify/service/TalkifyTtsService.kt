@@ -50,6 +50,7 @@ class TalkifyTtsService : TextToSpeechService() {
     private var currentEngine: TtsEngineApi? = null
     private var currentEngineId: String? = null
     private var currentConfig: EngineConfig? = null
+    private var currentPlayer: CompatibilityModePlayer? = null
 
     private data class SynthesisRequestWrapper(
         val request: android.speech.tts.SynthesisRequest,
@@ -140,50 +141,131 @@ class TalkifyTtsService : TextToSpeechService() {
             language = request.language
         )
 
+        val isCompatibilityMode = appConfigRepository?.isCompatibilityModeEnabled() == true
+
         try {
             val audioConfig = engine.getAudioConfig()
             callback.start(audioConfig.sampleRate, audioConfig.audioFormat, audioConfig.channelCount)
-            TtsLogger.d("Synthesis started")
+            TtsLogger.d("Synthesis started, compatibilityMode=$isCompatibilityMode")
 
-            engine.synthesize(text, params, config, object : TtsSynthesisListener {
-                override fun onSynthesisStarted() {
-                    TtsLogger.d("Synthesis started callback")
-                }
-
-                override fun onAudioAvailable(
-                    audioData: ByteArray,
-                    sampleRate: Int,
-                    audioFormat: Int,
-                    channelCount: Int
-                ) {
-                    val maxChunkSize = 4096
-                    var offset = 0
-                    while (offset < audioData.size) {
-                        val chunkSize = minOf(maxChunkSize, audioData.size - offset)
-                        val chunk = audioData.copyOfRange(offset, offset + chunkSize)
-                        callback.audioAvailable(chunk, 0, chunk.size)
-                        offset += chunkSize
-                    }
-                }
-
-                override fun onSynthesisCompleted() {
-                    TtsLogger.d("Synthesis completed")
-                    callback.done()
-                    processingSemaphore.release()
-                }
-
-                override fun onError(error: String) {
-                    TtsLogger.e("Synthesis error: $error")
-                    val errorCode = inferErrorCodeFromMessage(error)
-                    callback.error(TtsErrorCode.toAndroidError(errorCode))
-                    processingSemaphore.release()
-                }
-            })
+            if (isCompatibilityMode) {
+                processWithCompatibilityMode(text, params, config, audioConfig, callback)
+            } else {
+                processWithoutCompatibilityMode(text, params, config, callback)
+            }
         } catch (e: Exception) {
             TtsLogger.e("Synthesis failed", e)
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
             processingSemaphore.release()
         }
+    }
+
+    private fun processWithCompatibilityMode(
+        text: String,
+        params: SynthesisParams,
+        config: EngineConfig,
+        audioConfig: com.github.lonepheasantwarrior.talkify.service.engine.AudioConfig,
+        callback: android.speech.tts.SynthesisCallback
+    ) {
+        val engine = currentEngine ?: run {
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
+            processingSemaphore.release()
+            return
+        }
+
+        if (currentPlayer == null) {
+            currentPlayer = CompatibilityModePlayer(audioConfig)
+            if (currentPlayer?.initialize() != true) {
+                TtsLogger.e("Failed to initialize compatibility player")
+                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
+                processingSemaphore.release()
+                return
+            }
+        }
+
+        val player = currentPlayer!!
+
+        engine.synthesize(text, params, config, object : TtsSynthesisListener {
+            override fun onSynthesisStarted() {
+                TtsLogger.d("Compatibility mode: synthesis started")
+            }
+
+            override fun onAudioAvailable(
+                audioData: ByteArray,
+                sampleRate: Int,
+                audioFormat: Int,
+                channelCount: Int
+            ) {
+                val maxChunkSize = 4096
+                var offset = 0
+                while (offset < audioData.size) {
+                    val chunkSize = minOf(maxChunkSize, audioData.size - offset)
+                    val chunk = audioData.copyOfRange(offset, offset + chunkSize)
+                    callback.audioAvailable(chunk, 0, chunk.size)
+                    offset += chunkSize
+                }
+                player.playAllAndWait(audioData)
+            }
+
+            override fun onSynthesisCompleted() {
+                TtsLogger.d("Compatibility mode: synthesis completed, waiting for playback")
+            }
+
+            override fun onError(error: String) {
+                TtsLogger.e("Compatibility mode: synthesis error: $error")
+                val errorCode = inferErrorCodeFromMessage(error)
+                callback.error(TtsErrorCode.toAndroidError(errorCode))
+                processingSemaphore.release()
+            }
+        })
+    }
+
+    private fun processWithoutCompatibilityMode(
+        text: String,
+        params: SynthesisParams,
+        config: EngineConfig,
+        callback: android.speech.tts.SynthesisCallback
+    ) {
+        val engine = currentEngine ?: run {
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
+            processingSemaphore.release()
+            return
+        }
+
+        engine.synthesize(text, params, config, object : TtsSynthesisListener {
+            override fun onSynthesisStarted() {
+                TtsLogger.d("Synthesis started callback")
+            }
+
+            override fun onAudioAvailable(
+                audioData: ByteArray,
+                sampleRate: Int,
+                audioFormat: Int,
+                channelCount: Int
+            ) {
+                val maxChunkSize = 4096
+                var offset = 0
+                while (offset < audioData.size) {
+                    val chunkSize = minOf(maxChunkSize, audioData.size - offset)
+                    val chunk = audioData.copyOfRange(offset, offset + chunkSize)
+                    callback.audioAvailable(chunk, 0, chunk.size)
+                    offset += chunkSize
+                }
+            }
+
+            override fun onSynthesisCompleted() {
+                TtsLogger.d("Synthesis completed")
+                callback.done()
+                processingSemaphore.release()
+            }
+
+            override fun onError(error: String) {
+                TtsLogger.e("Synthesis error: $error")
+                val errorCode = inferErrorCodeFromMessage(error)
+                callback.error(TtsErrorCode.toAndroidError(errorCode))
+                processingSemaphore.release()
+            }
+        })
     }
 
     private fun initializeRepositories() {
@@ -380,8 +462,125 @@ class TalkifyTtsService : TextToSpeechService() {
             return
         }
 
-        TtsLogger.d("onSynthesizeText: queuing request, queue size = ${requestQueue.size + 1}")
-        requestQueue.put(SynthesisRequestWrapper(request, callback))
+        val isCompatibilityMode = appConfigRepository?.isCompatibilityModeEnabled() == true
+
+        if (isCompatibilityMode) {
+            processRequestSynchronously(request, callback)
+        } else {
+            TtsLogger.d("onSynthesizeText: queuing request, queue size = ${requestQueue.size + 1}")
+            requestQueue.put(SynthesisRequestWrapper(request, callback))
+        }
+    }
+
+    private fun processRequestSynchronously(
+        request: android.speech.tts.SynthesisRequest,
+        callback: android.speech.tts.SynthesisCallback
+    ) {
+        if (isStopped.get()) {
+            TtsLogger.d("processRequestSynchronously: service is stopped, skipping request")
+            callback.error(TextToSpeech.ERROR_INVALID_REQUEST)
+            return
+        }
+
+        val text = request.charSequenceText?.toString()
+
+        if (text.isNullOrBlank()) {
+            TtsLogger.w("processRequestSynchronously: empty text")
+            callback.error(TextToSpeech.ERROR_INVALID_REQUEST)
+            return
+        }
+
+        TtsLogger.d("processRequestSynchronously: compatibility mode, text length = ${text.length}")
+
+        val engine = currentEngine
+        if (engine == null) {
+            TtsLogger.e("processRequestSynchronously: no engine available")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
+            return
+        }
+
+        val config = currentConfig
+        if (config == null) {
+            TtsLogger.e("processRequestSynchronously: no config available")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_CONFIG_NOT_FOUND))
+            return
+        }
+
+        if (!engine.isConfigured(config)) {
+            TtsLogger.w("processRequestSynchronously: engine not configured")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED))
+            return
+        }
+
+        val params = SynthesisParams(
+            pitch = request.pitch.toFloat(),
+            speechRate = request.speechRate.toFloat(),
+            volume = 1.0f,
+            language = request.language
+        )
+
+        try {
+            val audioConfig = engine.getAudioConfig()
+            callback.start(audioConfig.sampleRate, audioConfig.audioFormat, audioConfig.channelCount)
+
+            if (currentPlayer == null) {
+                currentPlayer = CompatibilityModePlayer(audioConfig)
+                if (currentPlayer?.initialize() != true) {
+                    TtsLogger.e("Failed to initialize compatibility player")
+                    callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
+                    return
+                }
+            }
+
+            val player = currentPlayer!!
+
+            val synthesisLatch = java.util.concurrent.CountDownLatch(1)
+            var synthesisError: String? = null
+
+            engine.synthesize(text, params, config, object : TtsSynthesisListener {
+                override fun onSynthesisStarted() {
+                    TtsLogger.d("processRequestSynchronously: synthesis started")
+                }
+
+                override fun onAudioAvailable(
+                    audioData: ByteArray,
+                    sampleRate: Int,
+                    audioFormat: Int,
+                    channelCount: Int
+                ) {
+                    player.playAllAndWait(audioData)
+                }
+
+                override fun onSynthesisCompleted() {
+                    TtsLogger.d("processRequestSynchronously: synthesis completed")
+                    synthesisLatch.countDown()
+                }
+
+                override fun onError(error: String) {
+                    TtsLogger.e("processRequestSynchronously: synthesis error: $error")
+                    synthesisError = error
+                    synthesisLatch.countDown()
+                }
+            })
+
+            try {
+                synthesisLatch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
+                return
+            }
+
+            if (synthesisError != null) {
+                val code = inferErrorCodeFromMessage(synthesisError!!)
+                callback.error(TtsErrorCode.toAndroidError(code))
+            } else {
+                callback.done()
+            }
+        } catch (e: Exception) {
+            TtsLogger.e("processRequestSynchronously: Synthesis failed", e)
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
+        }
     }
 
     override fun onDestroy() {
@@ -392,6 +591,8 @@ class TalkifyTtsService : TextToSpeechService() {
         currentEngine = null
         currentConfig = null
         currentEngineId = null
+        currentPlayer?.release()
+        currentPlayer = null
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -399,6 +600,9 @@ class TalkifyTtsService : TextToSpeechService() {
     override fun onStop() {
         TtsLogger.d("onStop called")
         currentEngine?.stop()
+
+        currentPlayer?.release()
+        currentPlayer = null
 
         requestQueue.clear()
         if (processingSemaphore.availablePermits() == 0) {

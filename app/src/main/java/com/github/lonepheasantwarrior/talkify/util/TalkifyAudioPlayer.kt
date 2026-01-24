@@ -26,6 +26,7 @@ class TalkifyAudioPlayer(
 
         private const val MIN_BUFFER_MULTIPLIER = 2
         private const val PROGRESS_CHECK_INTERVAL_MS = 50L
+        private const val PLAYBACK_COMPLETE_CHECK_INTERVAL_MS = 20L
     }
 
     private var audioTrack: AudioTrack? = null
@@ -40,9 +41,11 @@ class TalkifyAudioPlayer(
 
     private var playbackProgressJob: Job? = null
 
-    private val progressListeners = mutableListOf<(Float, Long) -> Unit>()
+    private var progressListeners = mutableListOf<(Float, Long) -> Unit>()
 
     private var errorListener: ((String) -> Unit)? = null
+
+    private var playbackCompleteListener: (() -> Unit)? = null
 
     fun configureAudioAttributes(
         usage: Int = AudioAttributes.USAGE_MEDIA,
@@ -265,6 +268,60 @@ class TalkifyAudioPlayer(
 
     fun removeErrorListener() {
         errorListener = null
+    }
+
+    fun setPlaybackCompleteListener(listener: () -> Unit) {
+        playbackCompleteListener = listener
+    }
+
+    fun removePlaybackCompleteListener() {
+        playbackCompleteListener = null
+    }
+
+    fun waitForPlaybackComplete(timeoutSeconds: Int = 60): Boolean {
+        if (totalAudioBytes <= 0) {
+            return true
+        }
+
+        val bytesPerFrame = if (audioFormat == AudioFormat.ENCODING_PCM_16BIT) {
+            channelCount * 2
+        } else {
+            channelCount
+        }
+
+        val targetFrames = totalAudioBytes / bytesPerFrame
+        val timeoutMs = timeoutSeconds * 1000L
+        val startTime = System.currentTimeMillis()
+
+        return try {
+            while (isPlaying.get() && audioTrack != null) {
+                val elapsed = System.currentTimeMillis() - startTime
+                if (elapsed >= timeoutMs) {
+                    TtsLogger.w("waitForPlaybackComplete: timeout after ${timeoutSeconds}s")
+                    return false
+                }
+
+                val positionFrames = try {
+                    audioTrack?.playbackHeadPosition ?: 0
+                } catch (e: Exception) {
+                    0
+                }
+
+                if (positionFrames >= targetFrames) {
+                    TtsLogger.d("waitForPlaybackComplete: playback completed at position $positionFrames frames")
+                    isPlaying.set(false)
+                    isPlaybackStarted.set(false)
+                    playbackCompleteListener?.invoke()
+                    return true
+                }
+
+                Thread.sleep(PLAYBACK_COMPLETE_CHECK_INTERVAL_MS)
+            }
+            true
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
     }
 
     private fun startProgressReporting() {

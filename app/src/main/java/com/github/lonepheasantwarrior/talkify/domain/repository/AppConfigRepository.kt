@@ -33,7 +33,7 @@ interface AppConfigRepository {
      * 获取兼容模式开关状态
      *
      * 用于适配不遵守谷歌 TTS 调用规范的阅读工具
-     * @return 是否开启兼容模式，默认返回 false
+     * @return 是否开启兼容模式，默认返回 true（开启）
      */
     fun isCompatibilityModeEnabled(): Boolean
 
