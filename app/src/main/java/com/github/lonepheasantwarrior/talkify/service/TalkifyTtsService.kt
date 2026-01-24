@@ -598,12 +598,32 @@ class TalkifyTtsService : TextToSpeechService() {
     override fun onDestroy() {
         TtsLogger.i("TalkifyTtsService onDestroy")
         isStopped.set(true)
-        currentEngine?.stop()
-        currentEngine?.release()
+        try {
+            currentEngine?.stop()
+        } catch (e: android.os.RemoteException) {
+            TtsLogger.w("Remote exception during engine stop, service may be disconnecting: ${e.message}")
+        } catch (e: android.os.DeadObjectException) {
+            TtsLogger.w("Engine connection lost during stop, service is being destroyed: ${e.message}")
+        } catch (e: Exception) {
+            TtsLogger.e("Unexpected error during engine stop", e)
+        }
+        try {
+            currentEngine?.release()
+        } catch (e: android.os.RemoteException) {
+            TtsLogger.w("Remote exception during engine release: ${e.message}")
+        } catch (e: android.os.DeadObjectException) {
+            TtsLogger.w("Engine connection lost during release: ${e.message}")
+        } catch (e: Exception) {
+            TtsLogger.e("Unexpected error during engine release", e)
+        }
         currentEngine = null
         currentConfig = null
         currentEngineId = null
-        currentPlayer?.release()
+        try {
+            currentPlayer?.release()
+        } catch (e: Exception) {
+            TtsLogger.e("Error releasing player", e)
+        }
         currentPlayer = null
         serviceScope.cancel()
         super.onDestroy()
@@ -620,9 +640,21 @@ class TalkifyTtsService : TextToSpeechService() {
         }
         synthesisLatch = null
 
-        currentEngine?.stop()
+        try {
+            currentEngine?.stop()
+        } catch (e: android.os.RemoteException) {
+            TtsLogger.w("Remote exception during engine stop in onStop: ${e.message}")
+        } catch (e: android.os.DeadObjectException) {
+            TtsLogger.w("Engine connection lost during onStop: ${e.message}")
+        } catch (e: Exception) {
+            TtsLogger.e("Unexpected error during engine stop in onStop", e)
+        }
 
-        currentPlayer?.release()
+        try {
+            currentPlayer?.release()
+        } catch (e: Exception) {
+            TtsLogger.e("Error releasing player in onStop", e)
+        }
         currentPlayer = null
 
         requestQueue.clear()
