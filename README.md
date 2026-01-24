@@ -7,7 +7,7 @@
 
 ## 应用截图
 <div style="text-align: left;">
-  <img src="images/Screenshot_talkify.webp" width="260" style="margin-right: 10px;"  alt="应用截图"/>
+  <img src="doc/images/Screenshot_talkify.webp" width="260" style="margin-right: 10px;"  alt="应用截图"/>
 </div>
 
 ## 推荐搭配阅读软件
@@ -138,7 +138,7 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 | qwen3-tts | 阿里云通义千问 | zh, en, de, fr, es, pt, it, ja, ko, ru |
 
 ## 开发文档
-详细开发文档请参阅[开发指南](开发指南.md)
+详细开发文档请参阅[开发指南](doc/开发指南.md)
 
 ## 感谢
 - [Trae](https://www.trae.cn)
@@ -146,6 +146,6 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 
 ## Buy Me a Mixue 🍦
 <div style="text-align: left;">
-  <img src="images/alipay_1769136488503.webp" width="245" style="margin-right: 10px;"  alt="支付宝打赏二维码"/>
-  <img src="images/wechat_1769136466823.webp" width="245"  alt="微信打赏二维码"/>
+  <img src="doc/images/alipay_1769136488503.webp" width="245" style="margin-right: 10px;"  alt="支付宝打赏二维码"/>
+  <img src="doc/images/wechat_1769136466823.webp" width="245"  alt="微信打赏二维码"/>
 </div>
