@@ -121,7 +121,15 @@ class TalkifyTtsService : TextToSpeechService() {
             return
         }
 
-        val config = currentConfig
+        val engineId = currentEngineId
+        if (engineId == null) {
+            TtsLogger.e("processRequestInternal: no engine ID available")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_FOUND))
+            processingSemaphore.release()
+            return
+        }
+
+        val config = engineConfigRepository?.getConfig(engineId)
         if (config == null) {
             TtsLogger.e("processRequestInternal: no config available")
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_CONFIG_NOT_FOUND))
@@ -508,7 +516,14 @@ class TalkifyTtsService : TextToSpeechService() {
             return
         }
 
-        val config = currentConfig
+        val engineId = currentEngineId
+        if (engineId == null) {
+            TtsLogger.e("processRequestSynchronously: no engine ID available")
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_FOUND))
+            return
+        }
+
+        val config = engineConfigRepository?.getConfig(engineId)
         if (config == null) {
             TtsLogger.e("processRequestSynchronously: no config available")
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_CONFIG_NOT_FOUND))
