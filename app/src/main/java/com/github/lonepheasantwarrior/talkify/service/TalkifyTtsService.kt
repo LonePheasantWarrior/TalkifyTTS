@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
+import android.speech.tts.Voice
 import androidx.core.app.NotificationCompat
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngineRegistry
@@ -550,13 +551,8 @@ class TalkifyTtsService : TextToSpeechService() {
             else -> code
         }
 
-        // 3. 最终检查：是否在你的 10 种核心支持列表中
-        val mySupportedLanguages = setOf(
-            "zh", "en", "de", "it", "pt",
-            "es", "ja", "ko", "fr", "ru"
-        )
-
-        return mySupportedLanguages.contains(normalizedCode)
+        // 3. 最终检查
+        return currentEngine?.getSupportedLanguages()?.contains(normalizedCode) ?: false
     }
 
     override fun onLoadLanguage(
@@ -620,7 +616,19 @@ class TalkifyTtsService : TextToSpeechService() {
         }
 
         TtsLogger.d("onGetLanguage: returning supported languages")
-        return arrayOf("zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru")
+        return currentEngine?.getSupportedLanguages()?.toTypedArray()
+    }
+
+    override fun onGetVoices(): List<Voice?>? {
+        return currentEngine?.getSupportedVoices()
+    }
+
+    override fun onGetDefaultVoiceNameFor(
+        lang: String?,
+        country: String?,
+        variant: String?
+    ): String? {
+        return currentEngine?.getDefaultVoiceName(lang, country, variant)
     }
 
     override fun onSynthesizeText(

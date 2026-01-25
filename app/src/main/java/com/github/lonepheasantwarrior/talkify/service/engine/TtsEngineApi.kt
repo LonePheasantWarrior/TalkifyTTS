@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.service.engine
 
+import android.speech.tts.Voice
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
 
 /**
@@ -84,6 +85,23 @@ interface TtsEngineApi {
      * @return 音频配置，包含采样率、格式、通道数等
      */
     fun getAudioConfig(): AudioConfig
+
+    /**
+     * 获取引擎支持的语言
+     *
+     * @return 支持的语言代码集合
+     */
+    fun getSupportedLanguages(): Set<String>
+
+    /**
+     * 获取引擎支持的声音
+     */
+    fun getSupportedVoices(): List<Voice>
+
+    /**
+     * 获取引擎的默认声音名称
+     */
+    fun getDefaultVoiceName(lang: String?, country: String?, variant: String?): String
 }
 
 /**

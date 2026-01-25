@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.service.engine.impl
 
+import android.speech.tts.Voice
 import android.util.Base64
 import com.alibaba.dashscope.aigc.multimodalconversation.AudioParameters
 import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversation
@@ -20,6 +21,7 @@ import io.reactivex.disposables.Disposable
 import io.reactivex.subscribers.DisposableSubscriber
 import java.net.SocketTimeoutException
 import java.net.ConnectException
+import java.util.Locale
 
 /**
  * 阿里云百炼 - 通义千问3语音合成引擎实现
@@ -52,8 +54,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
     private var hasCompleted = false
 
     val audioConfig: AudioConfig
-        @JvmName("getAudioConfigProperty")
-        get() = AudioConfig.QWEN3_TTS
+        @JvmName("getAudioConfigProperty") get() = AudioConfig.QWEN3_TTS
 
     init {
         Constants.baseHttpApiUrl = "https://dashscope.aliyuncs.com/api/v1"
@@ -64,10 +65,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
     override fun getEngineName(): String = ENGINE_NAME
 
     override fun synthesize(
-        text: String,
-        params: SynthesisParams,
-        config: EngineConfig,
-        listener: TtsSynthesisListener
+        text: String, params: SynthesisParams, config: EngineConfig, listener: TtsSynthesisListener
     ) {
         checkNotReleased()
 
@@ -116,9 +114,14 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         try {
             val conversation = MultiModalConversation()
             val param = buildConversationParam(chunk, params, config)
-            val resultFlowable: Flowable<MultiModalConversationResult> = conversation.streamCall(param)
+            val resultFlowable: Flowable<MultiModalConversationResult> =
+                conversation.streamCall(param)
 
-            currentDisposable = resultFlowable.subscribeWith(createChunkSubscriber(chunks, index, params, config, listener))
+            currentDisposable = resultFlowable.subscribeWith(
+                createChunkSubscriber(
+                    chunks, index, params, config, listener
+                )
+            )
         } catch (e: Exception) {
             val (errorCode, errorMessage) = mapExceptionToErrorCode(e)
             logError("Synthesis error: $errorMessage", e)
@@ -131,38 +134,52 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             is NoApiKeyException -> {
                 TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED to "API Key 未配置"
             }
+
             is UploadFileException -> {
                 TtsErrorCode.ERROR_SYNTHESIS_FAILED to "上传文件失败：${e.message}"
             }
+
             is ApiException -> {
                 val message = e.message ?: ""
                 when {
-                    message.contains("rate limit", ignoreCase = true) ||
-                    message.contains("429", ignoreCase = true) -> {
+                    message.contains("rate limit", ignoreCase = true) || message.contains(
+                        "429",
+                        ignoreCase = true
+                    ) -> {
                         TtsErrorCode.ERROR_API_RATE_LIMITED to "API 调用频率超限，请稍后重试"
                     }
-                    message.contains("401", ignoreCase = true) ||
-                    message.contains("Unauthorized", ignoreCase = true) ||
-                    message.contains("invalid api_key", ignoreCase = true) -> {
+
+                    message.contains("401", ignoreCase = true) || message.contains(
+                        "Unauthorized",
+                        ignoreCase = true
+                    ) || message.contains("invalid api_key", ignoreCase = true) -> {
                         TtsErrorCode.ERROR_API_AUTH_FAILED to "API Key 无效或已过期"
                     }
-                    message.contains("500", ignoreCase = true) ||
-                    message.contains("502", ignoreCase = true) ||
-                    message.contains("503", ignoreCase = true) ||
-                    message.contains("504", ignoreCase = true) -> {
+
+                    message.contains("500", ignoreCase = true) || message.contains(
+                        "502",
+                        ignoreCase = true
+                    ) || message.contains("503", ignoreCase = true) || message.contains(
+                        "504",
+                        ignoreCase = true
+                    ) -> {
                         TtsErrorCode.ERROR_API_SERVER_ERROR to "服务器暂时不可用，请稍后重试"
                     }
+
                     else -> {
                         TtsErrorCode.ERROR_SYNTHESIS_FAILED to "API 调用失败：${e.message}"
                     }
                 }
             }
+
             is SocketTimeoutException -> {
                 TtsErrorCode.ERROR_NETWORK_TIMEOUT to "网络连接超时，请检查网络设置"
             }
+
             is ConnectException -> {
                 TtsErrorCode.ERROR_NETWORK_UNAVAILABLE to "无法连接到服务器，请检查网络连接"
             }
+
             else -> {
                 TtsErrorCode.ERROR_GENERIC to "发生错误：${e.message ?: "未知错误"}"
             }
@@ -312,9 +329,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
     }
 
     private fun buildConversationParam(
-        text: String,
-        params: SynthesisParams,
-        config: EngineConfig
+        text: String, params: SynthesisParams, config: EngineConfig
     ): MultiModalConversationParam {
         val voice = if (config.voiceId.isNotEmpty()) {
             parseVoice(config.voiceId)
@@ -325,13 +340,8 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
         val languageType = convertToQwenLanguageType(params.language)
 
-        return MultiModalConversationParam.builder()
-            .apiKey(config.apiKey)
-            .model(MODEL_QWEN3_TTS_FLASH)
-            .text(text)
-            .voice(voice)
-            .languageType(languageType)
-            .build()
+        return MultiModalConversationParam.builder().apiKey(config.apiKey)
+            .model(MODEL_QWEN3_TTS_FLASH).text(text).voice(voice).languageType(languageType).build()
     }
 
     private fun convertToQwenLanguageType(language: String?): String {
@@ -364,6 +374,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         }
     }
 
+
     @Suppress("UNUSED_PARAMETER")
     private fun isSynthesIsFinished(result: MultiModalConversationResult): Boolean {
         return false
@@ -384,6 +395,34 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             logError("Failed to extract audio data", e)
             null
         }
+    }
+
+    override fun getSupportedLanguages(): Set<String> {
+        return setOf("zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru")
+    }
+
+    override fun getSupportedVoices(): List<Voice> {
+        val voices = mutableListOf<Voice>()
+
+        for (langCode in getSupportedLanguages()) {
+            for (engineVoice in AudioParameters.Voice.entries) {
+                voices.add(
+                    Voice(
+                        engineVoice.value,
+                        Locale.forLanguageTag(langCode),
+                        Voice.QUALITY_NORMAL,
+                        Voice.LATENCY_NORMAL,
+                        true,
+                        emptySet()
+                    )
+                )
+            }
+        }
+        return voices
+    }
+
+    override fun getDefaultVoiceName(lang: String?, country: String?, variant: String?): String {
+        return AudioParameters.Voice.CHERRY.value
     }
 
     override fun stop() {
