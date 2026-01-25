@@ -24,6 +24,16 @@ enum class TalkifyNotificationChannel(
     TTS_PLAYBACK(
         channelId = "talkify_tts_playback",
         importance = NotificationManager.IMPORTANCE_LOW
+    ),
+
+    /**
+     * 系统通知通道
+     * 用于发送系统级的重要通知
+     * 设置为高优先级以支持 heads-up 悬浮通知
+     */
+    SYSTEM_NOTIFICATION(
+        channelId = "talkify_system_notification",
+        importance = NotificationManager.IMPORTANCE_HIGH
     );
 
     companion object {
@@ -73,6 +83,7 @@ data class NotificationContent(
  * @property isSilent 是否静默通知（不播放声音和振动），默认为 true
  * @property priority 通知优先级，默认为 PRIORITY_LOW
  * @property category 通知类别，用于系统分类展示，可选
+ * @property fullScreenIntent 全屏 Intent，用于 heads-up 悬浮通知，可选
  */
 data class NotificationOptions(
     val channel: TalkifyNotificationChannel,
@@ -82,5 +93,6 @@ data class NotificationOptions(
     val isOngoing: Boolean = false,
     val isSilent: Boolean = true,
     val priority: Int = NotificationCompat.PRIORITY_LOW,
-    val category: String? = NotificationCompat.CATEGORY_SERVICE
+    val category: String? = NotificationCompat.CATEGORY_SERVICE,
+    val fullScreenIntent: PendingIntent? = null
 )

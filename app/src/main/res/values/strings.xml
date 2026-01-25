@@ -50,12 +50,13 @@
     <!-- TTS 服务错误 -->
     <string name="tts_error_no_engine">未找到可用的 TTS 引擎</string>
     <string name="tts_error_engine_not_found">引擎不存在</string>
-    <string name="tts_error_engine_not_configured">请先配置 API Key</string>
+    <string name="tts_error_engine_not_configured">合成引擎未配置</string>
+    <string name="tts_error_no_engine_id_available">合成引擎未选择</string>
     <string name="tts_error_synthesis_failed">语音合成失败</string>
     <string name="tts_error_network_unavailable">网络不可用，请检查网络连接</string>
     <string name="tts_error_invalid_request">无效的合成请求</string>
     <string name="tts_error_engine_init_failed">引擎初始化失败</string>
-    <string name="tts_error_config_not_found">未找到引擎配置</string>
+    <string name="tts_error_no_config_available">未找有效配置</string>
     <string name="tts_error_unknown">发生未知错误</string>
     <string name="tts_error_not_implemented">该引擎功能尚未实现</string>
     <string name="tts_config_suggestion">请前往应用设置页面配置 API Key</string>
@@ -105,4 +106,9 @@
     <string name="notification_channel_description">显示正在进行的朗读服务状态</string>
     <string name="notification_title">Talkify 正在朗读</string>
     <string name="notification_text">点击打开应用</string>
+
+    <!-- 系统通知 -->
+    <string name="system_notification_channel_name">系统通知</string>
+    <string name="system_notification_channel_description">系统级的重要通知</string>
+    <string name="system_notification_title">系统通知</string>
 </resources>

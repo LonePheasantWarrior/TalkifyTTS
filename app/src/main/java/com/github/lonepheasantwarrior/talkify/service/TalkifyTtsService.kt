@@ -5,6 +5,7 @@ import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
+import androidx.core.app.NotificationCompat
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngineRegistry
@@ -76,7 +77,6 @@ class TalkifyTtsService : TextToSpeechService() {
         super.onCreate()
         TtsLogger.i("TalkifyTtsService onCreate")
         initializeWakeLock()
-        createNotificationChannel()
         initializeRepositories()
         val engineInitSuccess = initializeEngine()
         TtsLogger.d("Engine initialization result: $engineInitSuccess")
@@ -101,30 +101,14 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     /**
-     * 创建通知通道
-     *
-     * 确保 TTS 播放通知通道已注册到系统
-     * 内部调用 [TalkifyNotificationHelper.ensureNotificationChannel]
-     */
-    private fun createNotificationChannel() {
-        TalkifyNotificationHelper.ensureNotificationChannel(
-            context = this,
-            channel = com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationChannel.TTS_PLAYBACK,
-            channelNameResId = R.string.notification_channel_name,
-            channelDescriptionResId = R.string.notification_channel_description
-        )
-        TtsLogger.d("Notification channel created")
-    }
-
-    /**
      * 启动前台服务
      *
      * 如果服务尚未运行，则启动为前台服务并显示通知
-     * 使用 [TalkifyNotificationHelper.startForegroundWithNotification] 构建通知
+     * 使用 [TalkifyNotificationHelper.buildForegroundWithNotification] 构建通知
      */
     private fun startForegroundService() {
         if (!isForegroundServiceRunning) {
-            startForeground(FOREGROUND_SERVICE_N_ID, TalkifyNotificationHelper.startForegroundWithNotification(this))
+            startForeground(FOREGROUND_SERVICE_N_ID, TalkifyNotificationHelper.buildForegroundWithNotification(this))
             isForegroundServiceRunning = true
             TtsLogger.d("Foreground service started")
         }
@@ -236,18 +220,20 @@ class TalkifyTtsService : TextToSpeechService() {
         acquireWakeLock()
         activeCallback = callback
 
-        val engine = currentEngine
-        if (engine == null) {
-            TtsLogger.e("processRequestInternal: no engine available")
-            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
+        val engineId = currentEngineId
+        if (engineId == null) {
+            TtsLogger.e("processRequestInternal: no engine ID available")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_no_engine_id_available))
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_FOUND))
             processingSemaphore.release()
             return
         }
 
-        val engineId = currentEngineId
-        if (engineId == null) {
-            TtsLogger.e("processRequestInternal: no engine ID available")
-            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_FOUND))
+        val engine = currentEngine
+        if (engine == null) {
+            TtsLogger.e("processRequestInternal: no engine available")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_no_engine))
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
             processingSemaphore.release()
             return
         }
@@ -255,6 +241,7 @@ class TalkifyTtsService : TextToSpeechService() {
         val config = engineConfigRepository?.getConfig(engineId)
         if (config == null) {
             TtsLogger.e("processRequestInternal: no config available")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_no_config_available))
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_CONFIG_NOT_FOUND))
             processingSemaphore.release()
             return
@@ -262,6 +249,7 @@ class TalkifyTtsService : TextToSpeechService() {
 
         if (!engine.isConfigured(config)) {
             TtsLogger.w("processRequestInternal: engine not configured")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_engine_not_configured))
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED))
             processingSemaphore.release()
             return
@@ -828,29 +816,33 @@ class TalkifyTtsService : TextToSpeechService() {
         startForegroundService()
         acquireWakeLock()
 
-        val engine = currentEngine
-        if (engine == null) {
-            TtsLogger.e("processRequestSynchronously: no engine available")
-            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
-            return
-        }
-
         val engineId = currentEngineId
         if (engineId == null) {
             TtsLogger.e("processRequestSynchronously: no engine ID available")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_no_engine_id_available))
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_FOUND))
+            return
+        }
+
+        val engine = currentEngine
+        if (engine == null) {
+            TtsLogger.e("processRequestSynchronously: no engine available")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_no_engine))
+            callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
             return
         }
 
         val config = engineConfigRepository?.getConfig(engineId)
         if (config == null) {
             TtsLogger.e("processRequestSynchronously: no config available")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_no_config_available))
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_CONFIG_NOT_FOUND))
             return
         }
 
         if (!engine.isConfigured(config)) {
             TtsLogger.w("processRequestSynchronously: engine not configured")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_engine_not_configured))
             callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED))
             return
         }

@@ -92,6 +92,10 @@ object NotificationHelper {
             builder.setCategory(options.category)
         }
 
+        if (options.fullScreenIntent != null) {
+            builder.setFullScreenIntent(options.fullScreenIntent, true)
+        }
+
         return builder.build()
     }
 

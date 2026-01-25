@@ -3,8 +3,10 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.core.app.NotificationCompat
 import com.github.lonepheasantwarrior.talkify.MainActivity
 import com.github.lonepheasantwarrior.talkify.R
+import com.github.lonepheasantwarrior.talkify.TalkifyNotificationActivity
 
 /**
  * Talkify 快捷通知发送 Helper
@@ -70,6 +72,25 @@ object TalkifyNotificationHelper {
     private fun createDefaultPendingIntent(context: Context): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
         intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        return PendingIntent.getActivity(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
+
+    /**
+     * 创建全屏 PendingIntent
+     *
+     * 用于 heads-up 悬浮通知，点击时显示全屏弹窗
+     *
+     * @param context 应用程序上下文
+     * @return 配置好的全屏 PendingIntent
+     */
+    private fun createFullScreenPendingIntent(context: Context): PendingIntent {
+        val intent = Intent(context, TalkifyNotificationActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NO_USER_ACTION
         return PendingIntent.getActivity(
             context,
             0,
@@ -182,7 +203,7 @@ object TalkifyNotificationHelper {
     }
 
     /**
-     * 启动前台服务并发送通知
+     * 构建前台服务通知
      *
      * 便捷方法：启动前台服务时自动发送 TTS 朗读通知
      * 这是 TTS 服务最常用的场景
@@ -190,7 +211,7 @@ object TalkifyNotificationHelper {
      * @param context 应用程序上下文
      * @return 构建好的 Notification 对象，可直接传递给 [android.app.Service.startForeground]
      */
-    fun startForegroundWithNotification(context: Context): android.app.Notification {
+    fun buildForegroundWithNotification(context: Context): android.app.Notification {
         val channel = TalkifyNotificationChannel.TTS_PLAYBACK
         ensureNotificationChannel(
             context = context,
@@ -201,5 +222,54 @@ object TalkifyNotificationHelper {
 
         val options = buildNotificationOptions(context, TalkifyNotificationType.TtsPlayback)
         return NotificationHelper.buildNotification(context, options)
+    }
+
+    /**
+     * 发送系统通知
+     *
+     * 便捷方法：发送系统级重要通知
+     * 支持自定义通知内容和可选的通知 ID、优先级及全屏 Intent
+     * 高优先级通知会显示为 heads-up 悬浮通知
+     *
+     * @param context 应用程序上下文
+     * @param text 通知正文内容（必填）
+     * @param notificationId 通知 ID，为 null 时随机生成
+     * @param priority 通知优先级，默认为 PRIORITY_HIGH
+     * @param fullScreenIntent 全屏 Intent，为 null 时使用默认
+     */
+    fun sendSystemNotification(
+        context: Context,
+        text: String,
+        notificationId: Int? = null,
+        priority: Int = NotificationCompat.PRIORITY_HIGH,
+        fullScreenIntent: PendingIntent? = null
+    ) {
+        val channel = TalkifyNotificationChannel.SYSTEM_NOTIFICATION
+        ensureNotificationChannel(
+            context = context,
+            channel = channel,
+            channelNameResId = R.string.system_notification_channel_name,
+            channelDescriptionResId = R.string.system_notification_channel_description
+        )
+
+        val content = NotificationContent(
+            title = context.getString(R.string.system_notification_title),
+            text = text,
+            smallIconResId = R.drawable.ic_tts_notification
+        )
+
+        val options = NotificationOptions(
+            channel = channel,
+            notificationId = notificationId ?: (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+            content = content,
+            pendingIntent = createDefaultPendingIntent(context),
+            isOngoing = false,
+            isSilent = false,
+            category = android.app.Notification.CATEGORY_STATUS,
+            priority = priority,
+            fullScreenIntent = fullScreenIntent ?: createFullScreenPendingIntent(context)
+        )
+
+        NotificationHelper.sendNotification(context, options)
     }
 }
