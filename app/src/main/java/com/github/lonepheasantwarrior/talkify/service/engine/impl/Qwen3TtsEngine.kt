@@ -20,8 +20,8 @@ import com.github.lonepheasantwarrior.talkify.service.engine.TtsSynthesisListene
 import io.reactivex.Flowable
 import io.reactivex.disposables.Disposable
 import io.reactivex.subscribers.DisposableSubscriber
-import java.net.SocketTimeoutException
 import java.net.ConnectException
+import java.net.SocketTimeoutException
 import java.util.Locale
 
 /**

@@ -1,31 +1,22 @@
 package com.github.lonepheasantwarrior.talkify.service
 
-import android.app.Notification
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.os.Bundle
 import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
+import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngineRegistry
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationChannel
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationContent
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationHelper
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationOptions
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3TtsConfigRepository
 import com.github.lonepheasantwarrior.talkify.service.engine.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineApi
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineFactory
 import com.github.lonepheasantwarrior.talkify.service.engine.TtsSynthesisListener
-import com.github.lonepheasantwarrior.talkify.MainActivity
-import com.github.lonepheasantwarrior.talkify.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,7 +27,10 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 
-private const val NOTIFICATION_ID = 1001
+/**
+ * 前台阅读服务通知 ID
+ */
+private const val FOREGROUND_SERVICE_N_ID = 1001
 
 /**
  * Talkify TTS 服务
@@ -89,6 +83,12 @@ class TalkifyTtsService : TextToSpeechService() {
         startRequestProcessor()
     }
 
+    /**
+     * 初始化 WakeLock
+     *
+     * 用于防止在语音合成过程中设备进入休眠状态
+     * 设置为部分唤醒锁，最长持有 10 分钟
+     */
     private fun initializeWakeLock() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -100,54 +100,41 @@ class TalkifyTtsService : TextToSpeechService() {
         TtsLogger.d("WakeLock initialized")
     }
 
+    /**
+     * 创建通知通道
+     *
+     * 确保 TTS 播放通知通道已注册到系统
+     * 内部调用 [TalkifyNotificationHelper.ensureNotificationChannel]
+     */
     private fun createNotificationChannel() {
-        NotificationHelper.createNotificationChannel(
+        TalkifyNotificationHelper.ensureNotificationChannel(
             context = this,
-            channel = TalkifyNotificationChannel.TTS_PLAYBACK,
-            channelName = getString(R.string.notification_channel_name),
-            channelDescription = getString(R.string.notification_channel_description)
+            channel = com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationChannel.TTS_PLAYBACK,
+            channelNameResId = R.string.notification_channel_name,
+            channelDescriptionResId = R.string.notification_channel_description
         )
         TtsLogger.d("Notification channel created")
     }
 
-    private fun buildNotification(): Notification {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val content = NotificationContent(
-            title = getString(R.string.notification_title),
-            text = getString(R.string.notification_text),
-            smallIconResId = R.drawable.ic_tts_notification
-        )
-
-        val options = NotificationOptions(
-            channel = TalkifyNotificationChannel.TTS_PLAYBACK,
-            notificationId = NOTIFICATION_ID,
-            content = content,
-            pendingIntent = pendingIntent,
-            isOngoing = true,
-            isSilent = true,
-            category = android.app.Notification.CATEGORY_SERVICE
-        )
-
-        return NotificationHelper.buildNotification(this, options)
-    }
-
+    /**
+     * 启动前台服务
+     *
+     * 如果服务尚未运行，则启动为前台服务并显示通知
+     * 使用 [TalkifyNotificationHelper.startForegroundWithNotification] 构建通知
+     */
     private fun startForegroundService() {
         if (!isForegroundServiceRunning) {
-            startForeground(NOTIFICATION_ID, buildNotification())
+            startForeground(FOREGROUND_SERVICE_N_ID, TalkifyNotificationHelper.startForegroundWithNotification(this))
             isForegroundServiceRunning = true
             TtsLogger.d("Foreground service started")
         }
     }
 
+    /**
+     * 停止前台服务
+     *
+     * 移除前台服务状态和关联的通知
+     */
     private fun stopForegroundService() {
         if (isForegroundServiceRunning) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -156,6 +143,12 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 获取 WakeLock
+     *
+     * 如果 WakeLock 未持有，则尝试获取
+     * 最长持有 10 分钟
+     */
     private fun acquireWakeLock() {
         wakeLock?.let {
             if (!it.isHeld) {
@@ -165,6 +158,11 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 释放 WakeLock
+     *
+     * 如果 WakeLock 已持有，则释放它
+     */
     private fun releaseWakeLock() {
         wakeLock?.let {
             if (it.isHeld) {
@@ -174,6 +172,12 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 启动请求处理器
+     *
+     * 在协程中持续从请求队列中取出合成请求并处理
+     * 循环运行直到服务停止
+     */
     private fun startRequestProcessor() {
         serviceScope.launch {
             while (!isStopped.get()) {
@@ -199,6 +203,14 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 内部请求处理方法
+     *
+     * 处理单个合成请求，包括参数验证、引擎调用和回调通知
+     * 完成后释放信号量
+     *
+     * @param wrapper 包含请求和回调的包装对象
+     */
     private fun processRequestInternal(wrapper: SynthesisRequestWrapper) {
         val (request, callback) = wrapper
 
@@ -287,6 +299,12 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 在空闲时停止前台服务
+     *
+     * 当请求队列为空且没有正在处理的请求时，停止前台服务
+     * 减少后台资源占用
+     */
     private fun stopForegroundServiceIfIdle() {
         if (!requestQueue.isEmpty() || processingSemaphore.availablePermits() == 0) {
             return
@@ -294,6 +312,18 @@ class TalkifyTtsService : TextToSpeechService() {
         stopForegroundService()
     }
 
+    /**
+     * 使用兼容模式处理合成请求
+     *
+     * 兼容模式会等待音频完全播放后才完成回调
+     * 适用于需要音频输出到扬声器的场景
+     *
+     * @param text 要合成的文本
+     * @param params 合成参数
+     * @param config 引擎配置
+     * @param audioConfig 音频配置
+     * @param callback 合成回调
+     */
     private fun processWithCompatibilityMode(
         text: String,
         params: SynthesisParams,
@@ -356,6 +386,17 @@ class TalkifyTtsService : TextToSpeechService() {
         })
     }
 
+    /**
+     * 使用非兼容模式处理合成请求
+     *
+     * 非兼容模式直接返回音频数据，不等待播放完成
+     * 适用于音频流直接写入 AudioTrack 的场景
+     *
+     * @param text 要合成的文本
+     * @param params 合成参数
+     * @param config 引擎配置
+     * @param callback 合成回调
+     */
     private fun processWithoutCompatibilityMode(
         text: String,
         params: SynthesisParams,
@@ -408,6 +449,12 @@ class TalkifyTtsService : TextToSpeechService() {
         })
     }
 
+    /**
+     * 初始化仓储
+     *
+     * 创建应用配置仓储和引擎配置仓储的实例
+     * 用于后续获取用户配置和引擎设置
+     */
     private fun initializeRepositories() {
         TtsLogger.d("Initializing repositories")
         try {
@@ -419,6 +466,15 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 根据错误消息推断错误码
+     *
+     * 通过解析错误消息中的关键词来判断具体的错误类型
+     * 支持认证失败、超时、网络错误、限流、服务器错误等
+     *
+     * @param errorMessage 错误消息文本
+     * @return 对应的 TtsErrorCode 错误码
+     */
     private fun inferErrorCodeFromMessage(errorMessage: String): Int {
         return when {
             errorMessage.contains("API Key", ignoreCase = true) ||
@@ -462,6 +518,14 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 初始化 TTS 引擎
+     *
+     * 根据用户选择的引擎 ID 创建对应的合成引擎
+     * 并从配置仓储加载引擎配置
+     *
+     * @return 初始化是否成功
+     */
     private fun initializeEngine(): Boolean {
         if (appConfigRepository == null) {
             initializeRepositories()
@@ -617,6 +681,15 @@ class TalkifyTtsService : TextToSpeechService() {
         return TextToSpeech.LANG_NOT_SUPPORTED
     }
 
+    /**
+     * 转换国家代码为有效区域码
+     *
+     * 将各种格式的国家代码标准化为双字母 ISO 3166-1 alpha-2 格式
+     * 支持常见国家的中英文缩写和三字母代码
+     *
+     * @param country 原始国家代码
+     * @return 标准化后的区域码
+     */
     private fun convertToValidRegionCode(country: String): String {
         return when (country.uppercase()) {
             "CHN", "CN" -> "CN"
@@ -664,10 +737,12 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     /**
-     * 检查目标声音 ID 是否被当前的引擎支持
+     * 检查声音 ID 是否正确
+     *
+     * 验证指定的声音 ID 是否被当前引擎支持
      *
      * @param voiceId 声音 ID
-     * @return TextToSpeech.SUCCESS、TextToSpeech.ERROR
+     * @return TextToSpeech.SUCCESS 或 TextToSpeech.ERROR
      */
     private fun isVoiceIdCorrect(voiceId: String?): Int {
         if (currentEngine == null) {
@@ -715,6 +790,15 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
+    /**
+     * 同步处理合成请求
+     *
+     * 兼容模式下同步处理单个请求，等待音频完全播放后才返回
+     * 用于需要音频输出到扬声器的场景
+     *
+     * @param request 合成请求
+     * @param callback 合成回调
+     */
     private fun processRequestSynchronously(
         request: android.speech.tts.SynthesisRequest,
         callback: android.speech.tts.SynthesisCallback
@@ -891,6 +975,12 @@ class TalkifyTtsService : TextToSpeechService() {
         super.onDestroy()
     }
 
+    /**
+     * 服务停止回调
+     *
+     * 当系统请求服务停止时调用
+     * 释放正在进行的合成操作和播放器资源
+     */
     override fun onStop() {
         TtsLogger.d("onStop called")
         isSynthesisInProgress.set(false)
