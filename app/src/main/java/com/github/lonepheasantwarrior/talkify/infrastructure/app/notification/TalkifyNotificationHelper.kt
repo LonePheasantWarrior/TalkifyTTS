@@ -36,14 +36,12 @@ object TalkifyNotificationHelper {
      * @property channel 通知通道
      * @property notificationId 通知唯一标识符
      * @property titleResId 标题资源 ID
-     * @property textResId 正文文本资源 ID
      * @property iconResId 图标资源 ID
      */
     sealed class TalkifyNotificationType(
         val channel: TalkifyNotificationChannel,
         val notificationId: Int,
         val titleResId: Int,
-        val textResId: Int,
         val iconResId: Int
     ) {
         /**
@@ -56,7 +54,6 @@ object TalkifyNotificationHelper {
             channel = TalkifyNotificationChannel.TTS_PLAYBACK,
             notificationId = TTS_PLAYBACK_NOTIFICATION_ID,
             titleResId = R.string.notification_title,
-            textResId = R.string.notification_text,
             iconResId = R.drawable.ic_tts_notification
         )
     }
@@ -141,7 +138,7 @@ object TalkifyNotificationHelper {
     ): NotificationOptions {
         val content = NotificationContent(
             title = context.getString(notificationType.titleResId),
-            text = context.getString(notificationType.textResId),
+            text = "",
             smallIconResId = notificationType.iconResId
         )
 
