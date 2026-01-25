@@ -693,7 +693,7 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     override fun onGetLanguage(): Array<String>? {
-        TtsLogger.i("onGetLanguage: there is")
+        TtsLogger.d("onGetLanguage: it is")
         val engine = currentEngine
         if (engine == null) {
             TtsLogger.w("onGetLanguage: no engine available")
@@ -712,7 +712,7 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     override fun onGetVoices(): List<Voice?>? {
-        TtsLogger.i("onGetVoices: there is it")
+        TtsLogger.d("onGetVoices: it is")
         return currentEngine?.getSupportedVoices()
     }
 
@@ -721,7 +721,7 @@ class TalkifyTtsService : TextToSpeechService() {
         country: String?,
         variant: String?
     ): String? {
-        TtsLogger.i("onGetDefaultVoiceNameFor: lang: $lang, country: $country, variant: $variant")
+        TtsLogger.d("onGetDefaultVoiceNameFor: lang: $lang, country: $country, variant: $variant")
         return currentEngine?.getDefaultVoiceId(lang, country, variant)
     }
 
@@ -746,16 +746,16 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     override fun onIsValidVoiceName(voiceName: String?): Int {
-        TtsLogger.i("onIsValidVoiceName: voiceName [$voiceName]")
+        TtsLogger.d("onIsValidVoiceName: voiceName [$voiceName]")
         val returnSignal = isVoiceIdCorrect(voiceName)
-        TtsLogger.i("onIsValidVoiceName: return [$returnSignal]")
+        TtsLogger.d("onIsValidVoiceName: return [$returnSignal]")
         return returnSignal
     }
 
     override fun onLoadVoice(voiceName: String?): Int {
-        TtsLogger.i("onLoadVoice: voiceName [$voiceName]")
+        TtsLogger.d("onLoadVoice: voiceName [$voiceName]")
         val returnSignal = isVoiceIdCorrect(voiceName)
-        TtsLogger.i("onLoadVoice: return [$returnSignal]")
+        TtsLogger.d("onLoadVoice: return [$returnSignal]")
         return returnSignal
     }
 
