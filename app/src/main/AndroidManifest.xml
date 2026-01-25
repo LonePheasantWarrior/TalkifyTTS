@@ -31,6 +31,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".TalkifyCheckDataActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.tts.engine.CHECK_TTS_DATA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".service.TalkifyTtsService"
@@ -40,6 +46,10 @@
             android:permission="android.permission.BIND_TEXT_TO_SPEECH">
             <intent-filter>
                 <action android:name="android.intent.action.TTS_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.speech.tts.engine.CHECK_TTS_DATA" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data

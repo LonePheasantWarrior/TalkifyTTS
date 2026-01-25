@@ -94,14 +94,24 @@ interface TtsEngineApi {
     fun getSupportedLanguages(): Set<String>
 
     /**
+     * 获取引擎支持的默认语言
+     */
+    fun getDefaultLanguages(): Array<String>
+
+    /**
      * 获取引擎支持的声音
      */
     fun getSupportedVoices(): List<Voice>
 
     /**
-     * 获取引擎的默认声音名称
+     * 获取引擎的默认声音ID
      */
-    fun getDefaultVoiceName(lang: String?, country: String?, variant: String?): String
+    fun getDefaultVoiceId(lang: String?, country: String?, variant: String?): String
+
+    /**
+     * 检查引擎是否支持目标声音ID（声音 ID 是否合法）
+     */
+    fun isVoiceIdCorrect(voiceId: String?): Boolean
 }
 
 /**

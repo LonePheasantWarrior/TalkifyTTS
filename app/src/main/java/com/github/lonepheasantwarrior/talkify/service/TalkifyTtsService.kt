@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
@@ -267,7 +268,11 @@ class TalkifyTtsService : TextToSpeechService() {
 
         try {
             val audioConfig = engine.getAudioConfig()
-            callback.start(audioConfig.sampleRate, audioConfig.audioFormat, audioConfig.channelCount)
+            callback.start(
+                audioConfig.sampleRate,
+                audioConfig.audioFormat,
+                audioConfig.channelCount
+            )
             TtsLogger.d("Synthesis started, compatibilityMode=$isCompatibilityMode")
 
             if (isCompatibilityMode) {
@@ -419,41 +424,51 @@ class TalkifyTtsService : TextToSpeechService() {
     private fun inferErrorCodeFromMessage(errorMessage: String): Int {
         return when {
             errorMessage.contains("API Key", ignoreCase = true) ||
-            errorMessage.contains("认证", ignoreCase = true) ||
-            errorMessage.contains("auth", ignoreCase = true) -> {
+                    errorMessage.contains("认证", ignoreCase = true) ||
+                    errorMessage.contains("auth", ignoreCase = true) -> {
                 TtsErrorCode.ERROR_API_AUTH_FAILED
             }
+
             errorMessage.contains("超时", ignoreCase = true) ||
-            errorMessage.contains("timeout", ignoreCase = true) -> {
+                    errorMessage.contains("timeout", ignoreCase = true) -> {
                 TtsErrorCode.ERROR_NETWORK_TIMEOUT
             }
+
             errorMessage.contains("网络", ignoreCase = true) ||
-            errorMessage.contains("连接", ignoreCase = true) ||
-            errorMessage.contains("network", ignoreCase = true) ||
-            errorMessage.contains("connect", ignoreCase = true) -> {
+                    errorMessage.contains("连接", ignoreCase = true) ||
+                    errorMessage.contains("network", ignoreCase = true) ||
+                    errorMessage.contains("connect", ignoreCase = true) -> {
                 TtsErrorCode.ERROR_NETWORK_UNAVAILABLE
             }
+
             errorMessage.contains("频率", ignoreCase = true) ||
-            errorMessage.contains("rate limit", ignoreCase = true) ||
-            errorMessage.contains("429", ignoreCase = true) -> {
+                    errorMessage.contains("rate limit", ignoreCase = true) ||
+                    errorMessage.contains("429", ignoreCase = true) -> {
                 TtsErrorCode.ERROR_API_RATE_LIMITED
             }
+
             errorMessage.contains("服务器", ignoreCase = true) ||
-            errorMessage.contains("server", ignoreCase = true) ||
-            errorMessage.contains("500", ignoreCase = true) ||
-            errorMessage.contains("502", ignoreCase = true) ||
-            errorMessage.contains("503", ignoreCase = true) -> {
+                    errorMessage.contains("server", ignoreCase = true) ||
+                    errorMessage.contains("500", ignoreCase = true) ||
+                    errorMessage.contains("502", ignoreCase = true) ||
+                    errorMessage.contains("503", ignoreCase = true) -> {
                 TtsErrorCode.ERROR_API_SERVER_ERROR
             }
+
             errorMessage.contains("API Key", ignoreCase = true) ||
-            errorMessage.contains("配置", ignoreCase = true) -> {
+                    errorMessage.contains("配置", ignoreCase = true) -> {
                 TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED
             }
+
             else -> TtsErrorCode.ERROR_SYNTHESIS_FAILED
         }
     }
 
     private fun initializeEngine(): Boolean {
+        if (appConfigRepository == null) {
+            initializeRepositories()
+        }
+
         val selectedEngineId = appConfigRepository?.getSelectedEngineId()
         val engineId = selectedEngineId ?: run {
             TtsLogger.w("No selected engine found, using default")
@@ -496,13 +511,16 @@ class TalkifyTtsService : TextToSpeechService() {
                 .setRegion(convertToValidRegionCode(country))
                 .setVariant(variant)
                 .build()
+
             lang != null && country != null -> Locale.Builder()
                 .setLanguage(lang)
                 .setRegion(convertToValidRegionCode(country))
                 .build()
+
             lang != null -> Locale.Builder()
                 .setLanguage(lang)
                 .build()
+
             else -> {
                 TtsLogger.w("onIsLanguageAvailable: lang: $lang, country: $country, variant: $variant")
                 TtsLogger.w("onIsLanguageAvailable: null language, returning NOT_SUPPORTED")
@@ -511,6 +529,7 @@ class TalkifyTtsService : TextToSpeechService() {
         }
 
         if (isLanguageSupported(locale.language)) {
+            TtsLogger.i("onIsLanguageAvailable: TextToSpeech.LANG_AVAILABLE [lang: $lang, country: $country, variant: $variant]")
             return TextToSpeech.LANG_AVAILABLE
         }
         TtsLogger.w("onIsLanguageAvailable: not support language [${locale.language}]")
@@ -551,6 +570,10 @@ class TalkifyTtsService : TextToSpeechService() {
             else -> code
         }
 
+        if (currentEngine == null) {
+            initializeEngine()
+        }
+
         // 3. 最终检查
         return currentEngine?.getSupportedLanguages()?.contains(normalizedCode) ?: false
     }
@@ -566,13 +589,16 @@ class TalkifyTtsService : TextToSpeechService() {
                 .setRegion(convertToValidRegionCode(country))
                 .setVariant(variant)
                 .build()
+
             lang != null && country != null -> Locale.Builder()
                 .setLanguage(lang)
                 .setRegion(convertToValidRegionCode(country))
                 .build()
+
             lang != null -> Locale.Builder()
                 .setLanguage(lang)
                 .build()
+
             else -> {
                 TtsLogger.w("onLoadLanguage: lang: $lang, country: $country, variant: $variant")
                 TtsLogger.w("onLoadLanguage: null language, returning NOT_SUPPORTED")
@@ -581,7 +607,13 @@ class TalkifyTtsService : TextToSpeechService() {
         }
 
         if (isLanguageSupported(locale.language)) {
-            return TextToSpeech.LANG_AVAILABLE
+            return if (!country.isNullOrBlank()) {
+                TtsLogger.d("onLoadLanguage: LANG_COUNTRY_AVAILABLE. lang: $lang, country: $country, variant: $variant")
+                TextToSpeech.LANG_COUNTRY_AVAILABLE
+            }else{
+                TtsLogger.w("onIsLanguageAvailable: not support country [${country}]")
+                TextToSpeech.LANG_AVAILABLE
+            }
         }
         TtsLogger.w("onIsLanguageAvailable: not support language [${locale.language}]")
         return TextToSpeech.LANG_NOT_SUPPORTED
@@ -601,6 +633,7 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     override fun onGetLanguage(): Array<String>? {
+        TtsLogger.i("onGetLanguage: there is")
         val engine = currentEngine
         if (engine == null) {
             TtsLogger.w("onGetLanguage: no engine available")
@@ -615,11 +648,11 @@ class TalkifyTtsService : TextToSpeechService() {
             return null
         }
 
-        TtsLogger.d("onGetLanguage: returning supported languages")
-        return currentEngine?.getSupportedLanguages()?.toTypedArray()
+        return currentEngine?.getDefaultLanguages()
     }
 
     override fun onGetVoices(): List<Voice?>? {
+        TtsLogger.i("onGetVoices: there is it")
         return currentEngine?.getSupportedVoices()
     }
 
@@ -628,7 +661,36 @@ class TalkifyTtsService : TextToSpeechService() {
         country: String?,
         variant: String?
     ): String? {
-        return currentEngine?.getDefaultVoiceName(lang, country, variant)
+        TtsLogger.i("onGetDefaultVoiceNameFor: lang: $lang, country: $country, variant: $variant")
+        return currentEngine?.getDefaultVoiceId(lang, country, variant)
+    }
+
+    /**
+     * 检查目标声音 ID 是否被当前的引擎支持
+     *
+     * @param voiceId 声音 ID
+     * @return TextToSpeech.SUCCESS、TextToSpeech.ERROR
+     */
+    private fun isVoiceIdCorrect(voiceId: String?): Int {
+        if (currentEngine == null) {
+            initializeEngine()
+        }
+
+        return if (currentEngine?.isVoiceIdCorrect(voiceId) == true) {
+            TextToSpeech.SUCCESS
+        } else {
+            TextToSpeech.ERROR
+        }
+    }
+
+    override fun onIsValidVoiceName(voiceName: String?): Int {
+        TtsLogger.i("onIsValidVoiceName: voiceName [$voiceName]")
+        return isVoiceIdCorrect(voiceName)
+    }
+
+    override fun onLoadVoice(voiceName: String?): Int {
+        TtsLogger.i("onLoadVoice: voiceName [$voiceName]")
+        return isVoiceIdCorrect(voiceName)
     }
 
     override fun onSynthesizeText(
@@ -716,7 +778,11 @@ class TalkifyTtsService : TextToSpeechService() {
 
         try {
             val audioConfig = engine.getAudioConfig()
-            callback.start(audioConfig.sampleRate, audioConfig.audioFormat, audioConfig.channelCount)
+            callback.start(
+                audioConfig.sampleRate,
+                audioConfig.audioFormat,
+                audioConfig.channelCount
+            )
 
             if (currentPlayer == null) {
                 currentPlayer = CompatibilityModePlayer(audioConfig)

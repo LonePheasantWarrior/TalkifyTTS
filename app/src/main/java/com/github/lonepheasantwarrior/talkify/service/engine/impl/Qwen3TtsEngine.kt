@@ -401,15 +401,29 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         return setOf("zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru")
     }
 
+    override fun getDefaultLanguages(): Array<String> {
+        // 必须按照 [Language, Country, Variant] 的顺序返回
+        return arrayOf("zho", "CHN", "")
+    }
+
     override fun getSupportedVoices(): List<Voice> {
+        val local = Locale.forLanguageTag("zh")
+        logInfo("zh Local: lang [${local.language}]")
+
         val voices = mutableListOf<Voice>()
 
         for (langCode in getSupportedLanguages()) {
             for (engineVoice in AudioParameters.Voice.entries) {
+                val locale = when(langCode) {
+                    "zh" -> Locale.CHINA
+                    "en" -> Locale.US
+                    else -> Locale.forLanguageTag(langCode)
+                }
+
                 voices.add(
                     Voice(
                         engineVoice.value,
-                        Locale.forLanguageTag(langCode),
+                        locale,
                         Voice.QUALITY_NORMAL,
                         Voice.LATENCY_NORMAL,
                         true,
@@ -421,8 +435,20 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         return voices
     }
 
-    override fun getDefaultVoiceName(lang: String?, country: String?, variant: String?): String {
+    override fun getDefaultVoiceId(lang: String?, country: String?, variant: String?): String {
         return AudioParameters.Voice.CHERRY.value
+    }
+
+    override fun isVoiceIdCorrect(voiceId: String?): Boolean {
+        if (voiceId == null) {
+            return false
+        }
+        return try {
+            AudioParameters.Voice.valueOf(voiceId)
+            true
+        } catch (_: IllegalArgumentException) {
+            false
+        }
     }
 
     override fun stop() {
