@@ -685,12 +685,16 @@ class TalkifyTtsService : TextToSpeechService() {
 
     override fun onIsValidVoiceName(voiceName: String?): Int {
         TtsLogger.i("onIsValidVoiceName: voiceName [$voiceName]")
-        return isVoiceIdCorrect(voiceName)
+        val returnSignal = isVoiceIdCorrect(voiceName)
+        TtsLogger.i("onIsValidVoiceName: return [$returnSignal]")
+        return returnSignal
     }
 
     override fun onLoadVoice(voiceName: String?): Int {
         TtsLogger.i("onLoadVoice: voiceName [$voiceName]")
-        return isVoiceIdCorrect(voiceName)
+        val returnSignal = isVoiceIdCorrect(voiceName)
+        TtsLogger.i("onLoadVoice: return [$returnSignal]")
+        return returnSignal
     }
 
     override fun onSynthesizeText(

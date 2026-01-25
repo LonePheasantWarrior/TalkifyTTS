@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.service.engine.impl
 
+import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import android.util.Base64
 import com.alibaba.dashscope.aigc.multimodalconversation.AudioParameters
@@ -412,6 +413,9 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
         val voices = mutableListOf<Voice>()
 
+        val features = HashSet<String>()
+        features.add(TextToSpeech.Engine.KEY_FEATURE_NETWORK_SYNTHESIS)
+
         for (langCode in getSupportedLanguages()) {
             for (engineVoice in AudioParameters.Voice.entries) {
                 val locale = when(langCode) {
@@ -443,12 +447,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         if (voiceId == null) {
             return false
         }
-        return try {
-            AudioParameters.Voice.valueOf(voiceId)
-            true
-        } catch (_: IllegalArgumentException) {
-            false
-        }
+        return AudioParameters.Voice.entries.any { it.value == voiceId }
     }
 
     override fun stop() {
