@@ -503,22 +503,60 @@ class TalkifyTtsService : TextToSpeechService() {
                 .setLanguage(lang)
                 .build()
             else -> {
+                TtsLogger.w("onIsLanguageAvailable: lang: $lang, country: $country, variant: $variant")
                 TtsLogger.w("onIsLanguageAvailable: null language, returning NOT_SUPPORTED")
                 return TextToSpeech.LANG_NOT_SUPPORTED
             }
         }
 
-        val result = when (locale.language) {
-            "zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru" -> {
-                TtsLogger.d("Language available: ${locale.language}")
-                TextToSpeech.LANG_AVAILABLE
-            }
-            else -> {
-                TtsLogger.w("Language not supported: ${locale.language}")
-                TextToSpeech.LANG_NOT_SUPPORTED
-            }
+        if (isLanguageSupported(locale.language)) {
+            return TextToSpeech.LANG_AVAILABLE
         }
-        return result
+        TtsLogger.w("onIsLanguageAvailable: not support language [${locale.language}]")
+        return TextToSpeech.LANG_NOT_SUPPORTED
+    }
+
+    /**
+     * 检查并兼容多种 ISO 639 格式的语言代码
+     * 支持范围: "zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru"
+     */
+    fun isLanguageSupported(lang: String?): Boolean {
+        if (lang == null) return false
+
+        // 1. 基础清理：转小写并去掉空格（防御大写或异常输入）
+        // 2. 映射表：将所有常见的三字母 ISO 639-2/3 代码映射到你的双字母标准上
+        val normalizedCode = when (val code = lang.lowercase().trim()) {
+            // 中文映射
+            "zho", "chi" -> "zh"
+            // 英文映射
+            "eng" -> "en"
+            // 德语映射
+            "deu", "ger" -> "de"
+            // 意大利语
+            "ita" -> "it"
+            // 葡萄牙语
+            "por" -> "pt"
+            // 西班牙语
+            "spa" -> "es"
+            // 日语
+            "jpn" -> "ja"
+            // 韩语
+            "kor" -> "ko"
+            // 法语
+            "fra", "fre" -> "fr"
+            // 俄语
+            "rus" -> "ru"
+            // 如果本身就是双字母或者不在上述范围，保持原样
+            else -> code
+        }
+
+        // 3. 最终检查：是否在你的 10 种核心支持列表中
+        val mySupportedLanguages = setOf(
+            "zh", "en", "de", "it", "pt",
+            "es", "ja", "ko", "fr", "ru"
+        )
+
+        return mySupportedLanguages.contains(normalizedCode)
     }
 
     override fun onLoadLanguage(
@@ -540,22 +578,17 @@ class TalkifyTtsService : TextToSpeechService() {
                 .setLanguage(lang)
                 .build()
             else -> {
+                TtsLogger.w("onLoadLanguage: lang: $lang, country: $country, variant: $variant")
                 TtsLogger.w("onLoadLanguage: null language, returning NOT_SUPPORTED")
                 return TextToSpeech.LANG_NOT_SUPPORTED
             }
         }
 
-        val result = when (locale.language) {
-            "zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru" -> {
-                TtsLogger.d("Language loaded: ${locale.language}")
-                TextToSpeech.LANG_AVAILABLE
-            }
-            else -> {
-                TtsLogger.w("Language not supported: ${locale.language}")
-                TextToSpeech.LANG_NOT_SUPPORTED
-            }
+        if (isLanguageSupported(locale.language)) {
+            return TextToSpeech.LANG_AVAILABLE
         }
-        return result
+        TtsLogger.w("onIsLanguageAvailable: not support language [${locale.language}]")
+        return TextToSpeech.LANG_NOT_SUPPORTED
     }
 
     private fun convertToValidRegionCode(country: String): String {
