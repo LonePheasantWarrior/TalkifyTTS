@@ -27,15 +27,24 @@
 ```
 app/src/main/java/com/github/lonepheasantwarrior/talkify/
 ├── MainActivity.kt              # 应用入口
-├── TalkifyApplication.kt        # Application 类（全局异常处理初始化）
+├── TalkifyApplication.kt        # Application 类（全局异常处理初始化 + 通知通道预创建）
+├── TalkifyNotificationActivity.kt # 全屏通知弹窗 Activity（heads-up 悬浮通知）
+├── TalkifyCheckDataActivity.kt  # TTS 数据检查 Activity（系统 TTS 集成）
+├── TalkifySampleTextActivity.kt # 采样文本 Activity（系统 TTS 集成）
 ├── GlobalException.kt           # 全局异常处理器和应用上下文持有者
 ├── domain/                      # 领域层（业务逻辑核心）
 │   ├── model/                   # 领域模型
 │   │   ├── TtsModels.kt         # TTS 引擎领域模型
-│   │   ├── EngineConfig.kt      # 引擎配置（apiKey, voiceId）
-│   │   ├── TtsEngineRegistry.kt # 引擎注册表
-│   │   └── repo/                # 仓储接口定义
-│   └── repository/              # 仓储接口
+│   │   ├── EngineConfig.kt      # 引擎配置数据类（apiKey, voiceId）
+│   │   ├── TtsEngineRegistry.kt # 引擎注册表（单一数据源管理模式）
+│   │   ├── EngineIds.kt         # 引擎 ID 密封类（类型安全的引擎标识）
+│   │   ├── ConfigItem.kt        # 配置项数据类（支持密码/语音选择模式）
+│   │   ├── UpdateInfo.kt        # 更新信息数据类
+│   │   └── UpdateCheckResult.kt # 更新检查结果密封类
+│   └── repository/              # 仓储接口定义
+│       ├── VoiceRepository.kt         # 声音仓储接口
+│       ├── EngineConfigRepository.kt  # 引擎配置仓储接口
+│       └── AppConfigRepository.kt     # 应用配置仓储接口
 ├── infrastructure/              # 基础设施层（外部服务集成）
 │   ├── engine/                  # 引擎特定实现
 │   │   └── repo/
@@ -46,47 +55,83 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 │       │   ├── PermissionChecker.kt         # 权限检查工具类
 │       │   ├── NetworkConnectivityChecker.kt # 网络连通性检查（统一入口）
 │       │   └── ConnectivityMonitor.kt       # 网络状态监控器
+│       ├── notification/        # 通知系统
+│       │   ├── TalkifyNotificationHelper.kt # 快捷通知发送 Helper
+│       │   ├── NotificationHelper.kt        # 底层通知构建与发送
+│       │   └── NotificationModels.kt        # 通知通道枚举与数据模型
 │       ├── update/              # 更新检查
-│       │   └── UpdateChecker.kt # GitHub Releases API 调用
+│       │   └── UpdateChecker.kt # GitHub Releases API 调用与更新检查
 │       └── repo/
-│           └── SharedPreferencesAppConfigRepository.kt # 应用配置实现
+│           └── SharedPreferencesAppConfigRepository.kt # 应用配置仓储实现
 ├── service/                     # 服务层（TTS 引擎服务）
 │   ├── TalkifyTtsService.kt     # TTS 服务（继承 TextToSpeechService）
 │   ├── TalkifyTtsDemoService.kt # 语音预览服务
 │   ├── CompatibilityModePlayer.kt # 兼容模式专用播放器
+│   ├── TtsAudioPlayer.kt        # 内置音频播放器（流式播放 + 进度回调）
 │   ├── TtsErrorCode.kt          # 错误码定义（15种错误类型）
 │   ├── TtsErrorHelper.kt        # 错误处理助手
 │   ├── TtsLogger.kt             # 日志工具类
-│   ├── TtsAudioPlayer.kt        # 内置音频播放器（流式播放 + 进度回调）
 │   └── engine/                  # 引擎抽象层
 │       ├── TtsEngineApi.kt      # 引擎抽象接口
+│       ├── AbstractTtsEngine.kt # 引擎抽象基类
+│       ├── AudioConfig.kt       # 引擎音频配置类
+│       ├── TtsStreamHandler.kt  # 流式处理接口
 │       ├── TtsEngineFactory.kt  # 引擎工厂
 │       └── impl/
 │           └── Qwen3TtsEngine.kt # 通义千问3引擎实现
 └── ui/                          # 表现层（UI 组件）
     ├── components/              # UI 组件
-    ├── screens/                 # 界面
+    │   ├── EngineSelector.kt    # 引擎切换控件
+    │   ├── VoicePreview.kt      # 语音预览控件
+    │   ├── ConfigEditor.kt      # 配置编辑表单
+    │   ├── ConfigBottomSheet.kt # 底部设置弹窗
+    │   ├── UpdateDialog.kt      # 更新提示对话框
+    │   ├── PermissionDialog.kt  # 权限请求对话框
+    │   ├── NetworkBlockedDialog.kt # 网络阻塞对话框
+    │   └── MarkdownText.kt      # Markdown 文本组件
+    ├── screens/
+    │   └── MainScreen.kt        # 主界面
     └── theme/                   # 主题配置
+        ├── Color.kt             # 颜色定义
+        ├── Theme.kt             # 主题配置
+        └── Type.kt              # 字体排版
 ```
 
 ## 目录与文件职能
 
 | 目录/文件 | 职能 |
 |----------|------|
+| **根目录/** | |
+| `MainActivity.kt` | 应用入口，Compose UI 启动点 |
+| `TalkifyApplication.kt` | Application 类（全局异常处理初始化 + 通知通道预创建） |
+| `TalkifyNotificationActivity.kt` | 全屏通知弹窗 Activity（heads-up 悬浮通知） |
+| `TalkifyCheckDataActivity.kt` | TTS 数据检查 Activity（系统 TTS 集成） |
+| `TalkifySampleTextActivity.kt` | 采样文本 Activity（系统 TTS 集成） |
+| `GlobalException.kt` | 全局异常处理器和应用上下文持有者 |
 | **domain/** | |
 | `TtsModels.kt` | TTS 引擎领域模型 |
-| `EngineConfig.kt` | 引擎配置（apiKey, voiceId） |
-| `TtsEngineRegistry.kt` | 引擎注册表 |
+| `EngineConfig.kt` | 引擎配置数据类（apiKey, voiceId） |
+| `TtsEngineRegistry.kt` | 引擎注册表（单一数据源管理模式） |
+| `EngineIds.kt` | 引擎 ID 密封类（类型安全的引擎标识） |
+| `ConfigItem.kt` | 配置项数据类（支持密码/语音选择模式） |
 | `UpdateInfo.kt` | 更新信息数据类 |
 | `UpdateCheckResult.kt` | 更新检查结果密封类 |
-| `*Repository.kt` | 仓储接口定义 |
+| `VoiceRepository.kt` | 声音仓储接口 |
+| `EngineConfigRepository.kt` | 引擎配置仓储接口 |
+| `AppConfigRepository.kt` | 应用配置仓储接口 |
 | **infrastructure/** | |
-| `Qwen3Tts*Repository.kt` | 通义千问3仓储实现 |
-| `SharedPreferencesAppConfigRepository.kt` | 应用配置实现 |
+| `Qwen3TtsVoiceRepository.kt` | 通义千问3语音仓储实现 |
+| `Qwen3TtsConfigRepository.kt` | 通义千问3配置仓储实现 |
+| `SharedPreferencesAppConfigRepository.kt` | 应用配置仓储实现 |
 | **permission/** | |
 | `PermissionChecker.kt` | 运行时权限检查 |
 | `NetworkConnectivityChecker.kt` | 网络连通性检测（统一入口） |
 | `ConnectivityMonitor.kt` | 网络状态监控与 TCP 连接测试 |
+| **notification/** | |
+| `TalkifyNotificationHelper.kt` | 快捷通知发送 Helper |
+| `NotificationHelper.kt` | 底层通知构建与发送工具 |
+| `NotificationModels.kt` | 通知通道枚举与数据模型 |
+| `TalkifyNotificationActivity.kt` | 全屏通知弹窗 Activity |
 | **update/** | |
 | `UpdateChecker.kt` | GitHub Releases API 调用与更新检查 |
 | **service/** | |
@@ -94,14 +139,28 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 | `TalkifyTtsDemoService.kt` | 语音预览服务 |
 | `CompatibilityModePlayer.kt` | 兼容模式专用播放器 |
 | `TtsAudioPlayer.kt` | 内置音频播放器（流式播放 + 进度回调） |
+| `TtsErrorCode.kt` | 错误码定义（15种错误类型） |
+| `TtsErrorHelper.kt` | 错误处理助手 |
+| `TtsLogger.kt` | 日志工具类 |
 | `TtsEngineApi.kt` | 引擎抽象接口 |
+| `AbstractTtsEngine.kt` | 引擎抽象基类 |
+| `AudioConfig.kt` | 引擎音频配置类 |
+| `TtsStreamHandler.kt` | 流式处理接口 |
+| `TtsEngineFactory.kt` | 引擎工厂 |
 | `Qwen3TtsEngine.kt` | 通义千问3引擎实现 |
 | **ui/** | |
-| `MainScreen.kt` | 主界面 |
+| `EngineSelector.kt` | 引擎切换控件 |
+| `VoicePreview.kt` | 语音预览控件 |
+| `ConfigEditor.kt` | 配置编辑表单 |
+| `ConfigBottomSheet.kt` | 底部设置弹窗 |
 | `UpdateDialog.kt` | 更新提示对话框 |
-| `*BottomSheet.kt` | 底部弹窗 |
-| `*Preview.kt` | 语音预览 |
-| `*Selector.kt` | 引擎选择器 |
+| `PermissionDialog.kt` | 权限请求对话框 |
+| `NetworkBlockedDialog.kt` | 网络阻塞对话框 |
+| `MarkdownText.kt` | Markdown 文本组件 |
+| `MainScreen.kt` | 主界面 |
+| `Theme.kt` | 主题配置 |
+| `Color.kt` | 颜色定义 |
+| `Type.kt` | 字体排版 |
 
 ## 已实现功能
 
@@ -115,6 +174,10 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 8. **全局异常处理** - 未捕获异常崩溃对话框 + 重启应用功能
 9. **错误消息传递** - 引擎层异常映射 + 服务到 UI 的错误状态传递
 10. **扩展错误码** - 15 种错误类型（含网络错误、通用错误）
+11. **系统通知** - heads-up 悬浮通知 + 全屏弹窗 Activity + TTS 错误即时提示
+12. **权限请求** - POST_NOTIFICATIONS + USE_FULL_SCREEN_INTENT 权限管理
+13. **UI 组件库** - EngineSelector、VoicePreview、ConfigEditor、ConfigBottomSheet、UpdateDialog、PermissionDialog、NetworkBlockedDialog
+14. **主题系统** - Material 3 Expressive 主题配置 + 颜色 + 字体排版
 
 ## 构建
 
