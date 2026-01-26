@@ -33,16 +33,6 @@ class SharedPreferencesAppConfigRepository(
         return sharedPreferences.contains(KEY_SELECTED_ENGINE)
     }
 
-    override fun isCompatibilityModeEnabled(): Boolean {
-        return sharedPreferences.getBoolean(KEY_COMPATIBILITY_MODE, true)
-    }
-
-    override fun setCompatibilityModeEnabled(enabled: Boolean) {
-        sharedPreferences.edit {
-            putBoolean(KEY_COMPATIBILITY_MODE, enabled)
-        }
-    }
-
     override fun hasSkippedNotificationPermission(): Boolean {
         return sharedPreferences.getBoolean(KEY_SKIPPED_NOTIFICATION_PERMISSION, false)
     }
@@ -56,7 +46,6 @@ class SharedPreferencesAppConfigRepository(
     companion object {
         private const val PREFS_NAME = "talkify_app_config"
         private const val KEY_SELECTED_ENGINE = "selected_engine"
-        private const val KEY_COMPATIBILITY_MODE = "compatibility_mode"
         private const val KEY_SKIPPED_NOTIFICATION_PERMISSION = "skipped_notification_permission"
     }
 }

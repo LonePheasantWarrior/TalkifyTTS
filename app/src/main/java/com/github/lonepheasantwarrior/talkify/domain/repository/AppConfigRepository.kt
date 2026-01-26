@@ -30,21 +30,6 @@ interface AppConfigRepository {
     fun hasSelectedEngine(): Boolean
 
     /**
-     * 获取兼容模式开关状态
-     *
-     * 用于适配不遵守谷歌 TTS 调用规范的阅读工具
-     * @return 是否开启兼容模式，默认返回 true（开启）
-     */
-    fun isCompatibilityModeEnabled(): Boolean
-
-    /**
-     * 保存兼容模式开关状态
-     *
-     * @param enabled 是否开启兼容模式
-     */
-    fun setCompatibilityModeEnabled(enabled: Boolean)
-
-    /**
      * 检查用户是否选择跳过通知权限请求
      *
      * 用于应用启动时判断是否需要显示通知权限请求弹窗

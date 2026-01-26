@@ -23,8 +23,6 @@ class TalkifyTtsDemoService(
         const val STATE_PLAYING = 1
         const val STATE_STOPPED = 2
         const val STATE_ERROR = 3
-
-        private const val PROGRESS_THRESHOLD_FOR_COMPLETION = 0.95f
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

@@ -285,7 +285,6 @@ fun MainScreen(
         currentEngine = currentEngine,
         configRepository = configRepository,
         voiceRepository = voiceRepository,
-        appConfigRepository = appConfigRepository,
         onConfigSaved = {
             savedConfig = configRepository.getConfig(currentEngine.id)
         }

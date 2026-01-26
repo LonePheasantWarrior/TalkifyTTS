@@ -49,7 +49,6 @@ private const val FOREGROUND_SERVICE_N_ID = 1001
  * @property currentEngine 当前活动的 TTS 引擎实例
  * @property currentEngineId 当前引擎的唯一标识符
  * @property currentConfig 当前引擎的配置信息
- * @property currentPlayer 兼容模式专用音频播放器实例
  */
 class TalkifyTtsService : TextToSpeechService() {
 
@@ -79,8 +78,6 @@ class TalkifyTtsService : TextToSpeechService() {
     private var currentEngineId: String? = null
 
     private var currentConfig: EngineConfig? = null
-
-    private var currentPlayer: CompatibilityModePlayer? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -717,12 +714,6 @@ class TalkifyTtsService : TextToSpeechService() {
         currentEngine = null
         currentConfig = null
         currentEngineId = null
-        try {
-            currentPlayer?.release()
-        } catch (e: Exception) {
-            TtsLogger.e("Error releasing player", e)
-        }
-        currentPlayer = null
         releaseWakeLock()
         stopForegroundService()
         super.onDestroy()
@@ -754,13 +745,6 @@ class TalkifyTtsService : TextToSpeechService() {
         } catch (e: Exception) {
             TtsLogger.e("Unexpected error during engine stop in onStop", e)
         }
-
-        try {
-            currentPlayer?.release()
-        } catch (e: Exception) {
-            TtsLogger.e("Error releasing player in onStop", e)
-        }
-        currentPlayer = null
 
         if (processingSemaphore.availablePermits() == 0) {
             processingSemaphore.release()
