@@ -598,7 +598,7 @@ class TalkifyTtsService : TextToSpeechService() {
         // 2. 映射表：将所有常见的三字母 ISO 639-2/3 代码映射到你的双字母标准上
         val normalizedCode = when (val code = lang.lowercase().trim()) {
             // 中文映射
-            "zho", "chi" -> "zh"
+            "zho", "chi", "zh_CN" -> "zh"
             // 英文映射
             "eng" -> "en"
             // 德语映射

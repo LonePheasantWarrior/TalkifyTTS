@@ -399,7 +399,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
     }
 
     override fun getSupportedLanguages(): Set<String> {
-        return setOf("zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru")
+        return setOf("zh", "zh_CN", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru")
     }
 
     override fun getDefaultLanguages(): Array<String> {
@@ -408,26 +408,14 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
     }
 
     override fun getSupportedVoices(): List<Voice> {
-        val local = Locale.forLanguageTag("zh")
-        logInfo("zh Local: lang [${local.language}]")
-
         val voices = mutableListOf<Voice>()
-
-        val features = HashSet<String>()
-        features.add(TextToSpeech.Engine.KEY_FEATURE_NETWORK_SYNTHESIS)
 
         for (langCode in getSupportedLanguages()) {
             for (engineVoice in AudioParameters.Voice.entries) {
-                val locale = when(langCode) {
-                    "zh" -> Locale.CHINA
-                    "en" -> Locale.US
-                    else -> Locale.forLanguageTag(langCode)
-                }
-
                 voices.add(
                     Voice(
                         engineVoice.value,
-                        locale,
+                        Locale.forLanguageTag(langCode),
                         Voice.QUALITY_NORMAL,
                         Voice.LATENCY_NORMAL,
                         true,

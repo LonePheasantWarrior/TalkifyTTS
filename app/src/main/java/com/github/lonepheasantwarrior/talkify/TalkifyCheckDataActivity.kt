@@ -10,7 +10,7 @@ class TalkifyCheckDataActivity: Activity() {
         super.onCreate(savedInstanceState)
 
         val languages = arrayListOf(
-            "zho-CHN", "eng-USA", "deu-DEU", "ita-ITA",
+            "zh-CN", "zho-CHN", "eng-USA", "deu-DEU", "ita-ITA",
             "por-PRT", "spa-ESP", "jpn-JPN", "kor-KOR",
             "fra-FRA", "rus-RUS"
         )
