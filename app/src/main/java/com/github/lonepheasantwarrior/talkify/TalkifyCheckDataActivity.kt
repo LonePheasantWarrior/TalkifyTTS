@@ -13,7 +13,7 @@ class TalkifyCheckDataActivity : Activity() {
 
         //支持的语言
         val supportedLanguages = arrayListOf(
-            "zh-CN","zho-CHN", "eng-USA", "deu-DEU", "ita-ITA",
+            "zho-CHN", "zho-HKG", "zho-TWN", "eng-USA", "deu-DEU", "ita-ITA",
             "por-PRT", "spa-ESP", "jpn-JPN", "kor-KOR",
             "fra-FRA", "rus-RUS"
         )
