@@ -26,9 +26,10 @@
 
 ```
 app/src/main/java/com/github/lonepheasantwarrior/talkify/
-├── MainActivity.kt              # 应用入口
+├── MainActivity.kt              # 应用入口，Compose UI 启动点
 ├── TalkifyApplication.kt        # Application 类（全局异常处理初始化 + 通知通道预创建）
 ├── TalkifyCheckDataActivity.kt  # TTS 数据检查 Activity（系统 TTS 集成）
+├── TalkifyDownloadVoiceData.kt  # 语音数据下载 Activity
 ├── TalkifySampleTextActivity.kt # 采样文本 Activity（系统 TTS 集成）
 ├── GlobalException.kt           # 全局异常处理器和应用上下文持有者
 ├── domain/                      # 领域层（业务逻辑核心）
@@ -103,6 +104,7 @@ app/src/main/java/com/github/lonepheasantwarrior/talkify/
 | `MainActivity.kt` | 应用入口，Compose UI 启动点 |
 | `TalkifyApplication.kt` | Application 类（全局异常处理初始化 + 通知通道预创建） |
 | `TalkifyCheckDataActivity.kt` | TTS 数据检查 Activity（系统 TTS 集成） |
+| `TalkifyDownloadVoiceData.kt` | 语音数据下载 Activity |
 | `TalkifySampleTextActivity.kt` | 采样文本 Activity（系统 TTS 集成） |
 | `GlobalException.kt` | 全局异常处理器和应用上下文持有者 |
 | **domain/** | |
