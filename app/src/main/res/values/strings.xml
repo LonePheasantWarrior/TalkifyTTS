@@ -3,7 +3,6 @@
     <string name="app_name">Talkify</string>
 
     <!-- 通用 -->
-    <string name="settings">设置</string>
     <string name="save">保存</string>
     <string name="cancel">取消</string>
     <string name="confirm">确认</string>

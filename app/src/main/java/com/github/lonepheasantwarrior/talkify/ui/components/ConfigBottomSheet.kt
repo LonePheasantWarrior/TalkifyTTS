@@ -145,20 +145,6 @@ fun ConfigBottomSheet(
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 32.dp)
             ) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = stringResource(R.string.settings),
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-
-                HorizontalDivider()
-
                 Spacer(modifier = Modifier.height(16.dp))
 
                 if (isVoicesLoading) {
