@@ -408,8 +408,8 @@ class SeedTts2Engine : AbstractTtsEngine() {
                 put("text", text)
                 put("speaker", voiceId)
                 put("audio_params", JSONObject().apply {
-                    put("format", "mp3")
-                    put("sample_rate", 24000)
+                    put("format", audioConfig.getVolcEngineFormat())
+                    put("sample_rate", audioConfig.sampleRate)
                     put("speech_rate", speechRate)
                     put("loudness_rate", loudnessRate)
                 })
@@ -477,6 +477,18 @@ class SeedTts2Engine : AbstractTtsEngine() {
             }
         } catch (e: Exception) {
             TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED)
+        }
+    }
+
+    /**
+     * 将 AudioConfig 的音频格式转换为火山引擎 API 格式字符串
+     */
+    private fun AudioConfig.getVolcEngineFormat(): String {
+        return when (this.audioFormat) {
+            android.media.AudioFormat.ENCODING_PCM_16BIT -> "pcm"
+            android.media.AudioFormat.ENCODING_PCM_8BIT -> "pcm"
+            android.media.AudioFormat.ENCODING_PCM_FLOAT -> "pcm"
+            else -> "pcm"
         }
     }
 
