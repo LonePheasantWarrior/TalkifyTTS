@@ -67,5 +67,6 @@ dependencies {
     implementation(libs.dashscope.sdk)
 
     // OkHttp 用于火山引擎 HTTP 流式 API，支持连接复用
+    // 版本与 DashScope SDK 内置 OkHttp 保持一致（4.12.0）
     implementation(libs.okhttp)
 }
