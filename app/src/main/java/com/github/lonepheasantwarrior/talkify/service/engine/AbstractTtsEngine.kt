@@ -46,4 +46,12 @@ abstract class AbstractTtsEngine : TtsEngineApi {
     protected fun logError(message: String, throwable: Throwable? = null) {
         TtsLogger.e("$tag: $message", throwable)
     }
+
+    /**
+     * 检查文本是否包含可朗读的文字内容
+     * @return true 如果文本中至少包含一个文字字符（任意语言）
+     */
+    protected fun containsReadableText(text: String): Boolean {
+        return text.any { Character.isLetter(it.code) }
+    }
 }

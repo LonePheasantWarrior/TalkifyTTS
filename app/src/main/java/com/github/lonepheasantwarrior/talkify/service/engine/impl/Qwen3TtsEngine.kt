@@ -94,9 +94,11 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
         val textChunks = splitTextIntoChunks(text, MAX_TEXT_LENGTH)
         if (textChunks.isEmpty()) {
-            listener.onError("文本为空")
+            logWarning("待朗读文本内容为空")
+            listener.onSynthesisCompleted()
             return
         }
+
 
         logInfo("Starting streaming synthesis: textLength=${text.length}, chunks=${textChunks.size}, pitch=${params.pitch}, speechRate=${params.speechRate}")
         logDebug("Audio config: ${audioConfig.getFormatDescription()}")

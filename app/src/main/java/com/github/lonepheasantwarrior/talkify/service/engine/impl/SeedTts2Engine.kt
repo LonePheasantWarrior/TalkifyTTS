@@ -142,7 +142,14 @@ class SeedTts2Engine : AbstractTtsEngine() {
         }
 
         if (text.isEmpty()) {
-            listener.onError("文本为空")
+            logWarning("待朗读文本内容为空")
+            listener.onSynthesisCompleted()
+            return
+        }
+
+        if (!containsReadableText(text)) {
+            logWarning("文本不包含可朗读的文字内容")
+            listener.onSynthesisCompleted()
             return
         }
 
