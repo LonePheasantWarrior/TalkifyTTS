@@ -55,8 +55,10 @@ class SeedTts2Engine : AbstractTtsEngine() {
         // 文本分块配置
         private const val MAX_TEXT_LENGTH = 300
 
-        // OkHttp 连接池配置（复用连接，keep-alive 1分钟）
-        private val connectionPool = ConnectionPool(5, 1, TimeUnit.MINUTES)
+        // OkHttp 连接池配置（复用连接，空闲超时 45 秒）
+        // 火山服务端 keep-alive 为 1 分钟，客户端设置为略小于服务端的值
+        // 避免在刚好 1 分钟时服务端关闭连接而客户端仍尝试复用
+        private val connectionPool = ConnectionPool(5, 45, TimeUnit.SECONDS)
 
         // 共享的 OkHttpClient 实例（支持连接复用）
         private val sharedClient: OkHttpClient by lazy {
