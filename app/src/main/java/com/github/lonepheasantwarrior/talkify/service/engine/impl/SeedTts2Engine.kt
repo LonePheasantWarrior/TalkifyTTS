@@ -317,19 +317,15 @@ class SeedTts2Engine : AbstractTtsEngine() {
                                         if (!chunkStarted && isFirstChunk) {
                                             chunkStarted = true
                                             isFirstChunk = false
-                                            withContext(Dispatchers.Main) {
-                                                listener.onSynthesisStarted()
-                                            }
+                                            listener.onSynthesisStarted()
                                         }
 
-                                        withContext(Dispatchers.Main) {
-                                            listener.onAudioAvailable(
-                                                audioData,
-                                                audioConfig.sampleRate,
-                                                audioConfig.audioFormat,
-                                                audioConfig.channelCount
-                                            )
-                                        }
+                                        listener.onAudioAvailable(
+                                            audioData,
+                                            audioConfig.sampleRate,
+                                            audioConfig.audioFormat,
+                                            audioConfig.channelCount
+                                        )
                                         logDebug("Received audio data: ${audioData.size} bytes")
                                     }
                                 }
