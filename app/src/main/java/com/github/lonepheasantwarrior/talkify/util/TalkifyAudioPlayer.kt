@@ -50,7 +50,7 @@ class TalkifyAudioPlayer(
     private var playbackCompleteListener: (() -> Unit)? = null
 
     fun configureAudioAttributes(
-        usage: Int = AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY,
+        usage: Int = AudioAttributes.USAGE_MEDIA,
         contentType: Int = AudioAttributes.CONTENT_TYPE_SPEECH,
         flags: Int = AudioAttributes.FLAG_AUDIBILITY_ENFORCED
     ): AudioAttributes {
