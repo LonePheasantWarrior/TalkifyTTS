@@ -65,4 +65,7 @@ dependencies {
 
     // 阿里云百炼官方 DashScope SDK，用于通义千问3语音合成引擎
     implementation(libs.dashscope.sdk)
+
+    // OkHttp 用于火山引擎 HTTP 流式 API，支持连接复用
+    implementation(libs.okhttp)
 }

@@ -25,8 +25,7 @@ class SeedTts2ConfigRepository(
     override fun getConfig(engineId: String): BaseEngineConfig {
         val prefsKey = getPrefsKey(engineId)
         return SeedTts2Config(
-            appId = sharedPreferences.getString("${prefsKey}_$KEY_APP_ID", "") ?: "",
-            accessKey = sharedPreferences.getString("${prefsKey}_$KEY_ACCESS_KEY", "") ?: "",
+            apiKey = sharedPreferences.getString("${prefsKey}_$KEY_API_KEY", "") ?: "",
             voiceId = sharedPreferences.getString("${prefsKey}_$KEY_VOICE_ID", "") ?: ""
         )
     }
@@ -35,16 +34,14 @@ class SeedTts2ConfigRepository(
         val prefsKey = getPrefsKey(engineId)
         val seedConfig = config as? SeedTts2Config ?: return
         sharedPreferences.edit()
-            .putString("${prefsKey}_$KEY_APP_ID", seedConfig.appId)
-            .putString("${prefsKey}_$KEY_ACCESS_KEY", seedConfig.accessKey)
+            .putString("${prefsKey}_$KEY_API_KEY", seedConfig.apiKey)
             .putString("${prefsKey}_$KEY_VOICE_ID", seedConfig.voiceId)
             .apply()
     }
 
     override fun hasConfig(engineId: String): Boolean {
         val prefsKey = getPrefsKey(engineId)
-        return sharedPreferences.contains("${prefsKey}_$KEY_APP_ID") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_ACCESS_KEY") ||
+        return sharedPreferences.contains("${prefsKey}_$KEY_API_KEY") ||
                 sharedPreferences.contains("${prefsKey}_$KEY_VOICE_ID")
     }
 
@@ -54,8 +51,7 @@ class SeedTts2ConfigRepository(
 
     companion object {
         private const val PREFS_NAME = "talkify_engine_configs"
-        private const val KEY_APP_ID = "app_id"
-        private const val KEY_ACCESS_KEY = "access_key"
+        private const val KEY_API_KEY = "api_key"
         private const val KEY_VOICE_ID = "voice_id"
     }
 }

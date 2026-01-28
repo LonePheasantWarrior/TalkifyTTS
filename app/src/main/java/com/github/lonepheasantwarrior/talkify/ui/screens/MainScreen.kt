@@ -276,7 +276,7 @@ fun MainScreen(
                             // 检查配置是否有效
                             val isConfigured = when (config) {
                                 is Qwen3TtsConfig -> config.apiKey.isNotBlank()
-                                is SeedTts2Config -> config.appId.isNotBlank() && config.accessKey.isNotBlank()
+                                is SeedTts2Config -> config.apiKey.isNotBlank()
                                 else -> false
                             }
 

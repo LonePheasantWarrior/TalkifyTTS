@@ -221,24 +221,13 @@ private fun buildConfigItems(
             }
         }
         is SeedTts2Config -> {
-            val appIdLabel = getLabel("app_id")
-            if (appIdLabel != null) {
+            val apiKeyLabel = getLabel("api_key")
+            if (apiKeyLabel != null) {
                 items.add(
                     ConfigItem(
-                        key = "app_id",
-                        label = appIdLabel,
-                        value = config.appId,
-                        isPassword = false
-                    )
-                )
-            }
-            val accessKeyLabel = getLabel("access_key")
-            if (accessKeyLabel != null) {
-                items.add(
-                    ConfigItem(
-                        key = "access_key",
-                        label = accessKeyLabel,
-                        value = config.accessKey,
+                        key = "api_key",
+                        label = apiKeyLabel,
+                        value = config.apiKey,
                         isPassword = true
                     )
                 )
@@ -276,11 +265,9 @@ private fun buildConfigFromItems(
             )
         }
         is SeedTts2Config -> {
-            val appId = items.find { it.key == "app_id" }?.value ?: ""
-            val accessKey = items.find { it.key == "access_key" }?.value ?: ""
+            val apiKey = items.find { it.key == "api_key" }?.value ?: ""
             SeedTts2Config(
-                appId = appId,
-                accessKey = accessKey,
+                apiKey = apiKey,
                 voiceId = voiceId
             )
         }
