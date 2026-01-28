@@ -63,6 +63,8 @@
     <string name="tts_error_unknown">发生未知错误</string>
     <string name="tts_error_not_implemented">该引擎功能尚未实现</string>
     <string name="tts_config_suggestion">请前往应用设置页面配置 API Key</string>
+    <string name="tts_error_init_failed">应用初始化失败，请重启应用</string>
+    <string name="tts_error_foreground_service_failed">启动朗读服务失败，语音合成可能受限</string>
 
     <!-- 内容描述（辅助功能） -->
     <string name="cd_play_button">播放语音</string>
@@ -105,6 +107,7 @@
     <string name="crash_dialog_message">很抱歉，应用发生了意外错误。\n\n错误信息：\n%1$s\n\n请选择操作：</string>
     <string name="crash_dialog_restart">重启应用</string>
     <string name="crash_dialog_report">关闭</string>
+    <string name="crash_notification_message">Talkify 发生错误，请点击查看详情</string>
 
     <!-- 前台服务通知 -->
     <string name="notification_channel_name">朗读服务</string>

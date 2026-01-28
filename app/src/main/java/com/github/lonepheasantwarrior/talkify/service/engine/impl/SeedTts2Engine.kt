@@ -390,11 +390,9 @@ class SeedTts2Engine : AbstractTtsEngine() {
             voiceIds.firstOrNull() ?: "zh_female_vv_uranus_bigtts"
         }
 
-        // 转换语速：Android [0.0, 2.0] -> 火山 [-50, 100]
         val speechRate = convertSpeechRate(params.speechRate)
         logDebug("ttsSpeechRate: ${params.speechRate}, seedSpeechRate: $speechRate")
 
-        // 转换音量：Android [0.0, 1.0] -> 火山 [-50, 100]
         val loudnessRate = convertLoudnessRate(params.volume)
         logDebug("ttsLoudnessRate: ${params.volume}, seedLoudnessRate: $loudnessRate")
 
@@ -519,7 +517,6 @@ class SeedTts2Engine : AbstractTtsEngine() {
 
     /**
      * 转换音量参数
-     * Android: [0.0, 1.0]，1.0 为默认值（与 speechRate/pitch 不同！）
      * 火山: [-50, 100]，0 为默认值
      *
      * 注意：SynthesisRequest.getVolume() 返回的是 [0.0, 1.0] 的浮点数

@@ -169,6 +169,7 @@ class TalkifyTtsService : TextToSpeechService() {
                     TtsLogger.w("Cannot start foreground service from background, continuing without foreground status")
                 } else {
                     TtsLogger.w("Failed to start foreground service: ${e.message}")
+                    TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_foreground_service_failed))
                 }
                 // 标记为未运行前台服务，但允许继续执行 TTS 合成
                 isForegroundServiceRunning = false
@@ -275,6 +276,7 @@ class TalkifyTtsService : TextToSpeechService() {
             TtsLogger.i("Repositories initialized successfully")
         } catch (e: Exception) {
             TtsLogger.e("Failed to initialize repositories", e)
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_init_failed))
         }
     }
 
@@ -359,6 +361,7 @@ class TalkifyTtsService : TextToSpeechService() {
 
             if (currentEngine == null) {
                 TtsLogger.e("Failed to create engine: $engineId")
+                TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_engine_init_failed))
                 return false
             }
         }
@@ -366,6 +369,7 @@ class TalkifyTtsService : TextToSpeechService() {
         val ttsEngine = TtsEngineRegistry.getEngine(engineId)
         if (ttsEngine == null) {
             TtsLogger.e("Engine not found in registry: $engineId")
+            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_engine_not_found))
             return false
         }
 

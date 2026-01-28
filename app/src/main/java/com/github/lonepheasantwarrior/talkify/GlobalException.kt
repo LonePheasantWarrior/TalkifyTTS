@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Process
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
 object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
@@ -23,6 +24,11 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
 
         val context = TalkifyAppHolder.getContext()
         if (context != null) {
+            // 发送崩溃通知，提示用户应用发生错误
+            TalkifyNotificationHelper.sendSystemNotification(
+                context,
+                context.getString(R.string.crash_notification_message)
+            )
             showCrashDialog(context, throwable)
         }
 
