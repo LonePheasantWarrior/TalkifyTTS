@@ -104,13 +104,12 @@ class StartupViewModel(application: Application) : AndroidViewModel(application)
         TtsLogger.d(TAG) { "Step 2: Checking Notification Permission..." }
 
         val hasPermission = PermissionChecker.hasNotificationPermission(context)
-        val hasSkipped = appConfigRepository.hasSkippedNotificationPermission()
 
-        if (!hasPermission && !hasSkipped) {
+        if (!hasPermission) {
             TtsLogger.i(TAG) { "Need to request notification permission." }
             _uiState.value = StartupState.RequestingNotification
         } else {
-            TtsLogger.i(TAG) { "Notification permission check passed (Granted or Skipped)." }
+            TtsLogger.i(TAG) { "Notification permission check passed (Granted)." }
             checkBatteryStep()
         }
     }
@@ -178,7 +177,7 @@ class StartupViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onSkipNotificationPermission() {
-        appConfigRepository.setSkippedNotificationPermission(true)
+        // 用户点击"以后再说"，不保存跳过状态，下次启动继续检查
         checkBatteryStep()
     }
 

@@ -33,19 +33,8 @@ class SharedPreferencesAppConfigRepository(
         return sharedPreferences.contains(KEY_SELECTED_ENGINE)
     }
 
-    override fun hasSkippedNotificationPermission(): Boolean {
-        return sharedPreferences.getBoolean(KEY_SKIPPED_NOTIFICATION_PERMISSION, false)
-    }
-
-    override fun setSkippedNotificationPermission(skipped: Boolean) {
-        sharedPreferences.edit {
-            putBoolean(KEY_SKIPPED_NOTIFICATION_PERMISSION, skipped)
-        }
-    }
-
     companion object {
         private const val PREFS_NAME = "talkify_app_config"
         private const val KEY_SELECTED_ENGINE = "selected_engine"
-        private const val KEY_SKIPPED_NOTIFICATION_PERMISSION = "skipped_notification_permission"
     }
 }

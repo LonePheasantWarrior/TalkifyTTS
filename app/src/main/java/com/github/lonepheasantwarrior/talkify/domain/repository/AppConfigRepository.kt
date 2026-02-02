@@ -28,19 +28,4 @@ interface AppConfigRepository {
      * @return 是否已选择过引擎
      */
     fun hasSelectedEngine(): Boolean
-
-    /**
-     * 检查用户是否选择跳过通知权限请求
-     *
-     * 用于应用启动时判断是否需要显示通知权限请求弹窗
-     * @return 是否已选择跳过通知权限请求
-     */
-    fun hasSkippedNotificationPermission(): Boolean
-
-    /**
-     * 保存用户对通知权限请求的选择
-     *
-     * @param skipped true 表示用户选择"以后再说"，不再弹窗请求
-     */
-    fun setSkippedNotificationPermission(skipped: Boolean)
 }
