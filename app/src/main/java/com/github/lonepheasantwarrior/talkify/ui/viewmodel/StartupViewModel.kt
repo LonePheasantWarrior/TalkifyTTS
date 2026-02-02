@@ -58,6 +58,9 @@ class StartupViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow<StartupState>(StartupState.CheckingNetwork)
     val uiState: StateFlow<StartupState> = _uiState.asStateFlow()
 
+    private val _isConfigSheetOpen = MutableStateFlow(false)
+    val isConfigSheetOpen: StateFlow<Boolean> = _isConfigSheetOpen.asStateFlow()
+
     init {
         // ViewModel 初始化时自动开始检查流程
         startStartupSequence()
@@ -71,6 +74,14 @@ class StartupViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             checkNetworkStep()
         }
+    }
+
+    fun openConfigSheet() {
+        _isConfigSheetOpen.value = true
+    }
+
+    fun closeConfigSheet() {
+        _isConfigSheetOpen.value = false
     }
 
     // --- 步骤 1: 网络检查 ---

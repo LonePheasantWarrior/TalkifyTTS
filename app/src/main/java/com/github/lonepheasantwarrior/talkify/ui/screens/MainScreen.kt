@@ -185,7 +185,7 @@ fun MainScreen(
         sampleTexts.random()
     }
     var inputText by remember { mutableStateOf(defaultInputText) }
-    var isConfigSheetOpen by remember { mutableStateOf(false) }
+    val isConfigSheetOpen by viewModel.isConfigSheetOpen.collectAsState()
 
     var savedConfig by remember(currentEngine.id) {
         mutableStateOf(getConfigRepository(currentEngine.id).getConfig(currentEngine.id))
@@ -208,7 +208,7 @@ fun MainScreen(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { isConfigSheetOpen = true },
+                onClick = { viewModel.openConfigSheet() },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
@@ -347,7 +347,7 @@ fun MainScreen(
                                     scope.launch {
                                         snackbarHostState.showSnackbar("请先完成引擎配置")
                                     }
-                                    isConfigSheetOpen = true
+                                    viewModel.openConfigSheet()
                                     return@VoicePreview
                                 }
 
@@ -376,7 +376,7 @@ fun MainScreen(
 
     ConfigBottomSheet(
         isOpen = isConfigSheetOpen,
-        onDismiss = { },
+        onDismiss = { viewModel.closeConfigSheet() },
         currentEngine = currentEngine,
         configRepository = getConfigRepository(currentEngine.id),
         voiceRepository = getVoiceRepository(currentEngine.id),
