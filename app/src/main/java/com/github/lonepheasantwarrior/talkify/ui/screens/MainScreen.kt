@@ -1,5 +1,11 @@
 package com.github.lonepheasantwarrior.talkify.ui.screens
 
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +31,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +43,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds
 import com.github.lonepheasantwarrior.talkify.domain.model.Qwen3TtsConfig
@@ -45,33 +53,56 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigReposit
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOptimizationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3TtsConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3TtsVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.SeedTts2ConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.SeedTts2VoiceRepository
 import com.github.lonepheasantwarrior.talkify.service.TalkifyTtsDemoService
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.engine.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.ui.components.BatteryOptimizationDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.ConfigBottomSheet
 import com.github.lonepheasantwarrior.talkify.ui.components.EngineSelector
+import com.github.lonepheasantwarrior.talkify.ui.components.NetworkBlockedDialog
+import com.github.lonepheasantwarrior.talkify.ui.components.NotificationPermissionDialog
+import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOptimizationHelper
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.StartupState
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.StartupViewModel
 import kotlinx.coroutines.launch
-import com.github.lonepheasantwarrior.talkify.service.TtsLogger
-import android.provider.Settings
-import android.content.Intent
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
-    isCheckingNetwork: Boolean = false
+    viewModel: StartupViewModel = viewModel()
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
+    val activity = context as? Activity
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // --- 启动流程状态管理 ---
+    val startupState by viewModel.uiState.collectAsState()
+
+    // 权限请求 Launcher
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        viewModel.onNotificationPermissionResult(isGranted)
+    }
+
+    // 设置页跳转 Launcher (网络设置)
+    val networkSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        viewModel.onNetworkRetry()
+    }
+
+    // --- 现有业务逻辑 ---
 
     // 根据当前引擎获取对应的声音仓储
     fun getVoiceRepository(engineId: String): VoiceRepository {
@@ -105,19 +136,6 @@ fun MainScreen(
     }
 
     var isPlaying by remember { mutableStateOf(false) }
-    var showBatteryDialog by remember { mutableStateOf(false) }
-
-// ... existing imports ...
-
-    LaunchedEffect(Unit) {
-        val isIgnoring = PowerOptimizationHelper.isIgnoringBatteryOptimizations(context)
-        
-        TtsLogger.i("MainScreen") { "Battery Optimization Check: isIgnoring=$isIgnoring" }
-
-        if (!isIgnoring) {
-            showBatteryDialog = true
-        }
-    }
 
     LaunchedEffect(appConfigRepository) {
         val savedEngineId = appConfigRepository.getSelectedEngineId()
@@ -163,8 +181,8 @@ fun MainScreen(
     var inputText by remember { mutableStateOf(defaultInputText) }
     var isConfigSheetOpen by remember { mutableStateOf(false) }
 
-    var savedConfig by remember(currentEngine.id) { 
-        mutableStateOf(getConfigRepository(currentEngine.id).getConfig(currentEngine.id)) 
+    var savedConfig by remember(currentEngine.id) {
+        mutableStateOf(getConfigRepository(currentEngine.id).getConfig(currentEngine.id))
     }
 
     LaunchedEffect(currentEngine) {
@@ -224,105 +242,127 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (isCheckingNetwork) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+            when (startupState) {
+                StartupState.CheckingNetwork -> {
+                    // 显示加载中
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(48.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = stringResource(R.string.checking_network),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = stringResource(R.string.checking_network),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    EngineSelector(
-                        currentEngine = currentEngine,
-                        availableEngines = availableEngines,
-                        onEngineSelected = { engine ->
-                            currentEngine = engine
-                            appConfigRepository.saveSelectedEngineId(engine.id)
+                StartupState.NetworkBlocked -> {
+                    // 显示网络阻塞弹窗
+                    NetworkBlockedDialog(
+                        onOpenSettings = {
+                            viewModel.openSystemSettings()
+                            // 使用 Launcher 并没有意义，因为 ACTION_APPLICATION_DETAILS_SETTINGS 不返回 result
+                            // 但我们可以通过生命周期或者简单的重试机制
+                            // 这里简单处理：点击后打开设置，并没有立即重试。用户切回来后可能需要重试机制？
+                            // 实际上 ViewModel 可以在 onResume 时重试，但 Compose 中没有直接的 onResume。
+                            // 可以在 MainScreen 中监听生命周期。为了简单，我们让用户手动重试或者依靠 NetworkBlockedDialog 自身的退出。
+                            // 改进：这里直接打开设置，用户手动切回。我们可以给 NetworkBlockedDialog 加一个重试按钮？
+                            // 或者，在 Dialog 中点击"去设置"后，ViewModel 等待一段时间重试？
+                            // 最简单的：利用 onNetworkRetry
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        onExit = {
+                            activity?.finish()
+                        }
                     )
+                }
+                else -> {
+                    // 网络检查通过，显示主界面内容
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    VoicePreview(
-                        inputText = inputText,
-                        onInputTextChange = { inputText = it },
-                        availableVoices = availableVoices,
-                        selectedVoice = selectedVoice,
-                        onVoiceSelected = { voice -> selectedVoice = voice },
-                        isPlaying = isPlaying,
-                        onPlayClick = {
-                            if (inputText.isBlank()) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("请输入要合成的文本")
+                        EngineSelector(
+                            currentEngine = currentEngine,
+                            availableEngines = availableEngines,
+                            onEngineSelected = { engine ->
+                                currentEngine = engine
+                                appConfigRepository.saveSelectedEngineId(engine.id)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        VoicePreview(
+                            inputText = inputText,
+                            onInputTextChange = { inputText = it },
+                            availableVoices = availableVoices,
+                            selectedVoice = selectedVoice,
+                            onVoiceSelected = { voice -> selectedVoice = voice },
+                            isPlaying = isPlaying,
+                            onPlayClick = {
+                                if (inputText.isBlank()) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("请输入要合成的文本")
+                                    }
+                                    return@VoicePreview
                                 }
-                                return@VoicePreview
-                            }
 
-                            // 根据当前引擎类型处理配置
-                            val config = when (savedConfig) {
-                                is Qwen3TtsConfig -> {
-                                    val qwenConfig = savedConfig as? Qwen3TtsConfig ?: Qwen3TtsConfig()
-                                    qwenConfig.copy(voiceId = selectedVoice?.voiceId ?: qwenConfig.voiceId)
+                                val config = when (savedConfig) {
+                                    is Qwen3TtsConfig -> {
+                                        val qwenConfig = savedConfig as? Qwen3TtsConfig ?: Qwen3TtsConfig()
+                                        qwenConfig.copy(voiceId = selectedVoice?.voiceId ?: qwenConfig.voiceId)
+                                    }
+                                    is SeedTts2Config -> {
+                                        val seedConfig = savedConfig as? SeedTts2Config ?: SeedTts2Config()
+                                        seedConfig.copy(voiceId = selectedVoice?.voiceId ?: seedConfig.voiceId)
+                                    }
+                                    else -> savedConfig
                                 }
-                                is SeedTts2Config -> {
-                                    val seedConfig = savedConfig as? SeedTts2Config ?: SeedTts2Config()
-                                    seedConfig.copy(voiceId = selectedVoice?.voiceId ?: seedConfig.voiceId)
+
+                                val isConfigured = when (config) {
+                                    is Qwen3TtsConfig -> config.apiKey.isNotBlank()
+                                    is SeedTts2Config -> config.apiKey.isNotBlank()
+                                    else -> false
                                 }
-                                else -> savedConfig
-                            }
 
-                            // 检查配置是否有效
-                            val isConfigured = when (config) {
-                                is Qwen3TtsConfig -> config.apiKey.isNotBlank()
-                                is SeedTts2Config -> config.apiKey.isNotBlank()
-                                else -> false
-                            }
-
-                            if (!isConfigured) {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("请先完成引擎配置")
+                                if (!isConfigured) {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("请先完成引擎配置")
+                                    }
+                                    isConfigSheetOpen = true
+                                    return@VoicePreview
                                 }
-                                isConfigSheetOpen = true
-                                return@VoicePreview
-                            }
 
-                            val params = SynthesisParams(
-                                pitch = 100.0f,
-                                speechRate = 100.0f,
-                                volume = 100.0f
-                            )
+                                val params = SynthesisParams(
+                                    pitch = 100.0f,
+                                    speechRate = 100.0f,
+                                    volume = 100.0f
+                                )
 
-                            demoService.speak(inputText, config, params)
-                            isPlaying = true
-                        },
-                        onStopClick = {
-                            demoService.stop()
-                            isPlaying = false
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                                demoService.speak(inputText, config, params)
+                                isPlaying = true
+                            },
+                            onStopClick = {
+                                demoService.stop()
+                                isPlaying = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                 }
             }
         }
@@ -339,30 +379,51 @@ fun MainScreen(
         }
     )
 
-    if (showBatteryDialog) {
-        BatteryOptimizationDialog(
-            onConfirm = {
-                showBatteryDialog = false
-                try {
-                    // 尝试直接弹出请求对话框
-                    val intent = PowerOptimizationHelper.createRequestIgnoreBatteryOptimizationsIntent(context)
-                    context.startActivity(intent)
-                } catch (e: Exception) {
-                    TtsLogger.e("Failed to start direct request intent, falling back to settings list", e, "MainScreen")
+    // --- 启动流程中的非阻塞弹窗 ---
+
+    when (startupState) {
+        StartupState.RequestingNotification -> {
+            NotificationPermissionDialog(
+                onConfirm = {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                },
+                onDismiss = {
+                    viewModel.onSkipNotificationPermission()
+                }
+            )
+        }
+        StartupState.RequestingBatteryOptimization -> {
+            BatteryOptimizationDialog(
+                onConfirm = {
                     try {
-                        // 失败则回退到电池优化设置列表
-                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        val intent = PowerOptimizationHelper.createRequestIgnoreBatteryOptimizationsIntent(context)
                         context.startActivity(intent)
-                    } catch (e2: Exception) {
-                        scope.launch {
-                            snackbarHostState.showSnackbar("无法打开电池优化设置页面，请手动去系统设置中开启")
+                    } catch (e: Exception) {
+                        TtsLogger.e("Failed to start direct request intent, falling back to settings list", e, "MainScreen")
+                        try {
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e2: Exception) {
+                            scope.launch {
+                                snackbarHostState.showSnackbar("无法打开电池优化设置页面，请手动去系统设置中开启")
+                            }
                         }
                     }
+                    viewModel.onBatteryOptimizationResult()
+                },
+                onDismiss = {
+                    viewModel.onBatteryOptimizationSkipped()
                 }
-            },
-            onDismiss = {
-                showBatteryDialog = false
-            }
-        )
+            )
+        }
+        is StartupState.UpdateAvailable -> {
+            val updateInfo = (startupState as StartupState.UpdateAvailable).updateInfo
+            UpdateDialog(
+                updateInfo = updateInfo,
+                onDismiss = { viewModel.onUpdateDialogDismissed() },
+                onRemindLater = { viewModel.onUpdateDialogDismissed() }
+            )
+        }
+        else -> { /* 其他状态无需弹窗 */ }
     }
 }

@@ -3,7 +3,7 @@ package com.github.lonepheasantwarrior.talkify.ui.components
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -17,27 +17,22 @@ import androidx.compose.ui.text.style.TextAlign
 import com.github.lonepheasantwarrior.talkify.R
 
 /**
- * 网络访问被阻止弹窗组件
+ * 网络阻塞弹窗组件
  *
- * 提示用户网络访问被系统设置阻止
- * 引导用户前往系统设置开启"允许网络访问"
- *
- * @param onConfirm 确认回调（打开系统设置）
- * @param onDismiss 取消回调（退出应用）
- * @param modifier 修饰符
+ * 当应用无网络连接时显示，引导用户去设置或退出
  */
 @Composable
 fun NetworkBlockedDialog(
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onExit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {}, // 不允许点击外部关闭，必须做出选择
         modifier = modifier,
         icon = {
             Icon(
-                imageVector = Icons.Filled.Warning,
+                imageVector = Icons.Filled.WifiOff,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.error
             )
@@ -64,7 +59,7 @@ fun NetworkBlockedDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = onConfirm
+                onClick = onOpenSettings
             ) {
                 Text(
                     text = stringResource(R.string.network_open_settings),
@@ -74,11 +69,12 @@ fun NetworkBlockedDialog(
         },
         dismissButton = {
             TextButton(
-                onClick = onDismiss
+                onClick = onExit
             ) {
                 Text(
                     text = stringResource(R.string.permission_exit),
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.error
                 )
             }
         }

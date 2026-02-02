@@ -58,7 +58,7 @@ fun NotificationPermissionDialog(
                     text = stringResource(R.string.notification_permission_message),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Start
                 )
             }
         },
