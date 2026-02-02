@@ -1,8 +1,9 @@
-<img src="doc/images/Screenshot_talkify.webp" align="right" width="25%" alt="Talkify Screenshot" style="margin-left: 20px; margin-bottom: 20px; border-radius: 8px;" />
+<!-- Mascot on the Right (Float) -->
+<img src="doc/images/Screenshot_talkify.webp" align="right" width="25%" alt="Talkify Screenshot" style="margin-left: 20px; margin-bottom: 20px; border-radius: 8px;">
 
 # Talkify
 
-### 🤖 云端大模型驱动的 Android TTS 引擎
+#### 云端大模型驱动的 Android TTS 引擎
 
 Talkify 是一款基于 Android 的现代化 TTS 连接器。它不生产语音，而是作为桥梁，将云端顶尖大模型（通义千问、豆包）的高质量拟人语音合成能力，通过 Android 标准 Text-to-Speech 接口赋予您的系统和阅读软件。
 
@@ -68,6 +69,7 @@ cd Talkify
 Talkify 作为一个 TTS 引擎，最佳的使用场景是搭配优秀的电子书阅读器：
 *   [Legado / 开源阅读](https://github.com/gedoor/legado)
 *   [Moon+ Reader / 静读天下](https://play.google.com/store/apps/details?id=com.flyersoft.moonreader)
+*   [Google Play Books / Google Play 图书](https://play.google.com/store/apps/details?id=com.google.android.apps.books)
 
 ## 📚 文档
 
