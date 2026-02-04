@@ -133,7 +133,8 @@ class TalkifyTtsDemoService(
 
             override fun onError(error: String) {
                 TtsLogger.e("Synthesis error: $error")
-                lastErrorMessage = error
+                val errorCode = TtsErrorCode.inferErrorCodeFromMessage(error)
+                lastErrorMessage = TtsErrorCode.getErrorMessage(errorCode, error)
                 stopPlayback()
             }
         }

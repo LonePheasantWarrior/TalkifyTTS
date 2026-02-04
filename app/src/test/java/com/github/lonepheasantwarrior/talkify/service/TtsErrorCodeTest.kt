@@ -37,4 +37,18 @@ class TtsErrorCodeTest {
 
         assertEquals(baseMessage, result)
     }
+
+    @Test
+    fun inferErrorCodeFromMessage_shouldDetectAuthFailure() {
+        val message = "Invalid API Key provided"
+        val errorCode = TtsErrorCode.inferErrorCodeFromMessage(message)
+        assertEquals(TtsErrorCode.ERROR_API_AUTH_FAILED, errorCode)
+    }
+
+    @Test
+    fun inferErrorCodeFromMessage_shouldDetectNetworkTimeout() {
+        val message = "Connection timeout"
+        val errorCode = TtsErrorCode.inferErrorCodeFromMessage(message)
+        assertEquals(TtsErrorCode.ERROR_NETWORK_TIMEOUT, errorCode)
+    }
 }

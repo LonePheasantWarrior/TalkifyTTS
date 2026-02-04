@@ -281,58 +281,6 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     /**
-     * 根据错误消息推断错误码
-     *
-     * 通过解析错误消息中的关键词来判断具体的错误类型
-     * 支持认证失败、超时、网络错误、限流、服务器错误等
-     *
-     * @param errorMessage 错误消息文本
-     * @return 对应的 TtsErrorCode 错误码
-     */
-    private fun inferErrorCodeFromMessage(errorMessage: String): Int {
-        return when {
-            errorMessage.contains("API Key", ignoreCase = true) ||
-                    errorMessage.contains("认证", ignoreCase = true) ||
-                    errorMessage.contains("auth", ignoreCase = true) -> {
-                TtsErrorCode.ERROR_API_AUTH_FAILED
-            }
-
-            errorMessage.contains("超时", ignoreCase = true) ||
-                    errorMessage.contains("timeout", ignoreCase = true) -> {
-                TtsErrorCode.ERROR_NETWORK_TIMEOUT
-            }
-
-            errorMessage.contains("网络", ignoreCase = true) ||
-                    errorMessage.contains("连接", ignoreCase = true) ||
-                    errorMessage.contains("network", ignoreCase = true) ||
-                    errorMessage.contains("connect", ignoreCase = true) -> {
-                TtsErrorCode.ERROR_NETWORK_UNAVAILABLE
-            }
-
-            errorMessage.contains("频率", ignoreCase = true) ||
-                    errorMessage.contains("rate limit", ignoreCase = true) ||
-                    errorMessage.contains("429", ignoreCase = true) -> {
-                TtsErrorCode.ERROR_API_RATE_LIMITED
-            }
-
-            errorMessage.contains("服务器", ignoreCase = true) ||
-                    errorMessage.contains("server", ignoreCase = true) ||
-                    errorMessage.contains("500", ignoreCase = true) ||
-                    errorMessage.contains("502", ignoreCase = true) ||
-                    errorMessage.contains("503", ignoreCase = true) -> {
-                TtsErrorCode.ERROR_API_SERVER_ERROR
-            }
-
-            errorMessage.contains("API Key", ignoreCase = true) ||
-                    errorMessage.contains("配置", ignoreCase = true) -> {
-                TtsErrorCode.ERROR_ENGINE_NOT_CONFIGURED
-            }
-
-            else -> TtsErrorCode.ERROR_SYNTHESIS_FAILED
-        }
-    }
-
-    /**
      * 初始化 TTS 引擎
      *
      * 根据用户选择的引擎 ID 创建对应的合成引擎
@@ -684,7 +632,7 @@ class TalkifyTtsService : TextToSpeechService() {
 
                 override fun onError(error: String) {
                     TtsLogger.e("Synthesis error: $error")
-                    synthesisError = inferErrorCodeFromMessage(error)
+                    synthesisError = TtsErrorCode.inferErrorCodeFromMessage(error)
                     synthesisErrorMessage = error
                     // 关键修复：发生错误也必须解锁，否则会导致服务假死 2 分钟
                     synthesisLatch?.countDown()
@@ -697,13 +645,13 @@ class TalkifyTtsService : TextToSpeechService() {
             val finished = synthesisLatch?.await(120, java.util.concurrent.TimeUnit.SECONDS)
 
             if (finished == true) {
-                if (synthesisError != null) {
+                val finalError = synthesisError
+                if (finalError != null) {
                     // 确实发生了错误
-                    val errorCode = synthesisError!!
-                    callback.error(TtsErrorCode.toAndroidError(errorCode))
+                    callback.error(TtsErrorCode.toAndroidError(finalError))
                     TalkifyNotificationHelper.sendSystemNotification(
                         this,
-                        TtsErrorCode.getErrorMessage(errorCode, synthesisErrorMessage)
+                        TtsErrorCode.getErrorMessage(finalError, synthesisErrorMessage)
                     )
                 } else {
                     // 正常完成
