@@ -73,6 +73,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _demoErrorMessage = MutableStateFlow<String?>(null)
     val demoErrorMessage: StateFlow<String?> = _demoErrorMessage.asStateFlow()
 
+    private val _isDefaultEngine = MutableStateFlow(true)
+    val isDefaultEngine: StateFlow<Boolean> = _isDefaultEngine.asStateFlow()
+
     init {
         // ViewModel 初始化时自动开始检查流程
         startStartupSequence()
@@ -217,6 +220,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun finishStartup() {
         TtsLogger.i(logTag) { "Startup sequence completed." }
         _uiState.value = StartupState.Completed
+        checkDefaultEngine()
+    }
+
+    fun refreshDefaultEngineStatus() {
+        checkDefaultEngine()
+    }
+
+    private fun checkDefaultEngine() {
+        viewModelScope.launch {
+            val isDefault = withContext(Dispatchers.IO) {
+                try {
+                    val tts = android.speech.tts.TextToSpeech(context, null)
+                    val engineName = tts.defaultEngine
+                    tts.shutdown()
+
+                    TtsLogger.d(logTag) { "Default TTS engine: $engineName" }
+
+                    val talkifyPackageName = "com.github.lonepheasantwarrior.talkify"
+                    engineName == talkifyPackageName || engineName?.contains("talkify") == true
+                } catch (e: Exception) {
+                    TtsLogger.e("Failed to get default TTS engine", e, logTag)
+                    false
+                }
+            }
+            _isDefaultEngine.value = isDefault
+            TtsLogger.i(logTag) { "Talkify is default engine: $isDefault" }
+        }
     }
 
     // --- 用户交互回调 ---
@@ -272,6 +302,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             context.startActivity(intent)
         } catch (e: Exception) {
             TtsLogger.e("Failed to open settings", e, logTag)
+        }
+    }
+
+    fun openTtsSettings() {
+        try {
+            val intent = Intent("com.android.settings.TTS_SETTINGS").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            TtsLogger.e("Failed to open TTS settings", e, logTag)
+            openSystemSettings()
         }
     }
 

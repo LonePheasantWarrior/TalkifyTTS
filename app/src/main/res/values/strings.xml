@@ -121,6 +121,10 @@
     <string name="notification_title">Talkify 正在朗读</string>
     <string name="notification_text">点击打开应用</string>
 
+    <!-- 默认引擎提示 -->
+    <string name="default_engine_banner_title">设为默认引擎</string>
+    <string name="default_engine_banner_content">点击此处将 Talkify 设为默认语音合成引擎</string>
+
     <!-- 系统通知 -->
     <string name="system_notification_channel_name">系统通知</string>
     <string name="system_notification_channel_description">系统级的重要通知</string>
