@@ -72,7 +72,7 @@ Talkify 作为一个 TTS 引擎，最佳的使用场景是搭配优秀的电子�
 
 ### 其他电子书阅读器推荐
 
-*   [Readest](https://github.com/readest/readest) （内置微软 EdgeTTS 引擎，可直接免费调用。质量上稍逊但好在可以白嫖，也是个不错的选择～）
+*   [Readest](https://github.com/readest/readest) （内置微软 EdgeTTS 引擎，可直接免费调用。朗读效果稍逊但好在可以白嫖，也是个不错的选择～）
 
 ## 📚 文档
 
