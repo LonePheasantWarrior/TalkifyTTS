@@ -7,10 +7,14 @@ import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
  *
  * @param voiceId 声音唯一标识符，用于 API 调用
  * @param displayName 声音中文显示名称，用于 UI 展示
+ * @param group 声音分组，用于 UI 分组显示（可选）
+ * @param sampleRate 声音支持的采样率（Hz，可选），用于引擎动态选择音频配置
  */
 data class VoiceInfo(
     val voiceId: String,
-    val displayName: String
+    val displayName: String,
+    val group: String? = null,
+    val sampleRate: Int? = null
 )
 
 /**

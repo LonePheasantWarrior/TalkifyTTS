@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -92,16 +93,25 @@ fun VoicePreview(
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
             } else {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp)
-                ) {
-                    items(availableVoices) { voice ->
-                        VoiceItem(
-                            voiceInfo = voice,
-                            isSelected = voice.voiceId == selectedVoice?.voiceId,
-                            onClick = { onVoiceSelected(voice) }
-                        )
+                val hasGroups = availableVoices.any { it.group != null }
+                if (hasGroups) {
+                    GroupedVoiceList(
+                        voices = availableVoices,
+                        selectedVoice = selectedVoice,
+                        onVoiceSelected = onVoiceSelected
+                    )
+                } else {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) {
+                        items(availableVoices) { voice ->
+                            VoiceItem(
+                                voiceInfo = voice,
+                                isSelected = voice.voiceId == selectedVoice?.voiceId,
+                                onClick = { onVoiceSelected(voice) }
+                            )
+                        }
                     }
                 }
             }
@@ -118,6 +128,45 @@ fun VoicePreview(
                     onPlayClick = onPlayClick,
                     onStopClick = onStopClick
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupedVoiceList(
+    voices: List<VoiceInfo>,
+    selectedVoice: VoiceInfo?,
+    onVoiceSelected: (VoiceInfo) -> Unit
+) {
+    val groupedVoices = voices.groupBy { it.group }
+    
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.height(200.dp)
+    ) {
+        groupedVoices.forEach { (group, groupVoices) ->
+            item {
+                if (group != null) {
+                    Text(
+                        text = group,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    items(groupVoices) { voice ->
+                        VoiceItem(
+                            voiceInfo = voice,
+                            isSelected = voice.voiceId == selectedVoice?.voiceId,
+                            onClick = { onVoiceSelected(voice) }
+                        )
+                    }
+                }
             }
         }
     }

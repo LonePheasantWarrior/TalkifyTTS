@@ -74,30 +74,9 @@ class TalkifyTtsDemoService(
         currentState = STATE_PLAYING
         notifyStateChange()
 
-        val audioConfig = engine.getAudioConfig()
-        TtsLogger.d("Starting synthesis: textLength=${text.length}, audioConfig=${audioConfig.getFormatDescription()}")
-
         serviceScope.launch {
             try {
-                audioPlayer = TalkifyAudioPlayer(
-                    sampleRate = audioConfig.sampleRate,
-                    channelCount = audioConfig.channelCount,
-                    audioFormat = audioConfig.audioFormat
-                )
-
-                audioPlayer?.setErrorListener { errorMessage ->
-                    TtsLogger.e("Audio player error: $errorMessage")
-                    lastErrorMessage = errorMessage
-                    stopPlayback()
-                }
-
-                val created = audioPlayer?.createPlayer()
-                if (created != true) {
-                    throw IllegalStateException("Failed to create audio player")
-                }
-
                 engine.synthesize(text, params, config, createListener())
-
             } catch (e: Exception) {
                 TtsLogger.e("Synthesis failed: ${e.message}", e)
                 onError("合成失败：${e.message}")
@@ -123,6 +102,22 @@ class TalkifyTtsDemoService(
                 }
 
                 try {
+                    if (audioPlayer == null) {
+                        audioPlayer = TalkifyAudioPlayer(
+                            sampleRate = sampleRate,
+                            channelCount = channelCount,
+                            audioFormat = audioFormat
+                        )
+                        audioPlayer?.setErrorListener { errorMessage ->
+                            TtsLogger.e("Audio player error: $errorMessage")
+                            lastErrorMessage = errorMessage
+                            stopPlayback()
+                        }
+                        val created = audioPlayer?.createPlayer()
+                        if (created != true) {
+                            throw IllegalStateException("Failed to create audio player")
+                        }
+                    }
                     audioPlayer?.play(audioData)
                 } catch (e: Exception) {
                     TtsLogger.e("Audio playback error: ${e.message}", e)

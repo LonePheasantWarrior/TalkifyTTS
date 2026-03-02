@@ -591,13 +591,7 @@ class TalkifyTtsService : TextToSpeechService() {
             )
 
             // 4. 初始化音频参数并通知系统开始
-            val audioConfig = engine.getAudioConfig()
-            callback.start(
-                audioConfig.sampleRate,
-                audioConfig.audioFormat,
-                audioConfig.channelCount
-            )
-
+            var audioInitialized = false
             var synthesisErrorMessage: String? = null
 
             // 5. 执行合成 (使用协程挂起)
@@ -616,6 +610,12 @@ class TalkifyTtsService : TextToSpeechService() {
                             audioFormat: Int,
                             channelCount: Int
                         ) {
+                            // 在收到第一个音频数据时初始化系统回调
+                            if (!audioInitialized) {
+                                audioInitialized = true
+                                callback.start(sampleRate, audioFormat, channelCount)
+                            }
+                            
                             val maxChunkSize = 4096
                             var offset = 0
                             while (offset < audioData.size) {

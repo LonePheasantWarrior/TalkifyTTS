@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.service.engine.impl
 
+import android.content.Context
 import android.speech.tts.Voice
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
@@ -43,9 +44,9 @@ class TencentTtsEngine : AbstractTtsEngine() {
         private const val VOICE_NAME_SEPARATOR = "::"
 
         /**
-         * 默认音色 ID
+         * 默认音色 ID（精品音色的第一个）
          */
-        const val DEFAULT_VOICE_ID = 502001
+        const val DEFAULT_VOICE_ID = 101050
 
         /**
          * 支持的语言列表（ISO 639-2 三字母代码）
@@ -63,6 +64,13 @@ class TencentTtsEngine : AbstractTtsEngine() {
 
     private var hasCompleted = false
 
+    /**
+     * 音色ID到采样率的映射缓存
+     */
+    private val voiceIdToSampleRateMap: Map<String, Int> by lazy {
+        loadVoiceIdToSampleRateMap()
+    }
+
     val audioConfig: AudioConfig
         @JvmName("getAudioConfigProperty") get() = AudioConfig.TENCENT_TTS
 
@@ -75,12 +83,17 @@ class TencentTtsEngine : AbstractTtsEngine() {
 
     /**
      * 从资源文件加载声音ID列表
+     * 加载所有三种音色类型：精品音色、大模型音色、超自然大模型音色
      */
     private fun loadVoiceIdsFromResource(): List<String> {
         val context = TalkifyAppHolder.getContext()
         return if (context != null) {
             try {
-                context.resources.getStringArray(R.array.tencent_tts_voices).toList()
+                val voiceIds = mutableListOf<String>()
+                voiceIds.addAll(context.resources.getStringArray(R.array.tencent_premium_tts_voices))
+                voiceIds.addAll(context.resources.getStringArray(R.array.tencent_llm_tts_voices))
+                voiceIds.addAll(context.resources.getStringArray(R.array.tencent_natural_tts_voices))
+                voiceIds
             } catch (e: Exception) {
                 TtsLogger.e("Failed to load voice IDs from resource", throwable = e)
                 listOf(DEFAULT_VOICE_ID.toString())
@@ -89,6 +102,71 @@ class TencentTtsEngine : AbstractTtsEngine() {
             TtsLogger.w("Context not available, voice IDs will contain only default")
             listOf(DEFAULT_VOICE_ID.toString())
         }
+    }
+
+    /**
+     * 从资源文件加载音色ID到采样率的映射
+     */
+    private fun loadVoiceIdToSampleRateMap(): Map<String, Int> {
+        val context = TalkifyAppHolder.getContext()
+        val map = mutableMapOf<String, Int>()
+        
+        if (context != null) {
+            try {
+                loadVoiceGroupToMap(context, map, R.array.tencent_premium_tts_voices, R.array.tencent_premium_tts_voice_sample_rates)
+                loadVoiceGroupToMap(context, map, R.array.tencent_llm_tts_voices, R.array.tencent_llm_tts_voice_sample_rates)
+                loadVoiceGroupToMap(context, map, R.array.tencent_natural_tts_voices, R.array.tencent_natural_tts_voice_sample_rates)
+            } catch (e: Exception) {
+                TtsLogger.e("Failed to load voice sample rate map", throwable = e)
+            }
+        }
+        
+        return map
+    }
+
+    private fun loadVoiceGroupToMap(
+        context: Context,
+        map: MutableMap<String, Int>,
+        voiceIdsRes: Int,
+        sampleRatesRes: Int
+    ) {
+        val voiceIds = context.resources.getStringArray(voiceIdsRes).toList()
+        val sampleRates = context.resources.getStringArray(sampleRatesRes).toList()
+        
+        voiceIds.zip(sampleRates).forEach { (voiceId, sampleRateStr) ->
+            parseSampleRate(sampleRateStr)?.let { rate ->
+                map[voiceId] = rate
+            }
+        }
+    }
+
+    /**
+     * 解析采样率字符串，返回最高支持的采样率
+     */
+    private fun parseSampleRate(sampleRateStr: String): Int? {
+        return try {
+            val rates = sampleRateStr.split("/")
+                .map { it.trim().lowercase() }
+                .mapNotNull { rateStr ->
+                    when {
+                        rateStr.contains("8k") -> 8000
+                        rateStr.contains("16k") -> 16000
+                        rateStr.contains("24k") -> 24000
+                        else -> null
+                    }
+                }
+            rates.maxOrNull()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 根据音色ID获取对应的采样率
+     * 如果没有找到，返回引擎默认采样率
+     */
+    private fun getSampleRateForVoice(voiceId: String): Int {
+        return voiceIdToSampleRateMap[voiceId] ?: audioConfig.sampleRate
     }
 
     override fun getEngineId(): String = ENGINE_ID
@@ -113,6 +191,14 @@ class TencentTtsEngine : AbstractTtsEngine() {
             return
         }
 
+        val voiceType = if (tencentConfig.voiceId.isNotEmpty()) {
+            parseVoiceType(tencentConfig.voiceId)
+        } else {
+            logWarning("Voice ID not configured, using default $DEFAULT_VOICE_ID")
+            DEFAULT_VOICE_ID
+        }
+        val sampleRate = getSampleRateForVoice(voiceType.toString())
+
         val textChunks = splitTextIntoChunks(text, MAX_TEXT_LENGTH)
         if (textChunks.isEmpty()) {
             logWarning("待朗读文本内容为空")
@@ -120,13 +206,13 @@ class TencentTtsEngine : AbstractTtsEngine() {
             return
         }
 
-        logInfo("Starting streaming synthesis: textLength=${text.length}, chunks=${textChunks.size}, pitch=${params.pitch}, speechRate=${params.speechRate}")
-        logDebug("Audio config: ${audioConfig.getFormatDescription()}")
+        logInfo("Starting streaming synthesis: textLength=${text.length}, chunks=${textChunks.size}, pitch=${params.pitch}, speechRate=${params.speechRate}, voiceType=$voiceType, sampleRate=$sampleRate")
+        logDebug("Audio config: sampleRate=$sampleRate}")
 
         isCancelled = false
         hasCompleted = false
 
-        processNextChunk(textChunks, 0, params, tencentConfig, listener)
+        processNextChunk(textChunks, 0, params, tencentConfig, sampleRate, listener)
     }
 
     private fun processNextChunk(
@@ -134,6 +220,7 @@ class TencentTtsEngine : AbstractTtsEngine() {
         index: Int,
         params: SynthesisParams,
         config: TencentTtsConfig,
+        sampleRate: Int,
         listener: TtsSynthesisListener
     ) {
         if (isCancelled || hasCompleted) {
@@ -148,20 +235,18 @@ class TencentTtsEngine : AbstractTtsEngine() {
         }
 
         val chunk = chunks[index]
-        logDebug("Processing chunk $index/${chunks.size}, length=${chunk.length}")
+        logDebug("Processing chunk $index/${chunks.size}, length=${chunk.length}, sampleRate=$sampleRate")
 
         try {
             val credential = Credential(config.appId, config.secretId, config.secretKey, "")
-            val request = buildSynthesizerRequest(params, config)
-            val synthesizerListener = createSynthesizerListener(chunks, index, params, config, listener)
+            val request = buildSynthesizerRequest(params, config, sampleRate)
+            val synthesizerListener = createSynthesizerListener(chunks, index, chunk, params, config, sampleRate, listener)
 
             currentSynthesizer = FlowingSpeechSynthesizer(speechClient, credential, request, synthesizerListener)
             
             Thread {
                 try {
                     currentSynthesizer?.start()
-                    currentSynthesizer?.process(chunk)
-                    currentSynthesizer?.stop()
                 } catch (e: Exception) {
                     if (!hasCompleted && !isCancelled) {
                         hasCompleted = true
@@ -252,12 +337,15 @@ class TencentTtsEngine : AbstractTtsEngine() {
     private fun createSynthesizerListener(
         chunks: List<String>,
         index: Int,
+        currentChunk: String,
         params: SynthesisParams,
         config: TencentTtsConfig,
+        sampleRate: Int,
         listener: TtsSynthesisListener
     ): FlowingSpeechSynthesizerListener {
         return object : FlowingSpeechSynthesizerListener() {
             private var isFirstChunk = index == 0
+            private var textSent = false
 
             override fun onSynthesisStart(response: SpeechSynthesizerResponse) {
                 if (isFirstChunk) {
@@ -269,7 +357,7 @@ class TencentTtsEngine : AbstractTtsEngine() {
             override fun onSynthesisEnd(response: SpeechSynthesizerResponse) {
                 logDebug("Chunk $index completed")
                 if (!isCancelled && !hasCompleted) {
-                    processNextChunk(chunks, index + 1, params, config, listener)
+                    processNextChunk(chunks, index + 1, params, config, sampleRate, listener)
                 }
             }
 
@@ -282,10 +370,10 @@ class TencentTtsEngine : AbstractTtsEngine() {
                     val audioData = ByteArray(buffer.remaining())
                     buffer.get(audioData)
                     if (audioData.isNotEmpty()) {
-                        logDebug("Received audio chunk: ${audioData.size} bytes")
+                        logDebug("Received audio chunk: ${audioData.size} bytes, sampleRate=$sampleRate")
                         listener.onAudioAvailable(
                             audioData,
-                            audioConfig.sampleRate,
+                            sampleRate,
                             audioConfig.audioFormat,
                             audioConfig.channelCount
                         )
@@ -298,7 +386,20 @@ class TencentTtsEngine : AbstractTtsEngine() {
             }
 
             override fun onTextResult(response: SpeechSynthesizerResponse) {
-                logDebug("Text result received")
+                logDebug("Text result received, ready to send text")
+                if (!textSent && !isCancelled && !hasCompleted) {
+                    textSent = true
+                    try {
+                        currentSynthesizer?.process(currentChunk)
+                    } catch (e: Exception) {
+                        logError("Error sending text to synthesizer", e)
+                        if (!hasCompleted && !isCancelled) {
+                            hasCompleted = true
+                            val (errorCode, errorMessage) = mapExceptionToErrorCode(e)
+                            listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
+                        }
+                    }
+                }
             }
 
             override fun onSynthesisCancel() {
@@ -401,7 +502,7 @@ class TencentTtsEngine : AbstractTtsEngine() {
     }
 
     private fun buildSynthesizerRequest(
-        params: SynthesisParams, config: TencentTtsConfig
+        params: SynthesisParams, config: TencentTtsConfig, sampleRate: Int
     ): FlowingSpeechSynthesizerRequest {
         val request = FlowingSpeechSynthesizerRequest()
 
@@ -413,28 +514,32 @@ class TencentTtsEngine : AbstractTtsEngine() {
         }
 
         val speed = convertSpeechRate(params.speechRate)
+        val volume = convertVolume(params.volume)
 
         request.voiceType = voiceType
         request.codec = "pcm"
-        request.sampleRate = audioConfig.sampleRate
+        request.sampleRate = sampleRate
         request.speed = speed
-        request.volume = 0f
+        request.volume = volume
         request.enableSubtitle = false
-        request.emotionCategory = "neutral"
         request.emotionIntensity = 100
         request.sessionId = UUID.randomUUID().toString()
 
         return request
     }
 
+    private fun convertVolume(volume: Float): Float {
+        return (volume - 1f) * 10f
+    }
+
     private fun convertSpeechRate(speechRate: Float): Float {
         return when {
-            speechRate <= 0.6f -> -2f
-            speechRate <= 0.8f -> -1f
-            speechRate <= 1.0f -> 0f
-            speechRate <= 1.2f -> 1f
-            speechRate <= 1.5f -> 2f
-            else -> 6f
+            speechRate <= 60f -> -2f
+            speechRate <= 80f -> -1f
+            speechRate <= 100f -> 0f
+            speechRate <= 120f -> 1f
+            speechRate <= 150f -> 2f
+            else -> 0f
         }
     }
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 音色 ID 列表 -->
-    <string-array name="tencent_tts_voices">
+    <!-- ==================== 超自然大模型音色 ==================== -->
+    <string-array name="tencent_natural_tts_voices">
         <item>502001</item>
         <item>502007</item>
         <item>502006</item>
@@ -18,9 +18,7 @@
         <item>603005</item>
         <item>602003</item>
     </string-array>
-
-    <!-- 音色显示名称 -->
-    <string-array name="tencent_tts_voice_display_names">
+    <string-array name="tencent_natural_tts_voice_display_names">
         <item>智小柔</item>
         <item>智小虎</item>
         <item>智小悟</item>
@@ -37,9 +35,7 @@
         <item>知心大林</item>
         <item>爱小悠</item>
     </string-array>
-
-    <!-- 音色推荐场景 -->
-    <string-array name="tencent_tts_voice_scenarios">
+    <string-array name="tencent_natural_tts_voice_scenarios">
         <item>聊天</item>
         <item>聊天</item>
         <item>解说</item>
@@ -56,9 +52,7 @@
         <item>聊天</item>
         <item>聊天</item>
     </string-array>
-
-    <!-- 音色支持语言 -->
-    <string-array name="tencent_tts_voice_languages">
+    <string-array name="tencent_natural_tts_voice_languages">
         <item>中英文</item>
         <item>中英文</item>
         <item>中英文</item>
@@ -75,9 +69,7 @@
         <item>中英文</item>
         <item>中英文</item>
     </string-array>
-
-    <!-- 音色采样率 -->
-    <string-array name="tencent_tts_voice_sample_rates">
+    <string-array name="tencent_natural_tts_voice_sample_rates">
         <item>8k/16k/24k</item>
         <item>8k/16k/24k</item>
         <item>8k/16k/24k</item>
@@ -94,10 +86,224 @@
         <item>8k/16k/24k</item>
         <item>8k/16k/24k</item>
     </string-array>
-
-    <!-- 音色情感 -->
-    <string-array name="tencent_tts_voice_emotions">
+    <string-array name="tencent_natural_tts_voice_emotions">
         <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+    </string-array>
+
+    <!-- ==================== 大模型音色 ==================== -->
+    <string-array name="tencent_llm_tts_voices">
+        <item>501000</item>
+        <item>501001</item>
+        <item>501002</item>
+        <item>501003</item>
+        <item>501004</item>
+        <item>501005</item>
+        <item>501006</item>
+        <item>501007</item>
+        <item>501008</item>
+        <item>501009</item>
+        <item>601008</item>
+        <item>601009</item>
+        <item>601010</item>
+        <item>601011</item>
+        <item>601012</item>
+        <item>601013</item>
+        <item>601014</item>
+    </string-array>
+    <string-array name="tencent_llm_tts_voice_display_names">
+        <item>智斌</item>
+        <item>智兰</item>
+        <item>智菊</item>
+        <item>智宇</item>
+        <item>月华</item>
+        <item>飞镜</item>
+        <item>千嶂</item>
+        <item>浅草</item>
+        <item>WeJames</item>
+        <item>WeWinny</item>
+        <item>爱小豪</item>
+        <item>爱小芊</item>
+        <item>爱小娇</item>
+        <item>爱小川</item>
+        <item>爱小璟</item>
+        <item>爱小伊</item>
+        <item>爱小简</item>
+    </string-array>
+    <string-array name="tencent_llm_tts_voice_scenarios">
+        <item>阅读</item>
+        <item>资讯</item>
+        <item>阅读</item>
+        <item>阅读</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>外语</item>
+        <item>外语</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>特色</item>
+        <item>阅读</item>
+        <item>聊天</item>
+    </string-array>
+    <string-array name="tencent_llm_tts_voice_languages">
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>英文</item>
+        <item>英文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+    </string-array>
+    <string-array name="tencent_llm_tts_voice_sample_rates">
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+    </string-array>
+    <string-array name="tencent_llm_tts_voice_emotions">
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性、悲伤、高兴、生气、恐惧、撒娇、震惊、厌恶、平静</item>
+        <item>中性、悲伤、高兴、生气、恐惧、撒娇、震惊、厌恶、平静</item>
+        <item>中性、悲伤、高兴、生气、恐惧、撒娇、震惊、厌恶、平静</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+    </string-array>
+
+    <!-- ==================== 精品音色 ==================== -->
+    <string-array name="tencent_premium_tts_voices">
+        <item>101050</item>
+        <item>101055</item>
+        <item>101013</item>
+        <item>101019</item>
+        <item>101030</item>
+        <item>101054</item>
+        <item>101027</item>
+        <item>101026</item>
+        <item>101004</item>
+        <item>101015</item>
+        <item>101011</item>
+        <item>101001</item>
+        <item>101021</item>
+        <item>101016</item>
+    </string-array>
+    <string-array name="tencent_premium_tts_voice_display_names">
+        <item>WeJack</item>
+        <item>智付</item>
+        <item>智辉</item>
+        <item>智彤</item>
+        <item>智柯</item>
+        <item>智友</item>
+        <item>智梅</item>
+        <item>智希</item>
+        <item>智云</item>
+        <item>智萌</item>
+        <item>智燕</item>
+        <item>智瑜</item>
+        <item>智瑞</item>
+        <item>智甜</item>
+    </string-array>
+    <string-array name="tencent_premium_tts_voice_scenarios">
+        <item>英文</item>
+        <item>通用</item>
+        <item>新闻</item>
+        <item>粤语</item>
+        <item>通用</item>
+        <item>通用</item>
+        <item>通用</item>
+        <item>通用</item>
+        <item>通用</item>
+        <item>男童声</item>
+        <item>新闻</item>
+        <item>情感</item>
+        <item>新闻</item>
+        <item>女童声</item>
+    </string-array>
+    <string-array name="tencent_premium_tts_voice_languages">
+        <item>英文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+        <item>中文</item>
+    </string-array>
+    <string-array name="tencent_premium_tts_voice_sample_rates">
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+        <item>8k/16k</item>
+    </string-array>
+    <string-array name="tencent_premium_tts_voice_emotions">
         <item>中性</item>
         <item>中性</item>
         <item>中性</item>
