@@ -46,7 +46,7 @@ object TtsEngineRegistry {
      * 获取默认引擎
      */
     val defaultEngine: TtsEngine
-        get() = EngineIds.SeedTts2.toTtsEngine()
+        get() = EngineIds.MicrosoftTts.toTtsEngine()
 
     /**
      * 检查引擎是否已注册

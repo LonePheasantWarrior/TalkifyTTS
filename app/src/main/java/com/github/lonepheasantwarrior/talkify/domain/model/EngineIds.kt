@@ -53,6 +53,19 @@ sealed class EngineIds {
     }
 
     /**
+     * 微软 - 微软语音合成引擎
+     *
+     * @property value 引擎唯一标识符：microsoft-tts
+     * @property displayName 显示名称：微软语音合成
+     * @property provider 服务提供商：Azure
+     */
+    data object MicrosoftTts : EngineIds() {
+        override val value: String = "microsoft-tts"
+        override val displayName: String = "微软语音合成"
+        override val provider: String = "Azure"
+    }
+
+    /**
      * 引擎唯一标识符
      */
     abstract val value: String
@@ -72,7 +85,7 @@ sealed class EngineIds {
          * 获取所有定义的引擎 ID 列表
          */
         val entries: List<EngineIds> by lazy {
-            listOf(SeedTts2, Qwen3Tts, TencentTts)
+            listOf(MicrosoftTts, SeedTts2, TencentTts, Qwen3Tts)
         }
     }
 }

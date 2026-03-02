@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Voice IDs -->
+    <string-array name="microsoft_tts_voices">
+        <!-- 中文 -->
+        <item>zh-CN-XiaoxiaoNeural</item>
+        <item>zh-CN-YunxiNeural</item>
+        <item>zh-CN-YunjianNeural</item>
+        <item>zh-CN-XiaoyiNeural</item>
+        <item>zh-CN-YunyangNeural</item>
+        <item>zh-CN-XiaochenNeural</item>
+        <item>zh-CN-XiaohanNeural</item>
+        <item>zh-CN-XiaomengNeural</item>
+        <item>zh-CN-XiaomoNeural</item>
+        <item>zh-CN-XiaorouNeural</item>
+        <item>zh-CN-XiaoxuanNeural</item>
+        <item>zh-CN-XiaoyanNeural</item>
+        <item>zh-CN-XiaoyouNeural</item>
+        <item>zh-CN-YunfanNeural</item>
+        <item>zh-CN-YunhaoNeural</item>
+        <item>zh-CN-YunxiNeural</item>
+        <item>zh-CN-YunzeNeural</item>
+        <!-- 英语 -->
+        <item>en-US-AriaNeural</item>
+        <item>en-US-GuyNeural</item>
+        <item>en-US-DavisNeural</item>
+        <item>en-US-SaraNeural</item>
+        <item>en-US-TonyNeural</item>
+        <item>en-US-JennyNeural</item>
+        <item>en-US-AriaNeural</item>
+        <item>en-US-GuyNeural</item>
+        <item>en-GB-SoniaNeural</item>
+        <item>en-GB-RyanNeural</item>
+        <!-- 日语 -->
+        <item>ja-JP-NanamiNeural</item>
+        <item>ja-JP-KeitaNeural</item>
+        <item>ja-JP-AoiNeural</item>
+        <!-- 韩语 -->
+        <item>ko-KR-SunHiNeural</item>
+        <item>ko-KR-InJoonNeural</item>
+        <item>ko-KR-JiMinNeural</item>
+        <!-- 法语 -->
+        <item>fr-FR-DeniseNeural</item>
+        <item>fr-FR-HenriNeural</item>
+        <!-- 德语 -->
+        <item>de-DE-KatjaNeural</item>
+        <item>de-DE-ConradNeural</item>
+        <!-- 西班牙语 -->
+        <item>es-ES-ElviraNeural</item>
+        <item>es-ES-AlvaroNeural</item>
+        <!-- 意大利语 -->
+        <item>it-IT-ElsaNeural</item>
+        <item>it-IT-DiegoNeural</item>
+        <!-- 俄语 -->
+        <item>ru-RU-SvetlanaNeural</item>
+        <item>ru-RU-DmitryNeural</item>
+    </string-array>
+
+    <!-- Display Names -->
+    <string-array name="microsoft_tts_voice_display_names">
+        <!-- 中文 -->
+        <item>晓晓</item>
+        <item>云希</item>
+        <item>云健</item>
+        <item>小伊</item>
+        <item>云扬</item>
+        <item>晓辰</item>
+        <item>晓涵</item>
+        <item>晓梦</item>
+        <item>晓墨</item>
+        <item>晓柔</item>
+        <item>晓萱</item>
+        <item>晓颜</item>
+        <item>晓悠</item>
+        <item>云帆</item>
+        <item>云皓</item>
+        <item>云希</item>
+        <item>云泽</item>
+        <!-- 英语 -->
+        <item>Aria (美音)</item>
+        <item>Guy (美音)</item>
+        <item>Davis (美音)</item>
+        <item>Sara (美音)</item>
+        <item>Tony (美音)</item>
+        <item>Jenny (美音)</item>
+        <item>Aria (美音)</item>
+        <item>Guy (美音)</item>
+        <item>Sonia (英音)</item>
+        <item>Ryan (英音)</item>
+        <!-- 日语 -->
+        <item>七海 (日语)</item>
+        <item>启太 (日语)</item>
+        <item>葵 (日语)</item>
+        <!-- 韩语 -->
+        <item>善熙 (韩语)</item>
+        <item>仁俊 (韩语)</item>
+        <item>智敏 (韩语)</item>
+        <!-- 法语 -->
+        <item>Denise (法语)</item>
+        <item>Henri (法语)</item>
+        <!-- 德语 -->
+        <item>Katja (德语)</item>
+        <item>Conrad (德语)</item>
+        <!-- 西班牙语 -->
+        <item>Elvira (西语)</item>
+        <item>Alvaro (西语)</item>
+        <!-- 意大利语 -->
+        <item>Elsa (意语)</item>
+        <item>Diego (意语)</item>
+        <!-- 俄语 -->
+        <item>Svetlana (俄语)</item>
+        <item>Dmitry (俄语)</item>
+    </string-array>
+</resources>

@@ -53,6 +53,16 @@ data class AudioConfig(
         )
 
         /**
+         * 微软语音合成默认配置
+         * 参考 edge-tts 文档，音频输出格式为 24kHz MP3
+         */
+        val MICROSOFT_TTS = AudioConfig(
+            sampleRate = 24000,
+            audioFormat = AudioFormat.ENCODING_PCM_16BIT,
+            channelCount = 1
+        )
+
+        /**
          * 创建标准配置
          *
          * @param sampleRate 采样率

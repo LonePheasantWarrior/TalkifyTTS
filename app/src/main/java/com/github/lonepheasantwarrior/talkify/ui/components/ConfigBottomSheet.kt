@@ -28,6 +28,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.model.Qwen3TtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.SeedTts2Config
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentTtsConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.MicrosoftTtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
@@ -101,6 +102,10 @@ fun ConfigBottomSheet(
             is TencentTtsConfig -> {
                 val tencentSaved = savedConfig as? TencentTtsConfig
                 if (tencentSaved != null) tencentSaved else defaultConfig
+            }
+            is MicrosoftTtsConfig -> {
+                val msSaved = savedConfig as? MicrosoftTtsConfig
+                if (msSaved != null) msSaved else defaultConfig
             }
             else -> defaultConfig
         }
@@ -269,6 +274,8 @@ private fun buildConfigItems(
                 )
             }
         }
+        is MicrosoftTtsConfig -> {
+        }
     }
 
     val voiceLabel = getLabel("voice_id")
@@ -315,6 +322,11 @@ private fun buildConfigFromItems(
                 appId = appId,
                 secretId = secretId,
                 secretKey = secretKey,
+                voiceId = voiceId
+            )
+        }
+        is MicrosoftTtsConfig -> {
+            MicrosoftTtsConfig(
                 voiceId = voiceId
             )
         }

@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.service.engine
 
 import android.content.Context
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3TtsConfigRepository
@@ -9,10 +10,12 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.SeedTts
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.SeedTts2VoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.TencentTtsConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.TencentTtsVoiceRepository
-import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.MicrosoftTtsConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.MicrosoftTtsVoiceRepository
 import com.github.lonepheasantwarrior.talkify.service.engine.impl.Qwen3TtsEngine
 import com.github.lonepheasantwarrior.talkify.service.engine.impl.SeedTts2Engine
 import com.github.lonepheasantwarrior.talkify.service.engine.impl.TencentTtsEngine
+import com.github.lonepheasantwarrior.talkify.service.engine.impl.MicrosoftTtsEngine
 
 /**
  * TTS 引擎工厂
@@ -108,6 +111,11 @@ object TtsEngineFactory {
                 createEngine = { TencentTtsEngine() },
                 createConfigRepo = { ctx -> TencentTtsConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> TencentTtsVoiceRepository(ctx) }
+            ),
+            MicrosoftTtsEngine.ENGINE_ID to ComponentFactories(
+                createEngine = { MicrosoftTtsEngine() },
+                createConfigRepo = { ctx -> MicrosoftTtsConfigRepository(ctx) },
+                createVoiceRepo = { ctx -> MicrosoftTtsVoiceRepository(ctx) }
             )
         ).also {
             TtsLogger.i("TtsEngineFactory: ${it.size} engines registered")
