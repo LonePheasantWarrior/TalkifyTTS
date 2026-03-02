@@ -282,7 +282,7 @@ class MicrosoftTtsEngine : AbstractTtsEngine() {
         config: MicrosoftTtsConfig,
         listener: TtsSynthesisListener
     ) {
-        val chunkResult = CompletableDeferred<Boolean>()
+        val chunkResult = CompletableDeferred<Result<Unit>>()
         val pipeClosed = AtomicBoolean(false)
 
         val voice = config.voiceId.ifEmpty { DEFAULT_VOICE }
@@ -322,7 +322,7 @@ class MicrosoftTtsEngine : AbstractTtsEngine() {
                         pipedOutputStream.close()
                     } catch (_: Exception) {}
                     pipeClosed.set(true)
-                    chunkResult.complete(false)
+                    chunkResult.complete(Result.failure(e))
                 }
             }
 
@@ -350,6 +350,7 @@ class MicrosoftTtsEngine : AbstractTtsEngine() {
                         pipeClosed.set(true)
                         logError("Error processing binary message, closing WebSocket", e)
                         webSocket.close(1000, "Pipe broken or write error")
+                        chunkResult.complete(Result.failure(e))
                     }
                 }
             }
@@ -368,7 +369,7 @@ class MicrosoftTtsEngine : AbstractTtsEngine() {
                                 pipedOutputStream.close()
                             } catch (_: Exception) {}
                             pipeClosed.set(true)
-                            chunkResult.complete(true)
+                            chunkResult.complete(Result.success(Unit))
                         }
                     }
                 } catch (e: Exception) {
@@ -377,17 +378,37 @@ class MicrosoftTtsEngine : AbstractTtsEngine() {
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                logDebug("WebSocket closing: $code $reason")
-            }
-
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                logDebug("WebSocket closed: $code $reason")
+                if (code != 1000) {
+                    logError("WebSocket closing with error: $code $reason")
+                } else {
+                    logDebug("WebSocket closing: $code $reason")
+                }
                 try {
                     pipedOutputStream.close()
                 } catch (_: Exception) {}
                 pipeClosed.set(true)
                 if (!chunkResult.isCompleted) {
-                    chunkResult.complete(true)
+                    if (code == 1000) {
+                        chunkResult.complete(Result.success(Unit))
+                    } else {
+                        chunkResult.complete(Result.failure(Exception("WebSocket error: $code $reason")))
+                    }
+                }
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (code != 1000) {
+                    logError("WebSocket closed with error: $code $reason")
+                } else {
+                    logDebug("WebSocket closed: $code $reason")
+                }
+                pipeClosed.set(true)
+                if (!chunkResult.isCompleted) {
+                    if (code == 1000) {
+                        chunkResult.complete(Result.success(Unit))
+                    } else {
+                        chunkResult.complete(Result.failure(Exception("WebSocket error: $code $reason")))
+                    }
                 }
             }
 
@@ -397,20 +418,20 @@ class MicrosoftTtsEngine : AbstractTtsEngine() {
                     pipedOutputStream.close()
                 } catch (_: Exception) {}
                 pipeClosed.set(true)
-                chunkResult.complete(false)
+                if (!chunkResult.isCompleted) {
+                    chunkResult.complete(Result.failure(t))
+                }
             }
         })
 
-        val success = chunkResult.await()
+        val result = chunkResult.await()
 
         currentWebSocket?.close(1000, "Done")
         currentWebSocket = null
 
         decodeJob.join()
 
-        if (!success) {
-            throw Exception("WebSocket error")
-        }
+        result.getOrThrow()
     }
 
     private fun decodeMp3Stream(inputStream: PipedInputStream, listener: TtsSynthesisListener) {
