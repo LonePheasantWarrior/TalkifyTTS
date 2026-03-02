@@ -556,6 +556,31 @@ class TalkifyTtsService : TextToSpeechService() {
 
         try {
             // 3. 准备引擎与配置
+            // 每次合成前重新读取配置，确保获取最新的引擎选择
+            val selectedEngineId = appConfigRepository?.getSelectedEngineId()
+                ?: TtsEngineRegistry.defaultEngine.id
+            
+            // 检测引擎是否切换，如果切换则重新初始化
+            if (currentEngineId != selectedEngineId) {
+                TtsLogger.i("Engine changed from $currentEngineId to $selectedEngineId during synthesis, reinitializing")
+                currentEngine?.release()
+                currentEngine = TtsEngineFactory.createEngine(selectedEngineId)
+                currentEngineId = selectedEngineId
+                
+                if (currentEngine == null) {
+                    TtsLogger.e("Failed to create engine: $selectedEngineId")
+                    TalkifyNotificationHelper.sendSystemNotification(
+                        this@TalkifyTtsService,
+                        getString(R.string.tts_error_engine_init_failed)
+                    )
+                    callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_ENGINE))
+                    return@runBlocking
+                }
+                
+                // 更新配置仓储的缓存
+                engineConfigRepositoryMap.remove(selectedEngineId)
+            }
+            
             val engineId = currentEngineId
             val engine = currentEngine
             if (engineId == null || engine == null) {

@@ -2,10 +2,10 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo
 
 import android.content.Context
 import com.github.lonepheasantwarrior.talkify.R
+import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
-import com.github.lonepheasantwarrior.talkify.service.engine.impl.TencentTtsEngine
 
 /**
  * 腾讯云语音合成引擎 - 声音仓储实现
@@ -25,7 +25,7 @@ class TencentTtsVoiceRepository(
     }
 
     override suspend fun getVoicesForEngine(engine: TtsEngine): List<VoiceInfo> {
-        if (engine.id != TencentTtsEngine.ENGINE_ID) {
+        if (engine.id != EngineIds.TencentTts.value) {
             return emptyList()
         }
 
