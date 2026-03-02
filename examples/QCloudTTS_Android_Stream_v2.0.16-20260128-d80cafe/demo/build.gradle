@@ -1,0 +1,29 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+apply from: "config.gradle"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven{ url 'https://mirrors.tencent.com/nexus/repository/maven-public' }
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.2.0'
+    }
+}
+
+allprojects {
+    repositories {
+        flatDir {
+            dirs 'libs'
+        }
+        maven{ url 'https://mirrors.tencent.com/nexus/repository/maven-public' }
+        jcenter()
+        mavenCentral()
+        google()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
