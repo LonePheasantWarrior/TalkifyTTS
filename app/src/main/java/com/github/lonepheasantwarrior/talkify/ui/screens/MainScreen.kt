@@ -60,6 +60,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.Qwen3TtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.SeedTts2Config
+import com.github.lonepheasantwarrior.talkify.domain.model.TencentTtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngineRegistry
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
@@ -329,12 +330,19 @@ fun MainScreen(
                                         val seedConfig = savedConfig as? SeedTts2Config ?: SeedTts2Config()
                                         seedConfig.copy(voiceId = selectedVoice?.voiceId ?: seedConfig.voiceId)
                                     }
+                                    is TencentTtsConfig -> {
+                                        val tencentConfig = savedConfig as? TencentTtsConfig ?: TencentTtsConfig()
+                                        tencentConfig.copy(voiceId = selectedVoice?.voiceId ?: tencentConfig.voiceId)
+                                    }
                                     else -> savedConfig
                                 }
 
                                 val isConfigured = when (config) {
                                     is Qwen3TtsConfig -> config.apiKey.isNotBlank()
                                     is SeedTts2Config -> config.apiKey.isNotBlank()
+                                    is TencentTtsConfig -> config.appId.isNotBlank() && 
+                                            config.secretId.isNotBlank() && 
+                                            config.secretKey.isNotBlank()
                                     else -> false
                                 }
 

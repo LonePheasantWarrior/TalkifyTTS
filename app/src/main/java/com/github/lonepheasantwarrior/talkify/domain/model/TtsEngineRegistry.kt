@@ -7,17 +7,19 @@ package com.github.lonepheasantwarrior.talkify.domain.model
  * 集中管理引擎信息，便于扩展和维护
  */
 object TtsEngineRegistry {
+    private val engineList: List<TtsEngine> by lazy {
+        EngineIds.entries.map { it.toTtsEngine() }
+    }
+
     private val engines: Map<String, TtsEngine> by lazy {
-        EngineIds.entries.associate { engineId ->
-            engineId.value to engineId.toTtsEngine()
-        }
+        engineList.associate { it.id to it }
     }
 
     /**
      * 获取所有可用的引擎列表
      */
     val availableEngines: List<TtsEngine>
-        get() = engines.values.toList()
+        get() = engineList
 
     /**
      * 根据 ID 获取引擎
@@ -44,7 +46,7 @@ object TtsEngineRegistry {
      * 获取默认引擎
      */
     val defaultEngine: TtsEngine
-        get() = EngineIds.Qwen3Tts.toTtsEngine()
+        get() = EngineIds.SeedTts2.toTtsEngine()
 
     /**
      * 检查引擎是否已注册

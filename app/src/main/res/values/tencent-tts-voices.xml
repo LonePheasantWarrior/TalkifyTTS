@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 音色 ID 列表 -->
+    <string-array name="tencent_tts_voices">
+        <item>502001</item>
+        <item>502007</item>
+        <item>502006</item>
+        <item>502005</item>
+        <item>502004</item>
+        <item>502003</item>
+        <item>602004</item>
+        <item>602005</item>
+        <item>603000</item>
+        <item>603001</item>
+        <item>603002</item>
+        <item>603003</item>
+        <item>603004</item>
+        <item>603005</item>
+        <item>602003</item>
+    </string-array>
+
+    <!-- 音色显示名称 -->
+    <string-array name="tencent_tts_voice_display_names">
+        <item>智小柔</item>
+        <item>智小虎</item>
+        <item>智小悟</item>
+        <item>智小解</item>
+        <item>智小满</item>
+        <item>智小敏</item>
+        <item>暖心阿灿</item>
+        <item>专业梓欣</item>
+        <item>懂事少年</item>
+        <item>潇湘妹妹</item>
+        <item>软萌心心</item>
+        <item>随和老李</item>
+        <item>温柔小柠</item>
+        <item>知心大林</item>
+        <item>爱小悠</item>
+    </string-array>
+
+    <!-- 音色推荐场景 -->
+    <string-array name="tencent_tts_voice_scenarios">
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>解说</item>
+        <item>营销</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>特色</item>
+        <item>特色</item>
+        <item>特色</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+        <item>聊天</item>
+    </string-array>
+
+    <!-- 音色支持语言 -->
+    <string-array name="tencent_tts_voice_languages">
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+        <item>中英文</item>
+    </string-array>
+
+    <!-- 音色采样率 -->
+    <string-array name="tencent_tts_voice_sample_rates">
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+        <item>8k/16k/24k</item>
+    </string-array>
+
+    <!-- 音色情感 -->
+    <string-array name="tencent_tts_voice_emotions">
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+        <item>中性</item>
+    </string-array>
+</resources>

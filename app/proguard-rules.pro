@@ -61,3 +61,12 @@
 # 保留 Kotlin 协程相关（SDK 使用协程）
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+
+# ==================== 腾讯云流式 TTS SDK ProGuard 规则 ====================
+-keep class com.tencent.cloud.stream.tts.FlowingSpeechSynthesizer { *; }
+-keep class com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerRequest { *; }
+-keep class com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerListener { *; }
+-keep class com.tencent.cloud.stream.tts.SpeechSynthesizer** { *; }
+-keep class com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerResponse { *; }
+-keep class com.tencent.cloud.stream.tts.core.ws.CommonRequest { *; }
+-keepclassmembers class * extends com.tencent.cloud.stream.tts.core.ws.CommonRequest { *; }

@@ -18,6 +18,28 @@ import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.Qwen3Tts.va
  */
 sealed class EngineIds {
     /**
+     * 火山引擎 - 豆包语音合成 2.0
+     */
+    data object SeedTts2 : EngineIds() {
+        override val value: String = "seed-tts-2.0"
+        override val displayName: String = "豆包语音合成2.0"
+        override val provider: String = "火山引擎"
+    }
+
+    /**
+     * 腾讯云 - 腾讯语音合成引擎
+     *
+     * @property value 引擎唯一标识符：tencent-tts
+     * @property displayName 显示名称：腾讯语音合成
+     * @property provider 服务提供商：腾讯云
+     */
+    data object TencentTts : EngineIds() {
+        override val value: String = "tencent-tts"
+        override val displayName: String = "腾讯语音合成"
+        override val provider: String = "腾讯云"
+    }
+
+    /**
      * 阿里云百炼 - 通义千问3语音合成引擎
      *
      * @property value 引擎唯一标识符：qwen3-tts
@@ -28,15 +50,6 @@ sealed class EngineIds {
         override val value: String = "qwen3-tts"
         override val displayName: String = "通义千问3语音合成"
         override val provider: String = "阿里云百炼"
-    }
-
-    /**
-     * 火山引擎 - 豆包语音合成 2.0
-     */
-    data object SeedTts2 : EngineIds() {
-        override val value: String = "seed-tts-2.0"
-        override val displayName: String = "豆包语音合成2.0"
-        override val provider: String = "火山引擎"
     }
 
     /**
@@ -59,7 +72,7 @@ sealed class EngineIds {
          * 获取所有定义的引擎 ID 列表
          */
         val entries: List<EngineIds> by lazy {
-            listOf(Qwen3Tts, SeedTts2)
+            listOf(SeedTts2, TencentTts, Qwen3Tts)
         }
     }
 }

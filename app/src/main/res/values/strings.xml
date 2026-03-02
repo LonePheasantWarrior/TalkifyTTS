@@ -35,6 +35,9 @@
     <string name="app_id_label">App ID</string>
     <string name="access_key_label">Access Key</string>
     <string name="voice_select_label">声音选择</string>
+    <string name="tencent_app_id_label">App ID</string>
+    <string name="tencent_secret_id_label">Secret ID</string>
+    <string name="tencent_secret_key_label">Secret Key</string>
     <string name="voice_select_placeholder">请选择声音</string>
     <string name="save_config">保存配置</string>
     <string name="save_success">配置保存成功</string>

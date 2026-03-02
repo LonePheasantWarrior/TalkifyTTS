@@ -7,9 +7,12 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3Tt
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.Qwen3TtsVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.SeedTts2ConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.SeedTts2VoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.TencentTtsConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.engine.repo.TencentTtsVoiceRepository
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.engine.impl.Qwen3TtsEngine
 import com.github.lonepheasantwarrior.talkify.service.engine.impl.SeedTts2Engine
+import com.github.lonepheasantwarrior.talkify.service.engine.impl.TencentTtsEngine
 
 /**
  * TTS 引擎工厂
@@ -100,6 +103,11 @@ object TtsEngineFactory {
                 createEngine = { SeedTts2Engine() },
                 createConfigRepo = { ctx -> SeedTts2ConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> SeedTts2VoiceRepository(ctx) }
+            ),
+            TencentTtsEngine.ENGINE_ID to ComponentFactories(
+                createEngine = { TencentTtsEngine() },
+                createConfigRepo = { ctx -> TencentTtsConfigRepository(ctx) },
+                createVoiceRepo = { ctx -> TencentTtsVoiceRepository(ctx) }
             )
         ).also {
             TtsLogger.i("TtsEngineFactory: ${it.size} engines registered")

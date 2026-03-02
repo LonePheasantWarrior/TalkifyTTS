@@ -27,6 +27,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.BaseEngineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.model.Qwen3TtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.SeedTts2Config
+import com.github.lonepheasantwarrior.talkify.domain.model.TencentTtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsEngine
 import com.github.lonepheasantwarrior.talkify.domain.repository.EngineConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
@@ -96,6 +97,10 @@ fun ConfigBottomSheet(
             is SeedTts2Config -> {
                 val seedSaved = savedConfig as? SeedTts2Config
                 if (seedSaved != null) seedSaved else defaultConfig
+            }
+            is TencentTtsConfig -> {
+                val tencentSaved = savedConfig as? TencentTtsConfig
+                if (tencentSaved != null) tencentSaved else defaultConfig
             }
             else -> defaultConfig
         }
@@ -229,6 +234,41 @@ private fun buildConfigItems(
                 )
             }
         }
+        is TencentTtsConfig -> {
+            val appIdLabel = getLabel("app_id")
+            if (appIdLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "app_id",
+                        label = appIdLabel,
+                        value = config.appId,
+                        isPassword = false
+                    )
+                )
+            }
+            val secretIdLabel = getLabel("secret_id")
+            if (secretIdLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "secret_id",
+                        label = secretIdLabel,
+                        value = config.secretId,
+                        isPassword = true
+                    )
+                )
+            }
+            val secretKeyLabel = getLabel("secret_key")
+            if (secretKeyLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "secret_key",
+                        label = secretKeyLabel,
+                        value = config.secretKey,
+                        isPassword = true
+                    )
+                )
+            }
+        }
     }
 
     val voiceLabel = getLabel("voice_id")
@@ -264,6 +304,17 @@ private fun buildConfigFromItems(
             val apiKey = items.find { it.key == "api_key" }?.value ?: ""
             SeedTts2Config(
                 apiKey = apiKey,
+                voiceId = voiceId
+            )
+        }
+        is TencentTtsConfig -> {
+            val appId = items.find { it.key == "app_id" }?.value ?: ""
+            val secretId = items.find { it.key == "secret_id" }?.value ?: ""
+            val secretKey = items.find { it.key == "secret_key" }?.value ?: ""
+            TencentTtsConfig(
+                appId = appId,
+                secretId = secretId,
+                secretKey = secretKey,
                 voiceId = voiceId
             )
         }

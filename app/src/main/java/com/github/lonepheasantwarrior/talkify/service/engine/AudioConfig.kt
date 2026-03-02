@@ -43,6 +43,16 @@ data class AudioConfig(
         )
 
         /**
+         * 腾讯云语音合成默认配置
+         * 参考腾讯云文档，音频采样率为 24000Hz（超自然大模型音色支持）
+         */
+        val TENCENT_TTS = AudioConfig(
+            sampleRate = 24000,
+            audioFormat = AudioFormat.ENCODING_PCM_16BIT,
+            channelCount = 1
+        )
+
+        /**
          * 创建标准配置
          *
          * @param sampleRate 采样率
