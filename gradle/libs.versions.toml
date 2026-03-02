@@ -10,6 +10,7 @@ activityCompose = "1.12.4"
 composeBom = "2026.02.01"
 dashscope = "2.22.9"
 okhttp = "4.12.0"
+jlayer = "1.0.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -30,6 +31,7 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
 dashscope-sdk = { group = "com.alibaba", name = "dashscope-sdk-java", version.ref = "dashscope" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+jlayer = { group = "javazoom", name = "jlayer", version.ref = "jlayer" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

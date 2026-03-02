@@ -84,4 +84,7 @@ dependencies {
 
     // 腾讯云流式 TTS SDK
     implementation(files("libs/stream_tts-release-v2.0.16-20260128-d80cafe.aar"))
+    
+    // JLayer 用于 MP3 流式解码
+    implementation(libs.jlayer)
 }
