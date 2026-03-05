@@ -11,7 +11,7 @@ import java.net.UnknownHostException
 
 class UpdateChecker(
     private val owner: String = "LonePheasantWarrior",
-    private val repo: String = "Talkify"
+    private val repo: String = "TalkifyTTS"
 ) {
     companion object {
         private const val TAG = "TalkifyUpdate"
@@ -62,6 +62,10 @@ class UpdateChecker(
                 }
                 404 -> {
                     TtsLogger.w(TAG) { "未找到 Release，可能还没有发布版本" }
+                    UpdateCheckResult.NoUpdateAvailable
+                }
+                403 -> {
+                    TtsLogger.w(TAG) { "GitHub API 速率限制（未认证请求上限）" }
                     UpdateCheckResult.NoUpdateAvailable
                 }
                 in 500..599 -> {

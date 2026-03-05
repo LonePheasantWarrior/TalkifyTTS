@@ -1,13 +1,12 @@
+@file:Suppress("AssignedValueIsNeverRead")
+
 package com.github.lonepheasantwarrior.talkify.ui.screens
 
-import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
@@ -57,7 +56,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
@@ -67,10 +65,10 @@ import androidx.core.graphics.drawable.toBitmap
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
+import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.OutputStream
 
 enum class DonateChannel {
     WECHAT,
@@ -100,12 +98,12 @@ fun AboutScreen(
 
     val sheetState = rememberModalBottomSheetState()
 
-    val getImageLauncher = rememberLauncherForActivityResult(
+    rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
-    ) { uri ->
+    ) { _ ->
     }
 
-    val storagePermissionLauncher = rememberLauncherForActivityResult(
+    rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
@@ -125,22 +123,13 @@ fun AboutScreen(
     }
 
     fun requestSaveQrCode(channel: DonateChannel) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            scope.launch {
-                val success = saveQrCodeToGallery(context, channel)
-                if (success) {
-                    showDonateInstruction = channel
-                } else {
-                    Toast.makeText(context, R.string.donate_save_failed, Toast.LENGTH_SHORT).show()
-                }
+        scope.launch {
+            val success = saveQrCodeToGallery(context, channel)
+            if (success) {
+                showDonateInstruction = channel
+            } else {
+                Toast.makeText(context, R.string.donate_save_failed, Toast.LENGTH_SHORT).show()
             }
-        } else {
-            val permissions = arrayOf(
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            )
-            pendingDonateChannel = channel
-            storagePermissionLauncher.launch(permissions)
         }
     }
 
@@ -312,7 +301,7 @@ fun AboutScreen(
 
     if (showDonateSheet) {
         ModalBottomSheet(
-            onDismissRequest = { showDonateSheet = false },
+            onDismissRequest = { },
             sheetState = sheetState
         ) {
             Column(
@@ -335,7 +324,6 @@ fun AboutScreen(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            showDonateSheet = false
                             requestSaveQrCode(DonateChannel.WECHAT)
                         },
                         modifier = Modifier
@@ -346,7 +334,6 @@ fun AboutScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            showDonateSheet = false
                             requestSaveQrCode(DonateChannel.ALIPAY)
                         },
                         modifier = Modifier
@@ -394,75 +381,125 @@ fun AboutScreen(
     }
 
     showUpdateResult?.let { result ->
-        val (title, message, confirmText) = when (result) {
-            is UpdateCheckResult.UpdateAvailable -> Triple(
-                stringResource(R.string.update_available_title),
-                stringResource(R.string.update_version_format, result.updateInfo.versionName) + "\n\n" +
-                    stringResource(R.string.update_whats_new) + "\n" + result.updateInfo.releaseNotes,
-                stringResource(R.string.update_now)
-            )
-            is UpdateCheckResult.NoUpdateAvailable -> Triple(
-                stringResource(R.string.update_already_latest),
-                stringResource(R.string.update_already_latest),
-                stringResource(R.string.confirm)
-            )
-            is UpdateCheckResult.NetworkTimeout -> Triple(
-                stringResource(R.string.update_check_failed),
-                stringResource(R.string.update_check_failed_network),
-                stringResource(R.string.confirm)
-            )
-            is UpdateCheckResult.NetworkError -> Triple(
-                stringResource(R.string.update_check_failed),
-                stringResource(R.string.update_check_failed_network),
-                stringResource(R.string.confirm)
-            )
-            is UpdateCheckResult.ServerError -> Triple(
-                stringResource(R.string.update_check_failed),
-                stringResource(R.string.update_check_failed_server),
-                stringResource(R.string.confirm)
-            )
-            is UpdateCheckResult.ParseError -> Triple(
-                stringResource(R.string.update_check_failed),
-                stringResource(R.string.update_no_release),
-                stringResource(R.string.confirm)
-            )
-        }
-
-        AlertDialog(
-            onDismissRequest = { showUpdateResult = null },
-            title = {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall
+        when (result) {
+            is UpdateCheckResult.UpdateAvailable -> {
+                UpdateDialog(
+                    updateInfo = result.updateInfo,
+                    onDismiss = { showUpdateResult = null },
+                    onRemindLater = { showUpdateResult = null }
                 )
-            },
-            text = {
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Start
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (result is UpdateCheckResult.UpdateAvailable) {
-                            uriHandler.openUri(result.updateInfo.releaseUrl)
-                        }
-                        showUpdateResult = null
-                    }
-                ) {
-                    Text(confirmText)
-                }
-            },
-            dismissButton = {
-                if (result !is UpdateCheckResult.UpdateAvailable) {
-                    TextButton(onClick = { showUpdateResult = null }) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                }
             }
-        )
+            is UpdateCheckResult.NoUpdateAvailable -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResult = null },
+                    title = {
+                        Text(
+                            text = stringResource(R.string.update_already_latest),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(R.string.update_no_release),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showUpdateResult = null }) {
+                            Text(stringResource(R.string.confirm))
+                        }
+                    }
+                )
+            }
+            is UpdateCheckResult.NetworkTimeout -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResult = null },
+                    title = {
+                        Text(
+                            text = stringResource(R.string.update_check_failed),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(R.string.update_check_failed_network),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showUpdateResult = null }) {
+                            Text(stringResource(R.string.confirm))
+                        }
+                    }
+                )
+            }
+            is UpdateCheckResult.NetworkError -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResult = null },
+                    title = {
+                        Text(
+                            text = stringResource(R.string.update_check_failed),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(R.string.update_check_failed_network),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showUpdateResult = null }) {
+                            Text(stringResource(R.string.confirm))
+                        }
+                    }
+                )
+            }
+            is UpdateCheckResult.ServerError -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResult = null },
+                    title = {
+                        Text(
+                            text = stringResource(R.string.update_check_failed),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(R.string.update_check_failed_server),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showUpdateResult = null }) {
+                            Text(stringResource(R.string.confirm))
+                        }
+                    }
+                )
+            }
+            is UpdateCheckResult.ParseError -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResult = null },
+                    title = {
+                        Text(
+                            text = stringResource(R.string.update_check_failed),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(R.string.update_no_release),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showUpdateResult = null }) {
+                            Text(stringResource(R.string.confirm))
+                        }
+                    }
+                )
+            }
+        }
     }
 
     if (showPermissionDialog) {
@@ -482,7 +519,6 @@ fun AboutScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    showPermissionDialog = false
                     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                         data = Uri.fromParts("package", context.packageName, null)
                     }
@@ -509,38 +545,23 @@ private suspend fun saveQrCodeToGallery(context: Context, channel: DonateChannel
             }
 
             val drawable = context.getDrawable(drawableId)
-            val bitmap = drawable?.toBitmap()
-
-            if (bitmap == null) {
-                return@withContext false
-            }
+            val bitmap = drawable?.toBitmap() ?: return@withContext false
 
             val filename = when (channel) {
                 DonateChannel.WECHAT -> "talkify_wechat_donate_qr.png"
                 DonateChannel.ALIPAY -> "talkify_alipay_donate_qr.png"
             }
 
-            val outputStream: OutputStream? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Talkify")
-                }
-                val uri = context.contentResolver.insert(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    contentValues
-                )
-                uri?.let { context.contentResolver.openOutputStream(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                val imagesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                val talkifyDir = java.io.File(imagesDir, "Talkify")
-                if (!talkifyDir.exists()) {
-                    talkifyDir.mkdirs()
-                }
-                val file = java.io.File(talkifyDir, filename)
-                java.io.FileOutputStream(file)
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Talkify")
             }
+            val uri = context.contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                contentValues
+            )
+            val outputStream = uri?.let { context.contentResolver.openOutputStream(it) }
 
             outputStream?.use {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
