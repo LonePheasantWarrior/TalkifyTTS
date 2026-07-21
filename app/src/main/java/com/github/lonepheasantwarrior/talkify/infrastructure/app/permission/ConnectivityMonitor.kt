@@ -33,7 +33,7 @@ object ConnectivityMonitor {
 
     private const val DEFAULT_TEST_HOST = "www.aliyun.com"
     private const val DEFAULT_TEST_PORT = 443
-    private const val DEFAULT_TIMEOUT_MS = 1000L
+    private const val DEFAULT_TIMEOUT_MS = 1500L
 
     data class NetworkStatus(
         val hasNetwork: Boolean,
