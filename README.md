@@ -114,7 +114,3 @@ Talkify 作为一个 TTS 连接器，最佳的使用场景是搭配优秀的电�
 *   [DeepSeek](https://platform.deepseek.com)
 *   [MiniMax](https://www.minimaxi.com)
 *   [Gemini](https://deepmind.google/models/gemini)
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/image?repos=LonePheasantWarrior/TalkifyTTS&type=date&legend=top-left)](https://www.star-history.com/?repos=LonePheasantWarrior%2FTalkifyTTS&type=date&legend=bottom-right)
