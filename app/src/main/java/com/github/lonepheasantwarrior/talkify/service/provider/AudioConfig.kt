@@ -84,6 +84,16 @@ data class AudioConfig(
         )
 
         /**
+         * 本地模型 TTS 默认配置
+         * 采样率在运行时根据实际模型动态确定（通过 [LocalModelInfo.sampleRate]）
+         */
+        val LOCAL_TTS = AudioConfig(
+            sampleRate = DEFAULT_SAMPLE_RATE,
+            audioFormat = DEFAULT_AUDIO_FORMAT,
+            channelCount = DEFAULT_CHANNEL_COUNT
+        )
+
+        /**
          * 创建标准配置
          *
          * @param sampleRate 采样率

@@ -202,4 +202,32 @@
     <string name="system_notification_channel_name">系统通知</string>
     <string name="system_notification_channel_description">系统级的重要通知</string>
     <string name="system_notification_title">系统通知</string>
+
+    <!-- 本地模型 -->
+    <string name="local_model_label">本地模型</string>
+    <string name="model_select_label">选择模型</string>
+    <string name="model_type_label">架构类型</string>
+    <string name="model_size_label">模型大小</string>
+    <string name="model_disk_usage_label">磁盘占用</string>
+    <string name="model_language_label">支持语言</string>
+    <string name="model_voice_count_label">音色数量</string>
+    <string name="model_download_confirm_title">下载模型</string>
+    <string name="model_download_confirm_message">该模型大小约 %1$s，需要下载后方可使用，是否立即下载？</string>
+    <string name="model_downloading_title">正在下载 %1$s</string>
+    <string name="model_downloading_verifying_title">正在部署 %1$s</string>
+    <string name="model_downloading_verifying_hint">正在校验模型文件...</string>
+    <string name="model_download_complete">%1$s 部署完成</string>
+    <string name="model_download_complete_hint">模型下载完成，可以开始使用</string>
+    <string name="model_download_failed_title">下载失败</string>
+    <string name="model_download_failed">下载失败: %1$s</string>
+    <string name="model_downloading_busy">%1$s 正在下载中，请稍后再试</string>
+    <string name="model_another_downloading">另一模型正在下载中，请等待完成后再试</string>
+    <string name="model_uninstall_confirm_title">卸载模型</string>
+    <string name="model_uninstall_confirm">确定要卸载 %1$s 吗？卸载后需要重新下载才能使用。</string>
+    <string name="model_not_downloaded">[未下载]</string>
+    <string name="model_deployed">&#x2713; 已下载</string>
+    <string name="model_manage">管理</string>
+    <string name="model_disk_usage">占用空间: %1$s</string>
+    <string name="model_download_hint">选择目标模型后点击"保存配置"，系统将提示下载</string>
+    <string name="model_uninstall">卸载模型</string>
 </resources>

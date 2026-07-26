@@ -14,11 +14,14 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.Tence
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.TencentCloudVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.VolcengineConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.VolcengineVoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.XiaomiConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.XiaomiVoiceRepository
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.AliyunBailianProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.AzureProvider
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalTTSProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.MiniMaxProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.TencentCloudProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.VolcengineProvider
@@ -133,6 +136,11 @@ object TtsProviderFactory {
                 createProvider = { MiniMaxProvider() },
                 createConfigRepo = { ctx -> MiniMaxConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> MiniMaxVoiceRepository(ctx) }
+            ),
+            ProviderIds.LocalModel.providerId to ComponentFactories(
+                createProvider = { LocalTTSProvider() },
+                createConfigRepo = { ctx -> LocalModelConfigRepository(ctx) },
+                createVoiceRepo = { ctx -> LocalModelVoiceRepository(ctx) }
             )
         ).also {
             TtsLogger.i("TtsProviderFactory: ${it.size} providers registered")

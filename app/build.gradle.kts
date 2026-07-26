@@ -91,4 +91,10 @@ dependencies {
 
     // Aptabase 匿名使用统计
     implementation(libs.aptabase)
+
+    // Sherpa-onnx 本地 TTS 推理引擎
+    implementation(libs.sherpa.onnx)
+
+    // 压缩包解压（tar.bz2），用于解压 espeak-ng-data 等模型资源
+    implementation(libs.commons.compress)
 }

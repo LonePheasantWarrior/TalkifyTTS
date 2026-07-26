@@ -68,6 +68,15 @@ sealed class ProviderIds {
     }
 
     /**
+     * 本地模型 - 离线 AI 语音合成
+     */
+    data object LocalModel : ProviderIds() {
+        override val providerId: String = "localModel"
+        override val defaultModelId: String = "vits-zh-aishell3"
+        override val provider: String = "本地模型"
+    }
+
+    /**
      * 供应商唯一标识符，用于内部路由、注册表 key 和持久化键。
      */
     abstract val providerId: String
@@ -87,7 +96,7 @@ sealed class ProviderIds {
          * 获取所有定义的供应商 ID 列表
          */
         val entries: List<ProviderIds> by lazy {
-            listOf(Azure, Volcengine, TencentCloud, AliyunBailian, Xiaomi, MiniMax)
+            listOf(Azure, Volcengine, TencentCloud, AliyunBailian, Xiaomi, MiniMax, LocalModel)
         }
     }
 }

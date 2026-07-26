@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,12 +43,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,11 +68,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.AliyunBailianConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.AzureConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentCloudConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProviderRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.VolcengineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.XiaomiConfig
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
@@ -163,7 +169,7 @@ fun MainScreen(
     }
 
     // 配置版本号，用于在配置保存后触发供应商列表展示刷新
-    var configVersion by remember { mutableStateOf(0) }
+    var configVersion by remember { mutableIntStateOf(0) }
 
     // Demo Service logic moved to ViewModel
 
@@ -191,6 +197,22 @@ fun MainScreen(
         }
     }
 
+    // 下载完成状态反馈
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
+    @Suppress("LocalContextGetResourceValueCall")
+    LaunchedEffect(downloadProgress) {
+        val progress = downloadProgress
+        if (progress != null && progress.isCompleted) {
+            val message = context.getString(R.string.model_download_complete, progress.displayName)
+            scope.launch {
+                snackbarHostState.showSnackbar(message)
+            }
+            viewModel.clearDownloadProgress()
+            // 刷新配置版本以更新下拉菜单状态
+            configVersion++
+        }
+    }
+
     var availableVoices by remember { mutableStateOf<List<VoiceInfo>>(emptyList()) }
     var selectedVoice by remember { mutableStateOf<VoiceInfo?>(null) }
 
@@ -204,6 +226,9 @@ fun MainScreen(
     var savedConfig by remember(currentProvider.id) {
         mutableStateOf(getConfigRepository(currentProvider.id).getConfig(currentProvider.id))
     }
+
+    // 本地模型下载确认对话框状态
+    var pendingLocalModelConfig by remember { mutableStateOf<LocalModelConfig?>(null) }
 
     LaunchedEffect(currentProvider) {
         savedConfig = getConfigRepository(currentProvider.id).getConfig(currentProvider.id)
@@ -401,6 +426,10 @@ fun MainScreen(
                                         val mmConfig = savedConfig as? MiniMaxConfig ?: MiniMaxConfig()
                                         mmConfig.copy(voiceId = selectedVoice?.voiceId ?: mmConfig.voiceId)
                                     }
+                                    is LocalModelConfig -> {
+                                        val lmConfig = savedConfig as? LocalModelConfig ?: LocalModelConfig()
+                                        lmConfig.copy(voiceId = selectedVoice?.voiceId ?: lmConfig.voiceId)
+                                    }
                                     else -> savedConfig
                                 }
 
@@ -413,15 +442,30 @@ fun MainScreen(
                                     is AzureConfig -> true
                                     is XiaomiConfig -> config.apiKey.isNotBlank()
                                     is MiniMaxConfig -> config.apiKey.isNotBlank()
+                                    is LocalModelConfig -> config.modelId.isNotBlank() && LocalModelManager.isModelDeployed(config.modelId)
                                     else -> false
                                 }
 
                                 if (!isConfigured) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("请先完成供应商配置")
+                                    // 本地模型：已选择模型但未下载 → 弹出下载确认对话框
+                                    if (config is LocalModelConfig && config.modelId.isNotBlank()) {
+                                        pendingLocalModelConfig = config
+                                    } else {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("请先完成供应商配置")
+                                        }
+                                        viewModel.openConfigSheet()
                                     }
-                                    viewModel.openConfigSheet()
                                     return@VoicePreview
+                                }
+
+                                // 本地模型下载中时阻止播放
+                                if (config is LocalModelConfig) {
+                                    val conflict = viewModel.checkLocalModelPlayable(config.modelId)
+                                    if (conflict != null) {
+                                        scope.launch { snackbarHostState.showSnackbar(conflict) }
+                                        return@VoicePreview
+                                    }
                                 }
 
                                 viewModel.playDemo(currentProvider.id, inputText, config)
@@ -448,8 +492,50 @@ fun MainScreen(
         onDismiss = { viewModel.closeConfigSheet() },
         currentProvider = currentProvider,
         configRepository = getConfigRepository(currentProvider.id),
-        voiceRepository = getVoiceRepository(currentProvider.id)
+        voiceRepository = getVoiceRepository(currentProvider.id),
+        onDownloadRequested = { modelId ->
+            val conflict = viewModel.startModelDownload(modelId)
+            if (conflict != null) {
+                scope.launch { snackbarHostState.showSnackbar(conflict) }
+            }
+        }
     )
+
+    // --- 本地模型下载确认对话框 ---
+    val pendingConfig = pendingLocalModelConfig
+    if (pendingConfig != null) {
+        val modelInfo = LocalModelRegistry.getModel(pendingConfig.modelId)
+        AlertDialog(
+            onDismissRequest = { pendingLocalModelConfig = null },
+            title = { Text(stringResource(R.string.model_download_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.model_download_confirm_message,
+                        modelInfo?.downloadSizeDisplay ?: "?? MB"
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingLocalModelConfig = null
+                        val conflict = viewModel.startModelDownload(pendingConfig.modelId)
+                        if (conflict != null) {
+                            scope.launch { snackbarHostState.showSnackbar(conflict) }
+                        }
+                    }
+                ) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingLocalModelConfig = null }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
 
     // --- 启动流程中的非阻塞弹窗 ---
 

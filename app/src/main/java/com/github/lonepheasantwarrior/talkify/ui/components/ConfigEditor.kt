@@ -63,6 +63,7 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
  * @param onSaveClick 保存按钮点击的回调
  * @param onVoiceSelected 声音选择的回调
  * @param modifier 修饰符
+ * @param advancedItemKeys 应放入"高级设置"折叠面板的配置项 key 集合
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,13 +74,13 @@ fun ConfigEditor(
     onItemValueChange: (ConfigItem, String) -> Unit,
     onSaveClick: () -> Unit,
     onVoiceSelected: (VoiceInfo) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    advancedItemKeys: Set<String> = setOf("api_url", "model_id")
 ) {
     var localConfigItems by remember(configItems) { mutableStateOf(configItems) }
     var isModified by remember { mutableStateOf(false) }
     var advancedExpanded by remember { mutableStateOf(false) }
 
-    val advancedItemKeys = setOf("api_url", "model_id")
     val regularItems = localConfigItems.filter { it.key !in advancedItemKeys }
     val advancedItems = localConfigItems.filter { it.key in advancedItemKeys }
 

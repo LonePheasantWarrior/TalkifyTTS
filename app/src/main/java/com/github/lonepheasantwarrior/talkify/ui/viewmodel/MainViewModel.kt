@@ -1,11 +1,16 @@
 package com.github.lonepheasantwarrior.talkify.ui.viewmodel
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
@@ -14,6 +19,8 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.Perm
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOptimizationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelDownloadService
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.service.TalkifyTtsDemoService
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +29,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * 下载进度状态
+ */
+data class DownloadProgress(
+    val modelId: String,
+    val displayName: String,
+    val progress: Int,       // 0-100
+    val isCompleted: Boolean
+)
 
 /**
  * 启动流程状态机
@@ -76,7 +93,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isDefaultProvider = MutableStateFlow(true)
     val isDefaultProvider: StateFlow<Boolean> = _isDefaultProvider.asStateFlow()
 
+    // --- 下载进度状态 ---
+    private val _downloadProgress = MutableStateFlow<DownloadProgress?>(null)
+    val downloadProgress: StateFlow<DownloadProgress?> = _downloadProgress.asStateFlow()
+
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent == null) return
+            val modelId = intent.getStringExtra(LocalModelDownloadService.EXTRA_MODEL_ID) ?: return
+            val modelInfo = LocalModelRegistry.getModel(modelId) ?: return
+            when (intent.action) {
+                LocalModelDownloadService.ACTION_DOWNLOAD_COMPLETED -> {
+                    _downloadProgress.value = DownloadProgress(
+                        modelId = modelId,
+                        displayName = modelInfo.displayName,
+                        progress = 100,
+                        isCompleted = true
+                    )
+                }
+                LocalModelDownloadService.ACTION_DOWNLOAD_FAILED -> {
+                    _downloadProgress.value = null
+                }
+            }
+        }
+    }
+
     init {
+        // 注册下载广播接收器
+        val filter = IntentFilter().apply {
+            addAction(LocalModelDownloadService.ACTION_DOWNLOAD_COMPLETED)
+            addAction(LocalModelDownloadService.ACTION_DOWNLOAD_FAILED)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            context.registerReceiver(downloadReceiver, filter)
+        }
+
         // ViewModel 初始化时自动开始检查流程
         startStartupSequence()
     }
@@ -128,9 +181,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _demoErrorMessage.value = null
     }
 
+    /**
+     * 启动本地模型下载
+     *
+     * @param modelId 要下载的模型 ID
+     * @return null 表示启动成功，否则返回冲突提示信息
+     */
+    fun startModelDownload(modelId: String): String? {
+        val downloadingId = LocalModelManager.getDownloadingModelId()
+        if (downloadingId != null) {
+            return if (downloadingId == modelId) {
+                // 相同模型已在下载中
+                context.getString(R.string.model_downloading_busy, LocalModelRegistry.getModel(modelId)?.displayName ?: modelId)
+            } else {
+                // 不同模型正在下载
+                context.getString(R.string.model_another_downloading)
+            }
+        }
+
+        val modelInfo = LocalModelRegistry.getModel(modelId) ?: return null
+        _downloadProgress.value = DownloadProgress(
+            modelId = modelId,
+            displayName = modelInfo.displayName,
+            progress = 0,
+            isCompleted = false
+        )
+        val intent = Intent(context, LocalModelDownloadService::class.java).apply {
+            putExtra(LocalModelDownloadService.EXTRA_MODEL_ID, modelId)
+        }
+        context.startForegroundService(intent)
+        return null
+    }
+
+    /**
+     * 检查本地模型是否可播放（未被下载占用）
+     * @return null 表示可以播放，否则返回冲突提示信息
+     */
+    fun checkLocalModelPlayable(modelId: String?): String? {
+        if (modelId == null) return null
+        val downloadingId = LocalModelManager.getDownloadingModelId()
+        if (downloadingId != null && downloadingId == modelId) {
+            return context.getString(R.string.model_downloading_busy, LocalModelRegistry.getModel(modelId)?.displayName ?: modelId)
+        }
+        return null
+    }
+
+    /**
+     * 清除下载进度
+     */
+    fun clearDownloadProgress() {
+        _downloadProgress.value = null
+    }
+
     override fun onCleared() {
         super.onCleared()
         TtsLogger.d(logTag) { "ViewModel cleared, releasing resources" }
+        try {
+            context.unregisterReceiver(downloadReceiver)
+        } catch (_: Exception) {}
         demoService?.release()
         demoService = null
     }

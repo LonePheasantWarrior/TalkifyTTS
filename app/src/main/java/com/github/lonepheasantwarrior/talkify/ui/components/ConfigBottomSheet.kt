@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,11 +30,16 @@ import com.github.lonepheasantwarrior.talkify.domain.model.AzureConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.model.LanguageBoost
+import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
+import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentCloudConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProvider
 import com.github.lonepheasantwarrior.talkify.domain.model.VolcengineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.XiaomiConfig
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
@@ -56,6 +63,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactor
  * @param configRepository 配置仓储
  * @param voiceRepository 声音仓储
  * @param onConfigSaved 配置保存后的回调
+ * @param onDownloadRequested 请求下载本地模型时回调（参数为 modelId）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,7 +74,8 @@ fun ConfigBottomSheet(
     currentProvider: TtsProvider,
     configRepository: ProviderConfigRepository,
     voiceRepository: VoiceRepository,
-    onConfigSaved: (() -> Unit)? = null
+    onConfigSaved: (() -> Unit)? = null,
+    onDownloadRequested: ((String) -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true
@@ -118,6 +127,10 @@ fun ConfigBottomSheet(
                 val mmSaved = savedConfig as? MiniMaxConfig
                 mmSaved ?: defaultConfig
             }
+            is LocalModelConfig -> {
+                val localSaved = savedConfig as? LocalModelConfig
+                localSaved ?: defaultConfig
+            }
             else -> defaultConfig
         }
     }
@@ -135,6 +148,11 @@ fun ConfigBottomSheet(
         provider?.getDefaultModelId() ?: ""
     }
 
+    val isLocalModel = configForEdit is LocalModelConfig
+    val advancedItemKeys = remember(isLocalModel) {
+        if (isLocalModel) setOf("api_url") else setOf("api_url", "model_id")
+    }
+
     var configItems by remember(currentProvider, configForEdit, isOpen, getLabel) {
         mutableStateOf(
             buildConfigItems(configForEdit, getLabel, defaultApiUrl, defaultModelId)
@@ -145,6 +163,11 @@ fun ConfigBottomSheet(
         mutableStateOf<List<VoiceInfo>>(emptyList())
     }
     var isVoicesLoading by remember { mutableStateOf(false) }
+
+    // 下载确认对话框状态
+    var showDownloadDialog by remember { mutableStateOf(false) }
+    var pendingModelId by remember { mutableStateOf("") }
+    var pendingModelDisplayName by remember { mutableStateOf("") }
 
     LaunchedEffect(currentProvider, isOpen) {
         isVoicesLoading = true
@@ -199,10 +222,24 @@ fun ConfigBottomSheet(
                             configItems,
                             defaultConfig
                         )
+                        if (newConfig is LocalModelConfig) {
+                            val modelId = newConfig.modelId
+                            val modelInfo = LocalModelRegistry.getModel(modelId)
+                            val status = LocalModelManager.getModelStatus(modelId)
+                            if (modelInfo != null && status == ModelDownloadStatus.NOT_DOWNLOADED) {
+                                // 模型未下载，显示下载确认对话框
+                                pendingModelId = modelId
+                                pendingModelDisplayName = modelInfo.displayName
+                                showDownloadDialog = true
+                                return@ConfigEditor
+                            }
+                        }
+                        // 已部署或其他供应商，直接保存
                         configRepository.saveConfig(currentProvider.id, newConfig)
                         onConfigSaved?.invoke()
                         onDismiss()
                     },
+                    advancedItemKeys = advancedItemKeys,
                     onVoiceSelected = { voice ->
                         val voiceItem = configItems.find { it.key == "voice_id" }
                         if (voiceItem != null) {
@@ -216,6 +253,69 @@ fun ConfigBottomSheet(
                 }
             }
         }
+    }
+
+    // 下载确认对话框
+    if (showDownloadDialog) {
+        val modelInfo = LocalModelRegistry.getModel(pendingModelId)
+        AlertDialog(
+            onDismissRequest = {
+                showDownloadDialog = false
+            },
+            title = {
+                Text(
+                    text = stringResource(R.string.model_download_confirm_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.model_download_confirm_message,
+                        modelInfo?.downloadSizeDisplay ?: ""
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDownloadDialog = false
+                        // 先保存配置
+                        val newConfig = buildConfigFromItems(configItems, defaultConfig)
+                        configRepository.saveConfig(currentProvider.id, newConfig)
+                        onConfigSaved?.invoke()
+                        // 触发下载
+                        onDownloadRequested?.invoke(pendingModelId)
+                        onDismiss()
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.confirm),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDownloadDialog = false
+                        // 仅保存配置，不下载
+                        val newConfig = buildConfigFromItems(configItems, defaultConfig)
+                        configRepository.saveConfig(currentProvider.id, newConfig)
+                        onConfigSaved?.invoke()
+                        onDismiss()
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
+        )
     }
 }
 
@@ -242,8 +342,9 @@ private fun buildConfigItems(
         }
     }
 
-    // 模型 ID（仅当供应商支持自定义时展示，placeholder 显示默认值）
-    if (defaultModelId.isNotEmpty()) {
+    // 模型 ID（仅当供应商支持自定义且非 LocalModel 时展示，placeholder 显示默认值）
+    // LocalModel 的模型选择在 when 分支中以 dropdown 形式处理
+    if (config !is LocalModelConfig && defaultModelId.isNotEmpty()) {
         val modelIdLabel = getLabel("model_id")
         if (modelIdLabel != null) {
             items.add(
@@ -357,6 +458,28 @@ private fun buildConfigItems(
                     )
                 )
             }
+        }
+        is LocalModelConfig -> {
+            // 模型选择：从 LocalModelRegistry 构建下拉选项（含下载状态标记）
+            val modelLabel = getLabel("model_id") ?: "选择模型"
+            val modelOptions = LocalModelRegistry.ALL_MODELS.map { model ->
+                val status = LocalModelManager.getModelStatus(model.id)
+                val statusSuffix = when (status) {
+                    ModelDownloadStatus.DEPLOYED -> " \u2713"
+                    ModelDownloadStatus.DOWNLOADING -> " [下载中...]"
+                    ModelDownloadStatus.NOT_DOWNLOADED -> " [未下载]"
+                    ModelDownloadStatus.ERROR -> " [错误]"
+                }
+                model.id to "${model.displayName}$statusSuffix"
+            }
+            items.add(
+                ConfigItem(
+                    key = "model_id",
+                    label = modelLabel,
+                    value = config.modelId.ifBlank { ProviderIds.LocalModel.defaultModelId },
+                    dropdownOptions = modelOptions
+                )
+            )
         }
     }
 
@@ -507,6 +630,13 @@ private fun buildConfigFromItems(
                 continuousSound = continuousSound,
                 languageBoost = languageBoost,
                 englishNormalization = englishNormalization
+            )
+        }
+        is LocalModelConfig -> {
+            LocalModelConfig(
+                voiceId = voiceId,
+                apiUrl = "",
+                modelId = modelId
             )
         }
         else -> defaultConfig

@@ -8,13 +8,15 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
 composeBom = "2026.06.01"
-dashscope = "2.22.25"
+dashscope = "2.22.27"
 jlayer = "1.0.1"
 aptabase = "0.0.8"
 navigationCompose = "2.9.8"
 #为兼容dashscope，okhttp停留在4.12.0版本
 #noinspection NewerVersionAvailable
 okhttp = "4.12.0"
+sherpa-onnx = "v1.13.1"
+commons-compress = "1.28.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -38,8 +40,9 @@ dashscope-sdk = { group = "com.alibaba", name = "dashscope-sdk-java", version.re
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 jlayer = { group = "javazoom", name = "jlayer", version.ref = "jlayer" }
 aptabase = { group = "com.github.aptabase", name = "aptabase-kotlin", version.ref = "aptabase" }
+sherpa-onnx = { module = "com.github.k2-fsa:sherpa-onnx", version.ref = "sherpa-onnx" }
+commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-
