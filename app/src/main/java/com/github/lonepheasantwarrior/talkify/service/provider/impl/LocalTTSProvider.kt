@@ -15,7 +15,6 @@ import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
-import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +22,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.io.File
 
@@ -46,9 +44,6 @@ class LocalTTSProvider : AbstractTtsProvider() {
     companion object {
         /** 引擎级别的日志标签 */
         private const val TAG = "LocalTTSProvider"
-
-        /** 每次合成的最大字符数（超过此值将分块处理） */
-        private const val MAX_CHUNK_SIZE = 500
 
         /** 默认语速倍率 */
         private const val DEFAULT_SPEED = 1.0f
@@ -154,14 +149,8 @@ class LocalTTSProvider : AbstractTtsProvider() {
 
         synthesisJob = providerScope.launch {
             try {
-                // 引擎管理与缓存：切换模型时重建引擎
                 val currentEngine = ensureEngine(modelId, modelInfo)
 
-                // 文本分块
-                val chunks = TextChunkSplitter.split(text, MAX_CHUNK_SIZE)
-                logDebug("Text split into ${chunks.size} chunks")
-
-                // 计算语速
                 val speed = if (params.speechRate > 0) {
                     params.speechRate / 100f
                 } else {
@@ -170,29 +159,24 @@ class LocalTTSProvider : AbstractTtsProvider() {
 
                 listener.onSynthesisStarted()
 
-                // 逐块合成并回传
-                for ((index, chunk) in chunks.withIndex()) {
-                    if (isCancelled) break
-
-                    logDebug("Synthesizing chunk ${index + 1}/${chunks.size}, length=${chunk.length}")
-
-                    val result = withContext(Dispatchers.Default) {
-                        currentEngine.synthesize(chunk, lc.voiceId, speed)
-                    }
-
+                // 真正流式合成：Sherpa-onnx 每生成一小段 PCM（通常为一个句子）
+                // 就通过 generateWithConfigAndCallback 回调第一时间送达给 Android TTS callback
+                currentEngine.synthesizeStream(text, lc.voiceId, speed) { pcmData, sampleRate ->
                     if (!isCancelled) {
                         listener.onAudioAvailable(
-                            result.audioData,
-                            result.sampleRate,
+                            pcmData,
+                            sampleRate,
                             AudioFormat.ENCODING_PCM_16BIT,
                             1  // 单声道
                         )
                     }
+                    // 返回 true 继续合成，false 中断（对应停止播放）
+                    !isCancelled
                 }
 
                 if (!isCancelled) {
                     listener.onSynthesisCompleted()
-                    logInfo("Synthesis completed successfully")
+                    logInfo("Streaming synthesis completed successfully")
                 }
             } catch (e: Exception) {
                 if (!isCancelled) {

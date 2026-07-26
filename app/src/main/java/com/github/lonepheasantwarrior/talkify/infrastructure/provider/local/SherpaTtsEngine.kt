@@ -3,6 +3,7 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.provider.local
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelType
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
@@ -115,6 +116,67 @@ class SherpaTtsEngine(
         TtsLogger.d("Generated ${pcmData.size} bytes at ${actualSampleRate}Hz", tag = tag)
 
         return SynthesisResult(audioData = pcmData, sampleRate = actualSampleRate)
+    }
+
+    /**
+     * 流式语音合成（基于 generateWithConfigAndCallback 回调机制）。
+     *
+     * 与 [synthesize] 不同，本方法不会等待全文本合成完毕再返回，
+     * 而是通过 Sherpa-onnx 的底层回调机制，每生成一小段 PCM 采样（通常为一个句子）
+     * 就立即触发 [onAudioChunk] 回调。首包音频可在 300-500ms 内到达。
+     *
+     * 回调返回 `true` 继续合成，返回 `false` 提前中断（对应停止播放场景）。
+     *
+     * **必须在后台线程调用**（此方法内部包含阻塞式 JNI 调用）。
+     *
+     * @param text 待合成文本
+     * @param voiceId Kokoro 音色 ID（VITS 忽略此参数）
+     * @param speed 语速倍率（0.5~2.0）
+     * @param onAudioChunk 音频回调：(pcm16Data: ByteArray, sampleRate: Int) → Boolean
+     * @return `true` 正常完成，`false` 被回调中断
+     */
+    fun synthesizeStream(
+        text: String,
+        voiceId: String?,
+        speed: Float,
+        onAudioChunk: (pcm16Data: ByteArray, sampleRate: Int) -> Boolean
+    ): Boolean {
+        if (isReleased) throw IllegalStateException("Engine has been released")
+
+        if (!isInitialized) {
+            initialize()
+        }
+
+        val engine = tts ?: throw IllegalStateException("TTS engine not initialized")
+        val sampleRate = engine.sampleRate()
+
+        val genConfig = GenerationConfig(
+            sid = if (modelInfo.modelType == LocalModelType.KOKORO) voiceId?.toIntOrNull() ?: 0 else 0,
+            speed = speed.coerceIn(0.5f, 2.0f)
+        )
+
+        var completed = true
+
+        // 使用 Java 桥接类 SherpaCallbackBridge，以确保 JNI 层能正确找到
+        // invoke([F)Ljava/lang/Integer; 方法签名。Kotlin lambda 编译后
+        // 生成 invoke([F)I（原始 int），与 JNI 期望的装箱 Integer 签名
+        // 不匹配，会触发 NoSuchMethodError 并导致 SIGABRT 崩溃。
+        // Java 类通过 auto-boxing 产生正确的字节码签名。
+        @Suppress("UNCHECKED_CAST")
+        val callback = object : SherpaCallbackBridge() {
+            override fun onSamples(samples: FloatArray): Int {
+                val pcm16 = floatArrayToPcm16(samples)
+                val shouldContinue = onAudioChunk(pcm16, sampleRate)
+                if (!shouldContinue) {
+                    completed = false
+                }
+                return if (shouldContinue) 1 else 0
+            }
+        } as (FloatArray) -> Int
+
+        engine.generateWithConfigAndCallback(text, genConfig, callback)
+
+        return completed
     }
 
     /**
