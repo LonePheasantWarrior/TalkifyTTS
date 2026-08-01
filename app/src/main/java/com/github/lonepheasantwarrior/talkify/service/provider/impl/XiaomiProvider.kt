@@ -468,17 +468,27 @@ class XiaomiProvider : AbstractTtsProvider() {
 
     /**
      * 根据语言解析合适的声音
+     *
+     * 特别注意 [mimo_default]：其音色「因部署集群而异，中国集群默认为冰糖，其他集群默认为 Mia」。
+     * 若请求被路由到非中国集群，中文朗读会变成 Mia（台湾腔/怪腔调）。
+     * 因此当选择 [mimo_default] 或未指定音色时，按目标语言显式解析为具体中文/英文音色，
+     * 避免集群差异导致中文发音异常。
      */
     private fun resolveVoiceForLanguage(voiceId: String, language: String?): String {
-        if (voiceId.isNotBlank() && voiceIds.contains(voiceId)) {
+        // mimo_default 或未指定音色时，按语言显式指定音色，规避集群路由差异
+        if (voiceId.isBlank() || voiceId == "mimo_default") {
+            return when (language?.lowercase()) {
+                "zh", "zho", "chi", "cn" -> "冰糖"
+                "en", "eng" -> "Mia"
+                else -> "冰糖"
+            }
+        }
+
+        if (voiceIds.contains(voiceId)) {
             return voiceId
         }
 
-        return when (language?.lowercase()) {
-            "zh", "zho", "chi", "cn" -> "冰糖"
-            "en", "eng" -> "Mia"
-            else -> voiceId.ifBlank { "mimo_default" }
-        }
+        return voiceId
     }
 
     /**
