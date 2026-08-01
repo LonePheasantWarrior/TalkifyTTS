@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import android.content.Context
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.AliyunBailianConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.AzureConfig
@@ -155,7 +156,7 @@ fun ConfigBottomSheet(
 
     var configItems by remember(currentProvider, configForEdit, isOpen, getLabel) {
         mutableStateOf(
-            buildConfigItems(configForEdit, getLabel, defaultApiUrl, defaultModelId)
+            buildConfigItems(configForEdit, getLabel, defaultApiUrl, defaultModelId, context)
         )
     }
 
@@ -323,7 +324,8 @@ private fun buildConfigItems(
     config: BaseProviderConfig,
     getLabel: (String) -> String?,
     defaultApiUrl: String,
-    defaultModelId: String
+    defaultModelId: String,
+    context: Context
 ): List<ConfigItem> {
     val items = mutableListOf<ConfigItem>()
 
@@ -441,7 +443,11 @@ private fun buildConfigItems(
                         key = "style_instruction",
                         label = styleLabel,
                         value = config.styleInstruction,
-                        placeholder = "例如：用温柔的语气朗读"
+                        placeholder = context.getString(R.string.style_instruction_placeholder),
+                        supportingText = context.getString(R.string.style_instruction_hint),
+                        isDialogEditor = true,
+                        editorTitle = context.getString(R.string.style_instruction_edit_title),
+                        guideContent = context.getString(R.string.style_instruction_guide_content)
                     )
                 )
             }

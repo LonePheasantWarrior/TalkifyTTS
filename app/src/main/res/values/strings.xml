@@ -39,6 +39,13 @@
     <string name="api_url_label">API 地址</string>
     <string name="model_id_label">模型 ID</string>
     <string name="label_style_instruction">风格指令（可选）</string>
+    <string name="style_instruction_placeholder">描述想要的语音风格</string>
+    <string name="style_instruction_hint">点击问号图标即可查看编辑指南</string>
+    <string name="style_instruction_edit_title">风格指令编辑</string>
+    <string name="usage_guide_title">使用指南</string>
+    <string name="usage_guide_close">知道了</string>
+    <string name="usage_guide_help_icon">查看使用指南</string>
+    <string name="style_instruction_guide_content">### 自然语言控制\n\n通过自然语言描述，让模型理解并生成对应风格的语音。可以直接用一句话描述想要的语音风格。\n\n**示例：**\n\n&gt; 用轻快上扬的语调向领导报喜，语速稍快，带着查到成绩后压抑不住的激动与小骄傲，声音明亮有活力。\n\n&gt; 看着刚解决的难题成果忍不住得意忘形地惊呼，声音高亢明亮，语速偏快，语气中带着满满的自信与难以置信。\n\n&gt; 用明亮活泼的青少年嗓音，带着恶作剧得逞后的得意与戏谑，语速偏快且咬字轻巧，在强调赌注时语气微微上扬。\n\n在此基础上，我们还支持一种更复杂、更精细的**导演模式**——像给演员写剧本一样，从**角色、场景、指导**三个维度全方位刻画人物与声线，模型能据此生成更富层次、更具演绎感的语音。\n\n- **【角色】** 写清人物的身份、性格底色、外形气质与说话习惯。\n- **【场景】** 交代此刻发生了什么、和谁说话、情绪处在什么位置。越具体越好——时间、地点、事件、对方反应都可以写进来。\n- **【指导】** 像导演给演员下达演绎要领：语速、气息、停顿、重音、共鸣位置、音色质感、情绪起伏。可以写得细腻，模型会按这些“舞台提示”来演。\n\n**导演模式示例：**\n\n角色：百年门阀岑家的现任大当家。自出生便被过继给祖庙的守门老人抚养，被塑造成一尊完美无瑕、绝情断欲的家族图腾。常年深居简出，对人有着极强的阶级疏离感。\n\n场景：在祠堂的阴影里，看着那个不顾一切冲破保安防线来找她、企图带她私奔的男人。她要用最冷硬的阶级壁垒，绞杀对方，也绞杀自己刚刚萌芽、却足以燎原的感情。\n\n指导：\n冰冷、慵懒却极具威压的低音御姐。发声通道非常松弛，没有任何剑拔弩张，却有着让人骨里生寒的压迫感。\n\n- 语速与顿挫：极慢，每个字都像是在舌尖滚过才吐出来，带着上位者漫不经心的傲慢。句与句之间留下极长的、令人不安的空白。\n- 气声与实声：大部分时间，她的声音没有明显的声调起伏，实音重且硬，像是一条平缓却冰冷的暗河。但一定要在某些尾音处（如“真心”），加入极其轻微的气音收束，透出一丝连她自己都没察觉到的疲惫与渴望。\n- 咬字肌理：文白杂糅的用词带着旧时代的痕迹，唇齿音发得极轻但极清晰（如“冲撞”“廉价”），显得既清雅又锋利，刀刀见血。\n\n导演模式适合对语音表演要求较高的场景。</string>
     <string name="tencent_app_id_label">App ID</string>
     <string name="tencent_secret_id_label">Secret ID</string>
     <string name="tencent_secret_key_label">Secret Key</string>
