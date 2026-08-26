@@ -170,7 +170,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // 清除之前的错误信息
         _demoErrorMessage.value = null
-        demoService?.speak(text, config)
+        demoService?.speak(
+            text = text,
+            config = config,
+            audioGainEnabled = appConfigRepository.isAudioGainEnabled(),
+            audioGainDb = appConfigRepository.getAudioGainDb()
+        )
     }
 
     fun stopDemo() {

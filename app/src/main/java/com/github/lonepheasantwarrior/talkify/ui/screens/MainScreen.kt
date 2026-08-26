@@ -491,6 +491,7 @@ fun MainScreen(
         isOpen = isConfigSheetOpen,
         onDismiss = { viewModel.closeConfigSheet() },
         currentProvider = currentProvider,
+        appConfigRepository = appConfigRepository,
         configRepository = getConfigRepository(currentProvider.id),
         voiceRepository = getVoiceRepository(currentProvider.id),
         onDownloadRequested = { modelId ->

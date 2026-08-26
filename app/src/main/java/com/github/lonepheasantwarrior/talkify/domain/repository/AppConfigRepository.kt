@@ -48,4 +48,16 @@ interface AppConfigRepository {
      * 设置关于页面已打开
      */
     fun setAboutPageOpened(opened: Boolean)
+
+    /** 是否启用合成音频增幅。默认关闭。 */
+    fun isAudioGainEnabled(): Boolean
+
+    /** 保存合成音频增幅开关。 */
+    fun setAudioGainEnabled(enabled: Boolean)
+
+    /** 获取音频增幅强度（dB）。 */
+    fun getAudioGainDb(): Float
+
+    /** 保存音频增幅强度（dB）。 */
+    fun setAudioGainDb(gainDb: Float)
 }

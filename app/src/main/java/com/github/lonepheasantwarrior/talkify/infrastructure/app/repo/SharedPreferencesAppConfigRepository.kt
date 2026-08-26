@@ -91,12 +91,39 @@ class SharedPreferencesAppConfigRepository(
         }
     }
 
+    override fun isAudioGainEnabled(): Boolean {
+        return sharedPreferences.getBoolean(KEY_AUDIO_GAIN_ENABLED, false)
+    }
+
+    override fun setAudioGainEnabled(enabled: Boolean) {
+        sharedPreferences.edit {
+            putBoolean(KEY_AUDIO_GAIN_ENABLED, enabled)
+        }
+    }
+
+    override fun getAudioGainDb(): Float {
+        return sharedPreferences.getFloat(KEY_AUDIO_GAIN_DB, DEFAULT_AUDIO_GAIN_DB)
+            .coerceIn(MIN_AUDIO_GAIN_DB, MAX_AUDIO_GAIN_DB)
+    }
+
+    override fun setAudioGainDb(gainDb: Float) {
+        sharedPreferences.edit {
+            putFloat(KEY_AUDIO_GAIN_DB, gainDb.coerceIn(MIN_AUDIO_GAIN_DB, MAX_AUDIO_GAIN_DB))
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "talkify_app_config"
         private const val KEY_SELECTED_PROVIDER = "selected_provider"
         private const val KEY_SELECTED_PROVIDER_LEGACY = "selected_engine"
         private const val KEY_HAS_REQUESTED_NOTIFICATION = "has_requested_notification"
         private const val KEY_HAS_OPENED_ABOUT_PAGE = "has_opened_about_page"
+        private const val KEY_AUDIO_GAIN_ENABLED = "audio_gain_enabled"
+        private const val KEY_AUDIO_GAIN_DB = "audio_gain_db"
+
+        const val MIN_AUDIO_GAIN_DB = 0.5f
+        const val MAX_AUDIO_GAIN_DB = 12.0f
+        const val DEFAULT_AUDIO_GAIN_DB = 6.0f
 
         /** 旧版 ProviderIds.value → 新版 ProviderIds.providerId 映射 */
         private val LEGACY_PROVIDER_ID_MAP = mapOf(

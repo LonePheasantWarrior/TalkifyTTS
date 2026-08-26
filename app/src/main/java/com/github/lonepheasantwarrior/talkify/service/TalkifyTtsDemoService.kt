@@ -6,6 +6,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
 import com.github.lonepheasantwarrior.talkify.util.TalkifyAudioPlayer
+import com.github.lonepheasantwarrior.talkify.util.Pcm16GainProcessor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,6 +43,12 @@ class TalkifyTtsDemoService(
 
     private var stateListener: ((Int, String?) -> Unit)? = null
 
+    @Volatile
+    private var audioGainEnabled = false
+
+    @Volatile
+    private var audioGainDb = 0f
+
     fun setStateListener(listener: (Int, String?) -> Unit) {
         stateListener = listener
     }
@@ -49,13 +56,17 @@ class TalkifyTtsDemoService(
     fun speak(
         text: String,
         config: BaseProviderConfig,
-        params: SynthesisParams = SynthesisParams(language = "Auto")
+        params: SynthesisParams = SynthesisParams(language = "Auto"),
+        audioGainEnabled: Boolean = false,
+        audioGainDb: Float = 0f
     ) {
         if (currentState == STATE_PLAYING) {
             stop()
         }
 
         isStopped.set(false)
+        this.audioGainEnabled = audioGainEnabled
+        this.audioGainDb = audioGainDb
         currentState = STATE_IDLE
         lastErrorMessage = null
         notifyStateChange()
@@ -118,7 +129,13 @@ class TalkifyTtsDemoService(
                             throw IllegalStateException("Failed to create audio player")
                         }
                     }
-                    audioPlayer?.play(audioData)
+                    val processedAudio = Pcm16GainProcessor.process(
+                        audioData = audioData,
+                        audioFormat = audioFormat,
+                        enabled = audioGainEnabled,
+                        gainDb = audioGainDb
+                    )
+                    audioPlayer?.play(processedAudio)
                 } catch (e: Exception) {
                     TtsLogger.e("Audio playback error: ${e.message}", e)
                 }

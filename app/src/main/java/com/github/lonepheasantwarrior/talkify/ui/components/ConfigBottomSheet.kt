@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.ui.components
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -10,6 +11,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -42,10 +45,14 @@ import com.github.lonepheasantwarrior.talkify.domain.model.VolcengineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.XiaomiConfig
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
+import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
  * 配置底部弹窗
@@ -73,6 +80,7 @@ fun ConfigBottomSheet(
     isOpen: Boolean,
     onDismiss: () -> Unit,
     currentProvider: TtsProvider,
+    appConfigRepository: AppConfigRepository,
     configRepository: ProviderConfigRepository,
     voiceRepository: VoiceRepository,
     onConfigSaved: (() -> Unit)? = null,
@@ -191,6 +199,13 @@ fun ConfigBottomSheet(
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 32.dp)
             ) {
+                Spacer(modifier = Modifier.height(16.dp))
+
+                AudioGainSettings(
+                    appConfigRepository = appConfigRepository,
+                    isOpen = isOpen
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 if (isVoicesLoading) {
@@ -317,6 +332,77 @@ fun ConfigBottomSheet(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun AudioGainSettings(
+    appConfigRepository: AppConfigRepository,
+    isOpen: Boolean
+) {
+    var enabled by remember(isOpen) {
+        mutableStateOf(appConfigRepository.isAudioGainEnabled())
+    }
+    var gainDb by remember(isOpen) {
+        mutableStateOf(appConfigRepository.getAudioGainDb())
+    }
+    val multiplier = 10.0.pow(gainDb.toDouble() / 20.0)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.audio_gain_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = stringResource(R.string.audio_gain_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = {
+                    enabled = it
+                    appConfigRepository.setAudioGainEnabled(it)
+                }
+            )
+        }
+
+        if (enabled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(
+                    R.string.audio_gain_value_format,
+                    gainDb,
+                    multiplier
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Slider(
+                value = gainDb,
+                onValueChange = { rawValue ->
+                    gainDb = (rawValue * 2f).roundToInt() / 2f
+                },
+                onValueChangeFinished = {
+                    appConfigRepository.setAudioGainDb(gainDb)
+                },
+                valueRange = SharedPreferencesAppConfigRepository.MIN_AUDIO_GAIN_DB..
+                    SharedPreferencesAppConfigRepository.MAX_AUDIO_GAIN_DB,
+                steps = 22,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = stringResource(R.string.audio_gain_limiter_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
