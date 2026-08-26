@@ -57,6 +57,10 @@
     <string name="save_success">配置保存成功</string>
     <string name="save_failed">配置保存失败</string>
     <string name="config_not_saved">配置尚未保存，是否放弃？</string>
+    <string name="audio_gain_title">音频增幅</string>
+    <string name="audio_gain_description">提高所有合成音量，可按 0.5 dB 精细调节</string>
+    <string name="audio_gain_value_format">强度：+%1$.1f dB（%2$.2f×）</string>
+    <string name="audio_gain_limiter_hint">已启用软限幅保护；强度过高仍可能压缩声音动态。注意保护听力，不推荐音量过大。</string>
 
     <!-- 错误提示 -->
     <string name="error_voice_load_failed">加载声音列表失败</string>
