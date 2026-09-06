@@ -166,17 +166,4 @@ object LocalModelRegistry {
      * 获取默认模型
      */
     fun getDefaultModel(): LocalModelInfo = VITS_ZH_AISHELL3
-
-    /**
-     * 获取某模型在备用源（原始 HF）的下载信息
-     * 将 URL 中的镜像域名替换为原始域名
-     *
-     * @param modelInfo 模型元信息
-     * @return URL → 本地文件名映射（使用原始 HF 地址）
-     */
-    fun getFallbackUrls(modelInfo: LocalModelInfo): Map<String, String> {
-        return modelInfo.downloadFileInfo.mapKeys { (url, _) ->
-            url.replace(DEFAULT_HF_MIRROR, FALLBACK_HF_ORIGIN)
-        }
-    }
 }
