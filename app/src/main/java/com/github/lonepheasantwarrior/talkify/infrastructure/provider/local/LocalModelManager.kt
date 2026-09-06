@@ -20,21 +20,15 @@ import java.io.File
  * 存储路径结构：
  * ```
  * {externalFilesDir}/tts_models/
- * ├── vits-zh-aishell3/
- * │   └── deployed/          ← 下载完成的文件直接存放于此
- * │       ├── model.onnx
- * │       ├── tokens.txt
- * │       └── lexicon.txt
- * ├── vits-cantonese-hf-xiaomai/
- * │   └── deployed/
- * │       ├── model.onnx
- * │       ├── tokens.txt
- * │       └── lexicon.txt
- * └── kokoro-82m/
- *     └── deployed/
- *         ├── model.onnx
+ * └── zipvoice_distill/
+ *     └── deployed/          ← 下载完成的文件直接存放于此
+ *         ├── encoder.int8.onnx
+ *         ├── decoder.int8.onnx
  *         ├── tokens.txt
- *         └── voices.bin
+ *         ├── lexicon.txt
+ *         ├── vocos_24khz.onnx
+ *         ├── espeak-ng-data/
+ *         └── test_wavs/
  * ```
  */
 object LocalModelManager {
@@ -89,6 +83,7 @@ object LocalModelManager {
      * @return 模型下载状态
      */
     fun getModelStatus(modelId: String): ModelDownloadStatus {
+        cleanupUnregisteredModels()
         // 优先检查下载中状态（跨进程共享）
         if (getDownloadingModelId() == modelId) {
             return ModelDownloadStatus.DOWNLOADING
@@ -104,7 +99,8 @@ object LocalModelManager {
     /**
      * 检查模型是否已下载（文件完整）
      *
-     * 校验注册表中定义的所有必需文件是否在下载目录中存在且非空
+     * 校验注册表中定义的所有必需文件（downloadFileInfo + requiredLocalFiles，
+     * 后者覆盖 archiveAssets 解压产物）是否在下载目录中存在且非空
      *
      * @param modelId 模型 ID
      * @return true 如果所有必需文件都存在且非空
@@ -114,9 +110,47 @@ object LocalModelManager {
         val downloadedDir = getModelDownloadedDir(modelId) ?: return false
         if (!downloadedDir.exists() || !downloadedDir.isDirectory) return false
 
-        return modelInfo.downloadFileInfo.values.all { fileName ->
+        val requiredFiles = modelInfo.downloadFileInfo.values + modelInfo.requiredLocalFiles
+        return requiredFiles.all { fileName ->
             val file = File(downloadedDir, fileName)
             file.exists() && file.length() > 0
+        }
+    }
+
+    // ---- 旧模型目录清理 ----
+
+    @Volatile
+    private var cleanupDone = false
+
+    /**
+     * 清理注册表中已移除模型在磁盘上的残留目录
+     *
+     * 模型清单变更（如 v1 三个模型替换为 ZipVoice）后，旧模型文件
+     * （Kokoro 约 440MB）会永久占用用户存储，此方法在首次状态查询时
+     * 触发一次（幂等），静默删除不在当前注册表中的模型目录。
+     */
+    private fun cleanupUnregisteredModels() {
+        if (cleanupDone) return
+        synchronized(this) {
+            if (cleanupDone) return
+
+            val root = getModelsRootDir() ?: return
+            if (!root.isDirectory) return
+            // 有下载任务进行时不清理，避免误删正在写入的目录；保持未置位，下次查询重试
+            if (isAnyModelDownloading()) return
+            cleanupDone = true
+
+            val registeredIds = LocalModelRegistry.ALL_MODELS.map { it.id }.toSet()
+            root.listFiles()?.filter { it.isDirectory && it.name !in registeredIds }?.forEach { dir ->
+                try {
+                    val deleted = dir.walkBottomUp().fold(0L) { acc, f -> acc + (f.length()) }
+                    dir.deleteRecursively()
+                    TtsLogger.i("Removed unregistered model dir: ${dir.name} (~${deleted / 1024 / 1024}MB)", tag = TAG)
+                } catch (e: Exception) {
+                    // 清理失败不影响功能，下次进程启动可重试（cleanupDone 已置位则跳过）
+                    TtsLogger.w("Failed to cleanup model dir ${dir.name}: ${e.message}", tag = TAG)
+                }
+            }
         }
     }
 

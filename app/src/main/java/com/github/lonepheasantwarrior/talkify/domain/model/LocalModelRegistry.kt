@@ -32,105 +32,54 @@ object LocalModelRegistry {
     fun getFallbackBaseUrl(): String = FALLBACK_HF_ORIGIN
 
     /**
-     * VITS 普通话 (AISHELL3) 模型定义
+     * ZipVoice-Distill 模型定义（sherpa-onnx 适配版，int8 量化）
      *
-     * 来源：csukuangfj/vits-zh-aishell3
-     * 架构：VITS
-     * 语言：中文（普通话）
-     */
-    val VITS_ZH_AISHELL3 = LocalModelInfo(
-        id = "vits-zh-aishell3",
-        displayName = "VITS 普通话 (AISHELL3)",
-        modelType = LocalModelType.VITS,
-        description = "基于 AISHELL3 数据集训练的 VITS 中文普通话语音合成模型，音色自然流畅",
-        downloadSizeBytes = 47_000_000L,
-        downloadSizeDisplay = "~45 MB",
-        md5 = "",  // 待实际下载后计算真实值
-        downloadFileInfo = mapOf(
-            "$DEFAULT_HF_MIRROR/csukuangfj/vits-zh-aishell3/resolve/main/vits-aishell3.onnx" to "model.onnx",
-            "$DEFAULT_HF_MIRROR/csukuangfj/vits-zh-aishell3/resolve/main/tokens.txt" to "tokens.txt",
-            "$DEFAULT_HF_MIRROR/csukuangfj/vits-zh-aishell3/resolve/main/lexicon.txt" to "lexicon.txt"
-        ),
-        voiceList = listOf(
-            LocalModelVoice(voiceId = "aishell3_default", displayName = "默认女声", language = "zh")
-        ),
-        sampleRate = 22050,
-        supportedLanguages = listOf("zh")
-    )
-
-    /**
-     * VITS 粤语 (Xiaomai) 模型定义
-     *
-     * 来源：csukuangfj/vits-cantonese-hf-xiaomaiiwn
-     * 架构：VITS
-     * 语言：粤语
-     */
-    val VITS_CANTONESE_XIAOMAI = LocalModelInfo(
-        id = "vits-cantonese-hf-xiaomai",
-        displayName = "VITS 粤语 (Xiaomai)",
-        modelType = LocalModelType.VITS,
-        description = "基于 Xiaomai 数据集的 VITS 粤语语音合成模型",
-        downloadSizeBytes = 52_000_000L,
-        downloadSizeDisplay = "~50 MB",
-        md5 = "",  // 待实际下载后计算真实值
-        downloadFileInfo = mapOf(
-            "$DEFAULT_HF_MIRROR/csukuangfj/vits-cantonese-hf-xiaomaiiwn/resolve/main/vits-cantonese-hf-xiaomaiiwn.onnx" to "model.onnx",
-            "$DEFAULT_HF_MIRROR/csukuangfj/vits-cantonese-hf-xiaomaiiwn/resolve/main/tokens.txt" to "tokens.txt",
-            "$DEFAULT_HF_MIRROR/csukuangfj/vits-cantonese-hf-xiaomaiiwn/resolve/main/lexicon.txt" to "lexicon.txt"
-        ),
-        voiceList = listOf(
-            LocalModelVoice(voiceId = "cantonese_default", displayName = "默认粤语女声", language = "yue")
-        ),
-        sampleRate = 22050,
-        supportedLanguages = listOf("yue")
-    )
-
-    /**
-     * Kokoro-82M 模型定义（sherpa-onnx 适配版）
-     *
-     * 来源：csukuangfj/kokoro-multi-lang-v1_1（v1.1-zh, sherpa-onnx 专版）
-     * 架构：KOKORO
+     * 来源：k2-fsa/sherpa-onnx 官方 Releases（tts-models / vocoder-models 标签）
+     * 架构：ZipVoice（流匹配零样本 TTS，音色由参考音频定义）
      * 语言：中文 / 英文
      *
-     * 注意：必须使用 csukuangfj 转换版，onnx-community 原始转换版
-     * （tokenizer_config.json + 独立 voice.bin）不兼容 sherpa-onnx API。
+     * 许可注意：模型权重基于 Emilia 数据集训练（CC-BY-NC-4.0），仅限非商用。
+     *
+     * 下载架构说明：模型文件 + espeak-ng-data + 参考音频均打包在官方 tarball 中，
+     * 走 archiveAssets 一次性下载解压；声码器 vocos_24khz.onnx 单独下载。
+     * GitHub 资源由下载服务自动叠加国内加速代理链（ghfast.top → gh-proxy.com → 源站），
+     * 大陆直连 GitHub Releases 会被连接重置或仅有百 KB 级速率，不可直接使用。
+     * 未采用「hf-mirror 拆分下载」的原因：k2-fsa/ZipVoice 的 HuggingFace 仓库
+     * 仅有 encoder/decoder/tokens，缺少 lexicon、espeak-ng-data、vocoder 与参考
+     * 音频（已全站排查确认），tarball 是唯一完整的官方发布物。
+     *
+     * 临时音色说明：test_wavs/leijun-1.wav 为官方测试音频（真人声纹），
+     * 仅用于本地合成链路验证，正式发布前必须替换为授权干净的音色包。
      */
-    val KOKORO_82M = LocalModelInfo(
-        id = "kokoro-82m",
-        displayName = "Kokoro-82M 中英混合",
-        modelType = LocalModelType.KOKORO,
-        description = "Kokoro-82M v1.1-zh 中英文混合 TTS 模型，支持 103 种音色",
-        downloadSizeBytes = 450_000_000L,
-        downloadSizeDisplay = "~440 MB",
+    val ZIPVOICE_DISTILL = LocalModelInfo(
+        id = "zipvoice_distill",
+        displayName = "ZipVoice-Distill 中英混合",
+        description = "ZipVoice-Distill 零样本流匹配 TTS（int8 量化），自然度显著优于 VITS/Kokoro，音色由参考音频克隆",
+        downloadSizeBytes = 204_000_000L,
+        downloadSizeDisplay = "~200 MB",
         md5 = "",  // 待实际下载后计算真实值
         downloadFileInfo = mapOf(
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/model.onnx" to "model.onnx",
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/tokens.txt" to "tokens.txt",
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/voices.bin" to "voices.bin",
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/lexicon-zh.txt" to "lexicon-zh.txt",
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/lexicon-us-en.txt" to "lexicon-us-en.txt",
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/date-zh.fst" to "date-zh.fst",
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/number-zh.fst" to "number-zh.fst",
-            "$DEFAULT_HF_MIRROR/csukuangfj/kokoro-multi-lang-v1_1/resolve/main/phone-zh.fst" to "phone-zh.fst"
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/vocoder-models/vocos_24khz.onnx" to "vocos_24khz.onnx"
+        ),
+        requiredLocalFiles = listOf(
+            "encoder.int8.onnx",
+            "decoder.int8.onnx",
+            "tokens.txt",
+            "lexicon.txt",
+            "espeak-ng-data/phontab",
+            "test_wavs/leijun-1.wav"
         ),
         archiveAssets = mapOf(
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2" to ""
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-zipvoice-distill-int8-zh-en-emilia.tar.bz2" to ""
         ),
         voiceList = listOf(
-            LocalModelVoice(voiceId = "3", displayName = "中文女声 001", language = "zh"),
-            LocalModelVoice(voiceId = "4", displayName = "中文女声 002", language = "zh"),
-            LocalModelVoice(voiceId = "7", displayName = "中文女声 005", language = "zh"),
-            LocalModelVoice(voiceId = "18", displayName = "中文女声 026", language = "zh"),
-            LocalModelVoice(voiceId = "38", displayName = "中文女声 071", language = "zh"),
-            LocalModelVoice(voiceId = "50", displayName = "中文女声 086", language = "zh"),
-            LocalModelVoice(voiceId = "58", displayName = "中文男声 009", language = "zh"),
-            LocalModelVoice(voiceId = "67", displayName = "中文男声 025", language = "zh"),
-            LocalModelVoice(voiceId = "76", displayName = "中文男声 045", language = "zh"),
-            LocalModelVoice(voiceId = "96", displayName = "中文男声 089", language = "zh"),
-            LocalModelVoice(voiceId = "102", displayName = "中文男声 100", language = "zh"),
-            LocalModelVoice(voiceId = "0", displayName = "Maple (美式女声)", language = "en"),
-            LocalModelVoice(voiceId = "1", displayName = "Sol (美式女声)", language = "en"),
-            LocalModelVoice(voiceId = "2", displayName = "Vale (英式女声)", language = "en")
+            LocalModelVoice(
+                voiceId = "temp_leijun",
+                displayName = "临时测试音色（勿发布）",
+                language = "zh",
+                referenceFileName = "test_wavs/leijun-1.wav",
+                referenceText = "那还是三十六年前, 一九八七年. 我呢考上了武汉大学的计算机系."
+            )
         ),
         sampleRate = 24000,
         supportedLanguages = listOf("zh", "en")
@@ -140,9 +89,7 @@ object LocalModelRegistry {
      * 所有已注册的本地模型列表
      */
     val ALL_MODELS: List<LocalModelInfo> = listOf(
-        VITS_ZH_AISHELL3,
-        VITS_CANTONESE_XIAOMAI,
-        KOKORO_82M
+        ZIPVOICE_DISTILL
     )
 
     /**
@@ -165,5 +112,5 @@ object LocalModelRegistry {
     /**
      * 获取默认模型
      */
-    fun getDefaultModel(): LocalModelInfo = VITS_ZH_AISHELL3
+    fun getDefaultModel(): LocalModelInfo = ZIPVOICE_DISTILL
 }

@@ -10,6 +10,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.SherpaTtsEngine
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.WavSampleReader
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
@@ -49,7 +50,7 @@ class LocalModelProvider : AbstractTtsProvider() {
         /** 默认语速倍率 */
         private const val DEFAULT_SPEED = 1.0f
 
-        /** 引擎空闲释放超时：Kokoro 模型约 440MB native 内存，空闲期间应归还系统 */
+        /** 引擎空闲释放超时：ZipVoice 模型约 200MB native 内存，空闲期间应归还系统 */
         private const val ENGINE_IDLE_TIMEOUT_MS = 5 * 60 * 1000L
     }
 
@@ -89,10 +90,8 @@ class LocalModelProvider : AbstractTtsProvider() {
      * 获取当前引擎的音频配置，根据模型动态确定采样率
      */
     override fun getAudioConfig(): AudioConfig {
-        val modelId = currentModelId ?: getDefaultModelId()
-        val modelInfo = LocalModelRegistry.getModel(modelId)
-        val sampleRate = modelInfo?.sampleRate ?: AudioConfig.DEFAULT_SAMPLE_RATE
-        return AudioConfig.createStandard(sampleRate = sampleRate)
+        val modelInfo = resolveModelInfo(currentModelId ?: "")
+        return AudioConfig.createStandard(sampleRate = modelInfo.sampleRate)
     }
 
     // ==================== 配置检查 ====================
@@ -100,7 +99,7 @@ class LocalModelProvider : AbstractTtsProvider() {
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
         val lc = config as? LocalModelConfig ?: return false
         val modelId = lc.modelId.ifBlank { return false }
-        return LocalModelManager.isModelDownloaded(modelId)
+        return LocalModelManager.isModelDownloaded(resolveModelInfo(modelId).id)
     }
 
     override fun createDefaultConfig(): BaseProviderConfig {
@@ -124,8 +123,9 @@ class LocalModelProvider : AbstractTtsProvider() {
             return
         }
 
-        // 确定目标模型 ID
-        val modelId = lc.modelId.ifBlank { getDefaultModelId() }
+        // 确定目标模型：历史版本持久化的模型 ID 可能已从注册表移除，此时回退默认模型
+        val modelInfo = resolveModelInfo(lc.modelId)
+        val modelId = modelInfo.id
 
         // 检查模型是否已下载
         if (!LocalModelManager.isModelDownloaded(modelId)) {
@@ -143,13 +143,6 @@ class LocalModelProvider : AbstractTtsProvider() {
         if (!containsReadableText(text)) {
             logWarning("文本不包含可朗读的文字内容")
             listener.onSynthesisCompleted()
-            return
-        }
-
-        val modelInfo = LocalModelRegistry.getModel(modelId)
-        if (modelInfo == null) {
-            logError("Unknown model: $modelId")
-            listener.onError("未知模型: $modelId")
             return
         }
 
@@ -172,9 +165,27 @@ class LocalModelProvider : AbstractTtsProvider() {
 
                 listener.onSynthesisStarted()
 
+                // ZipVoice 音色 = 参考音频 + 逐字稿；历史持久化的 voiceId 可能已失效，
+                // 此时回退模型默认音色，用户侧体验不变
+                val requestedVoiceName = extractRealVoiceName(lc.voiceId) ?: lc.voiceId
+                val voice = modelInfo.voiceList.firstOrNull { it.voiceId == requestedVoiceName }
+                    ?: modelInfo.voiceList.firstOrNull()
+                    ?: throw IllegalStateException("模型 ${modelInfo.id} 未配置音色")
+                val modelDir = LocalModelManager.getModelDownloadedDir(modelId)
+                    ?: throw IllegalStateException("无法获取模型目录: $modelId")
+                val referenceFile = File(modelDir, voice.referenceFileName)
+                val reference = WavSampleReader.read(referenceFile)
+                logInfo("Using voice=${voice.voiceId}, reference=${voice.referenceFileName}")
+
                 // 真正流式合成：Sherpa-onnx 每生成一小段 PCM（通常为一个句子）
                 // 就通过 generateWithConfigAndCallback 回调第一时间送达给 Android TTS callback
-                currentEngine.synthesizeStream(text, lc.voiceId, speed) { pcmData, sampleRate ->
+                currentEngine.synthesizeStream(
+                    text = text,
+                    referenceAudio = reference.samples,
+                    referenceSampleRate = reference.sampleRate,
+                    referenceText = voice.referenceText,
+                    speed = speed
+                ) { pcmData, sampleRate ->
                     if (!isCancelled) {
                         listener.onAudioAvailable(
                             pcmData,
@@ -206,6 +217,18 @@ class LocalModelProvider : AbstractTtsProvider() {
     }
 
     // ==================== 引擎管理 ====================
+
+    /**
+     * 解析目标模型元信息
+     *
+     * 注册表查不到（历史版本持久化的已移除模型 ID 或空值）时回退默认模型，
+     * 避免升级后本地模型功能整体不可用
+     */
+    private fun resolveModelInfo(rawModelId: String?): com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo {
+        val resolved = rawModelId?.takeIf { it.isNotBlank() }
+            ?.let { LocalModelRegistry.getModel(it) }
+        return resolved ?: LocalModelRegistry.getDefaultModel()
+    }
 
     /**
      * 确保引擎实例可用
@@ -294,7 +317,7 @@ class LocalModelProvider : AbstractTtsProvider() {
     // ==================== 供应商元数据 ====================
 
     override fun getSupportedLanguages(): Set<String> {
-        return setOf("zho", "eng", "yue")
+        return setOf("zho", "eng")
     }
 
     override fun getDefaultLanguage(): Array<String> {
@@ -303,8 +326,7 @@ class LocalModelProvider : AbstractTtsProvider() {
 
     override fun getSupportedVoices(): List<Voice> {
         val voices = mutableListOf<Voice>()
-        val modelId = currentModelId ?: getDefaultModelId()
-        val modelInfo = LocalModelRegistry.getModel(modelId) ?: return voices
+        val modelInfo = resolveModelInfo(currentModelId)
 
         for (voice in modelInfo.voiceList) {
             voices.add(
@@ -328,15 +350,13 @@ class LocalModelProvider : AbstractTtsProvider() {
         currentVoiceId: String?
     ): String {
         if (!currentVoiceId.isNullOrBlank()) return currentVoiceId
-        val modelId = currentModelId ?: getDefaultModelId()
-        val modelInfo = LocalModelRegistry.getModel(modelId)
-        return modelInfo?.voiceList?.firstOrNull()?.voiceId ?: "default"
+        val modelInfo = resolveModelInfo(currentModelId)
+        return modelInfo.voiceList.firstOrNull()?.voiceId ?: "default"
     }
 
     override fun isVoiceIdCorrect(voiceId: String?): Boolean {
         if (voiceId.isNullOrBlank()) return false
-        val modelId = currentModelId ?: getDefaultModelId()
-        val modelInfo = LocalModelRegistry.getModel(modelId) ?: return false
+        val modelInfo = resolveModelInfo(currentModelId)
         val realName = extractRealVoiceName(voiceId) ?: voiceId
         return modelInfo.voiceList.any { it.voiceId == realName }
     }

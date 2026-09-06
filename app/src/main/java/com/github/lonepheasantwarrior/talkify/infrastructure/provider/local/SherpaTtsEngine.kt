@@ -1,14 +1,12 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.local
 
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo
-import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelType
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.k2fsa.sherpa.onnx.GenerationConfig
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsZipVoiceModelConfig
 import java.io.File
 
 /**
@@ -41,11 +39,11 @@ data class SynthesisResult(
 }
 
 /**
- * Sherpa-onnx 本地 TTS 推理引擎封装
+ * Sherpa-onnx 本地 TTS 推理引擎封装（ZipVoice 零样本流匹配架构）
  *
  * 封装 Sherpa-onnx 的 [OfflineTts]，提供：
  * - 惰性初始化（首次 synthesize 时加载模型）
- * - VITS / Kokoro 双架构支持
+ * - ZipVoice-Distill 零样本合成：音色由参考音频 + 逐字稿定义
  * - 文本→PCM 16bit 音频的本地推理
  * - 线程安全与资源释放
  *
@@ -57,7 +55,7 @@ class SherpaTtsEngine(
     private val modelDir: File
 ) {
 
-    private val tag = "SherpaItsEngine[${modelInfo.id}]"
+    private val tag = "SherpaTtsEngine[${modelInfo.id}]"
 
     @Volatile
     private var tts: OfflineTts? = null
@@ -77,9 +75,9 @@ class SherpaTtsEngine(
     /**
      * 初始化 Sherpa-onnx 引擎
      *
-     * 根据 [LocalModelType] 选择对应的配置模式：
-     * - VITS：加载 model.onnx + tokens.txt + lexicon.txt
-     * - KOKORO：加载 model.onnx + tokens.txt + voices.bin + lexicon-zh.txt + espeak-ng-data/
+     * 加载 ZipVoice-Distill 所需文件：
+     * encoder.int8.onnx + decoder.int8.onnx + tokens.txt + lexicon.txt
+     * + espeak-ng-data/（tarball 解压产物）+ vocos_24khz.onnx（单独下载）
      *
      * @throws IllegalStateException 模型文件缺失或初始化失败
      */
@@ -108,12 +106,20 @@ class SherpaTtsEngine(
      * 首次调用会自动触发初始化（惰性加载）。
      *
      * @param text 输入文本
-     * @param voiceId 目标音色 ID（Kokoro 模型支持的音色，VITS 忽略此参数）
+     * @param referenceAudio 参考音频浮点样本（决定合成音色）
+     * @param referenceSampleRate 参考音频采样率
+     * @param referenceText 参考音频逐字稿，必须与音频内容完全一致
      * @param speed 语速倍率（1.0 为正常速度）
      * @return [SynthesisResult] 包含 PCM 音频数据及实际采样率
      * @throws IllegalStateException 引擎未初始化或已释放
      */
-    fun synthesize(text: String, voiceId: String?, speed: Float): SynthesisResult {
+    fun synthesize(
+        text: String,
+        referenceAudio: FloatArray,
+        referenceSampleRate: Int,
+        referenceText: String,
+        speed: Float
+    ): SynthesisResult {
         if (isReleased) throw IllegalStateException("Engine has been released")
 
         // 惰性初始化
@@ -123,11 +129,8 @@ class SherpaTtsEngine(
 
         val engine = tts ?: throw IllegalStateException("TTS engine not initialized")
 
-        val audio = engine.generate(
-            text = text,
-            sid = if (modelInfo.modelType == LocalModelType.KOKORO) voiceId?.toIntOrNull() ?: 0 else 0,
-            speed = speed.coerceIn(0.5f, 2.0f)
-        )
+        val genConfig = buildGenerationConfig(referenceAudio, referenceSampleRate, referenceText, speed)
+        val audio = engine.generateWithConfig(text, genConfig)
 
         val actualSampleRate = audio.sampleRate
         val pcmData = floatArrayToPcm16(audio.samples)
@@ -142,21 +145,25 @@ class SherpaTtsEngine(
      *
      * 与 [synthesize] 不同，本方法不会等待全文本合成完毕再返回，
      * 而是通过 Sherpa-onnx 的底层回调机制，每生成一小段 PCM 采样（通常为一个句子）
-     * 就立即触发 [onAudioChunk] 回调。首包音频可在 300-500ms 内到达。
+     * 就立即触发 [onAudioChunk] 回调。
      *
      * 回调返回 `true` 继续合成，返回 `false` 提前中断（对应停止播放场景）。
      *
      * **必须在后台线程调用**（此方法内部包含阻塞式 JNI 调用）。
      *
      * @param text 待合成文本
-     * @param voiceId Kokoro 音色 ID（VITS 忽略此参数）
+     * @param referenceAudio 参考音频浮点样本（决定合成音色）
+     * @param referenceSampleRate 参考音频采样率
+     * @param referenceText 参考音频逐字稿
      * @param speed 语速倍率（0.5~2.0）
      * @param onAudioChunk 音频回调：(pcm16Data: ByteArray, sampleRate: Int) → Boolean
      * @return `true` 正常完成，`false` 被回调中断
      */
     fun synthesizeStream(
         text: String,
-        voiceId: String?,
+        referenceAudio: FloatArray,
+        referenceSampleRate: Int,
+        referenceText: String,
         speed: Float,
         onAudioChunk: (pcm16Data: ByteArray, sampleRate: Int) -> Boolean
     ): Boolean {
@@ -169,10 +176,7 @@ class SherpaTtsEngine(
         val engine = tts ?: throw IllegalStateException("TTS engine not initialized")
         val sampleRate = engine.sampleRate()
 
-        val genConfig = GenerationConfig(
-            sid = if (modelInfo.modelType == LocalModelType.KOKORO) voiceId?.toIntOrNull() ?: 0 else 0,
-            speed = speed.coerceIn(0.5f, 2.0f)
-        )
+        val genConfig = buildGenerationConfig(referenceAudio, referenceSampleRate, referenceText, speed)
 
         var completed = true
 
@@ -229,7 +233,8 @@ class SherpaTtsEngine(
             throw IllegalStateException("Model directory not found: ${modelDir.absolutePath}")
         }
 
-        for (fileName in modelInfo.downloadFileInfo.values) {
+        val requiredFiles = modelInfo.downloadFileInfo.values + modelInfo.requiredLocalFiles
+        for (fileName in requiredFiles) {
             val file = File(modelDir, fileName)
             if (!file.exists() || file.length() <= 0) {
                 throw IllegalStateException("Model file missing or empty: ${file.absolutePath}")
@@ -238,51 +243,27 @@ class SherpaTtsEngine(
     }
 
     /**
+     * 构建 ZipVoice 生成参数
+     *
+     * numSteps=4: 官方文档对 Distill 模型的推荐值（步数越少越快，音质略降）
+     */
+    private fun buildGenerationConfig(
+        referenceAudio: FloatArray,
+        referenceSampleRate: Int,
+        referenceText: String,
+        speed: Float
+    ): GenerationConfig = GenerationConfig(
+        speed = speed.coerceIn(0.5f, 2.0f),
+        referenceAudio = referenceAudio,
+        referenceSampleRate = referenceSampleRate,
+        referenceText = referenceText,
+        numSteps = 4
+    )
+
+    /**
      * 根据模型类型构建 Sherpa-onnx 配置
      */
     private fun buildTtsConfig(): OfflineTtsConfig {
-        val modelConfig = when (modelInfo.modelType) {
-            LocalModelType.VITS -> buildVitsConfig()
-            LocalModelType.KOKORO -> buildKokoroConfig()
-        }
-
-        return OfflineTtsConfig(
-            model = modelConfig,
-            maxNumSentences = 1
-            // ruleFsts: v1.13.1 期望单个 .fst 文件路径，不能传目录；
-            // 我们下载的 date-zh.fst / number-zh.fst / phone-zh.fst 是独立规则文件，
-            // 无法通过此参数直接使用，留空以跳过 FST 文本正则化。
-        )
-    }
-
-    /**
-     * 构建 VITS 模型配置
-     *
-     * numThreads=4: 官方 RTF 基准测试显示 4 线程较 2 线程提升约 30% 推理速度
-     */
-    private fun buildVitsConfig(): OfflineTtsModelConfig {
-        val vitsConfig = OfflineTtsVitsModelConfig(
-            model = resolveFilePath("model.onnx"),
-            tokens = resolveFilePath("tokens.txt"),
-            lexicon = resolveFilePath("lexicon.txt")
-        )
-        return OfflineTtsModelConfig(
-            vits = vitsConfig,
-            numThreads = 4,
-            provider = "cpu",
-            debug = false
-        )
-    }
-
-    /**
-     * 构建 Kokoro 模型配置
-     *
-     * 使用 csukuangfj/kokoro-multi-lang-v1_1（sherpa-onnx 适配版）。
-     * voices: voices.bin（103 个音色的向量文件）
-     * dataDir: espeak-ng-data/ 目录（Kokoro 强制要求，sherpa-onnx C++ Validate() 拒绝空串）
-     * numThreads=4: 官方 RTF 基准测试显示 4 线程较 2 线程提升约 30%
-     */
-    private fun buildKokoroConfig(): OfflineTtsModelConfig {
         val espeakDataDir = File(modelDir, "espeak-ng-data")
         // sherpa-onnx C++ Validate() 强制要求 dataDir 非空：
         //   if (data_dir.empty()) { LOGE(...); return false; }
@@ -291,22 +272,29 @@ class SherpaTtsEngine(
         if (!espeakDataDir.isDirectory || !File(espeakDataDir, "phontab").exists()) {
             throw IllegalStateException(
                 "espeak-ng-data not found at ${espeakDataDir.absolutePath}. " +
-                "Kokoro model requires espeak-ng-data for phoneme conversion. " +
+                "ZipVoice model requires espeak-ng-data for phoneme conversion. " +
                 "Please re-download the model to restore this directory."
             )
         }
-        val kokoroConfig = OfflineTtsKokoroModelConfig(
-            model = resolveFilePath("model.onnx"),
+
+        val zipVoiceConfig = OfflineTtsZipVoiceModelConfig(
             tokens = resolveFilePath("tokens.txt"),
-            voices = resolveFilePath("voices.bin"),
-            lexicon = resolveFilePath("lexicon-zh.txt"),
-            dataDir = espeakDataDir.absolutePath
+            encoder = resolveFilePath("encoder.int8.onnx"),
+            decoder = resolveFilePath("decoder.int8.onnx"),
+            vocoder = resolveFilePath("vocos_24khz.onnx"),
+            dataDir = espeakDataDir.absolutePath,
+            lexicon = resolveFilePath("lexicon.txt")
         )
-        return OfflineTtsModelConfig(
-            kokoro = kokoroConfig,
-            numThreads = 4,
-            provider = "cpu",
-            debug = false
+
+        // numThreads=4: 官方 RTF 基准测试显示 4 线程较 2 线程提升约 30% 推理速度
+        return OfflineTtsConfig(
+            model = OfflineTtsModelConfig(
+                zipvoice = zipVoiceConfig,
+                numThreads = 4,
+                provider = "cpu",
+                debug = false
+            ),
+            maxNumSentences = 1
         )
     }
 

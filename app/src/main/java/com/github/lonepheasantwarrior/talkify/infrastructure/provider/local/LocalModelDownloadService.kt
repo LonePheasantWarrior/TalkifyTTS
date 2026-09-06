@@ -2,10 +2,7 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.provider.local
 
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -45,7 +42,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 启动方式：
  * ```kotlin
  * val intent = Intent(context, LocalModelDownloadService::class.java).apply {
- *     putExtra(EXTRA_MODEL_ID, "vits-zh-aishell3")
+ *     putExtra(EXTRA_MODEL_ID, "zipvoice_distill")
  * }
  * context.startForegroundService(intent)
  * ```
@@ -99,33 +96,25 @@ class LocalModelDownloadService : Service() {
             .build()
     }
 
-    private val cancelReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_CANCEL) {
-                TtsLogger.i("Download cancelled by user", tag = TAG)
-                isCancelled.set(true)
-                downloadJob?.cancel()
-                stopSelf()
-            }
-        }
-    }
-
     // ==================== Service 生命周期 ====================
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-
-        // 注册取消广播接收器
-        val filter = IntentFilter(ACTION_CANCEL)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(cancelReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(cancelReceiver, filter)
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 通知栏"取消"动作经 PendingIntent.getForegroundService 显式直达此处。
+        // 不再使用广播：通知上的 PendingIntent 由系统进程代为发送，部分 ROM 会
+        // 丢弃发往 RECEIVER_NOT_EXPORTED 接收器的自定义广播，导致取消按钮失效。
+        if (intent?.action == ACTION_CANCEL) {
+            TtsLogger.i("Download cancelled by user", tag = TAG)
+            isCancelled.set(true)
+            // 不在此处 stopSelf：让下载循环命中取消分支，统一走
+            // onDownloadCancelled（清理文件/移除通知/停止服务）
+            return START_NOT_STICKY
+        }
+
         val modelId = intent?.getStringExtra(EXTRA_MODEL_ID)
         if (modelId.isNullOrBlank()) {
             TtsLogger.e("No model ID provided, stopping service", tag = TAG)
@@ -164,9 +153,6 @@ class LocalModelDownloadService : Service() {
         scope.cancel()
         // 清除下载状态标记，防止进程被杀后残留僵尸状态
         LocalModelManager.setDownloadingModelId(null)
-        try {
-            unregisterReceiver(cancelReceiver)
-        } catch (_: Exception) {}
         super.onDestroy()
     }
 
@@ -176,8 +162,8 @@ class LocalModelDownloadService : Service() {
      * 下载模型全部文件
      *
      * 下载策略：
-     * 1. 先尝试默认源（hf-mirror.com）
-     * 2. 失败时自动切换到备用源（huggingface.co）
+     * 1. 为每个 URL 生成候选源链（见 [buildCandidateUrls]），依次尝试直到成功
+     * 2. 全部候选失败才判定该文件下载失败
      */
     private suspend fun downloadModel(modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo) {
         val modelDir = LocalModelManager.getModelDownloadedDir(modelInfo.id)
@@ -214,20 +200,15 @@ class LocalModelDownloadService : Service() {
 
             TtsLogger.d("Downloading file ${index + 1}/$totalFiles: $fileName", tag = TAG)
 
-            var success = tryDownloadFile(url, targetFile, modelInfo.displayName, totalDownloaded, totalSize)
-            if (!success) {
-                // 切换到备用源重试
-                val fallbackUrl = url.replace(
-                    LocalModelRegistry.DEFAULT_HF_MIRROR,
-                    LocalModelRegistry.FALLBACK_HF_ORIGIN
-                )
-                TtsLogger.w("Primary source failed, trying fallback: $fallbackUrl", tag = TAG)
-                success = tryDownloadFile(fallbackUrl, targetFile, modelInfo.displayName, totalDownloaded, totalSize)
-            }
+            val success = tryDownloadWithCandidates(url, targetFile, modelInfo.displayName, totalDownloaded, totalSize)
 
             if (!success) {
-                onDownloadFailed(modelInfo, "文件下载失败: $fileName")
-                cleanupPartialFiles(modelDir)
+                if (isCancelled.get()) {
+                    onDownloadCancelled(modelInfo, modelDir)
+                } else {
+                    onDownloadFailed(modelInfo, "文件下载失败: $fileName")
+                    cleanupPartialFiles(modelDir)
+                }
                 return
             }
 
@@ -246,9 +227,13 @@ class LocalModelDownloadService : Service() {
                 val archiveFile = File(modelDir, "temp_archive.tar.bz2")
                 try {
                     TtsLogger.i("Downloading archive: $archiveUrl", tag = TAG)
-                    if (!tryDownloadFile(archiveUrl, archiveFile, modelInfo.displayName, totalDownloaded, totalSize)) {
-                        onDownloadFailed(modelInfo, "归档资源下载失败: $archiveUrl")
-                        cleanupPartialFiles(modelDir)
+                    if (!tryDownloadWithCandidates(archiveUrl, archiveFile, modelInfo.displayName, totalDownloaded, totalSize)) {
+                        if (isCancelled.get()) {
+                            onDownloadCancelled(modelInfo, modelDir)
+                        } else {
+                            onDownloadFailed(modelInfo, "归档资源下载失败: $archiveUrl")
+                            cleanupPartialFiles(modelDir)
+                        }
                         return
                     }
 
@@ -257,8 +242,12 @@ class LocalModelDownloadService : Service() {
                     TtsLogger.i("Extracting archive to: $subDir", tag = TAG)
                     val targetDir = if (subDir.isEmpty()) modelDir else File(modelDir, subDir)
                     if (!extractTarBz2(archiveFile, targetDir)) {
-                        onDownloadFailed(modelInfo, "归档资源解压失败: $subDir")
-                        cleanupPartialFiles(modelDir)
+                        if (isCancelled.get()) {
+                            onDownloadCancelled(modelInfo, modelDir)
+                        } else {
+                            onDownloadFailed(modelInfo, "归档资源解压失败: $subDir")
+                            cleanupPartialFiles(modelDir)
+                        }
                         return
                     }
                 } finally {
@@ -268,12 +257,21 @@ class LocalModelDownloadService : Service() {
             }
         }
 
+        // ========== 阶段切换：归档布局归一化 ==========
+        if (modelInfo.archiveAssets.isNotEmpty()) {
+            if (!normalizeArchiveLayout(modelDir, modelInfo)) {
+                onDownloadFailed(modelInfo, "归档解压布局异常，缺少必需文件")
+                cleanupPartialFiles(modelDir)
+                return
+            }
+        }
+
         // ========== 阶段切换：下载完成 → 完整性校验 ==========
         TtsLogger.i("All files downloaded for ${modelInfo.id}, starting integrity verification", tag = TAG)
         updateVerifyingNotification(modelInfo.displayName)
 
-        // 验证所有文件完整性
-        if (!verifyDownloadedFiles(modelDir, urlEntries)) {
+        // 验证所有文件完整性（downloadFileInfo + archiveAssets 解压产物）
+        if (!verifyDownloadedFiles(modelDir, urlEntries, modelInfo.requiredLocalFiles)) {
             onDownloadFailed(modelInfo, "模型文件校验失败，部分文件不完整")
             cleanupPartialFiles(modelDir)
             return
@@ -290,6 +288,56 @@ class LocalModelDownloadService : Service() {
 
         // 完整性校验通过
         onDownloadCompleted(modelInfo)
+    }
+
+    /**
+     * 依次尝试 URL 候选源链，直到某个源下载成功
+     *
+     * @return true 任一候选源下载成功，false 全部失败
+     */
+    private fun tryDownloadWithCandidates(
+        url: String,
+        targetFile: File,
+        displayName: String,
+        baseDownloaded: Long,
+        totalSize: Long
+    ): Boolean {
+        val candidates = buildCandidateUrls(url)
+        candidates.forEachIndexed { index, candidate ->
+            if (index > 0) {
+                TtsLogger.w("Candidate ${index + 1}/${candidates.size}: $candidate", tag = TAG)
+            }
+            if (tryDownloadFile(candidate, targetFile, displayName, baseDownloaded, totalSize)) {
+                return true
+            }
+            if (isCancelled.get()) return false
+        }
+        return false
+    }
+
+    /**
+     * 为下载 URL 生成候选源链
+     *
+     * 国内直连 GitHub Releases 大概率连接重置或仅有百 KB 级速率，
+     * 因此 GitHub 资源优先走公共加速代理（community 加速服务，可用性会随时间波动），
+     * 失败后逐级回退；HF 资源保持「hf-mirror 镜像 → HF 原始源」的原有策略。
+     */
+    private fun buildCandidateUrls(url: String): List<String> {
+        return when {
+            url.startsWith("https://github.com/") -> listOf(
+                "https://ghfast.top/$url",
+                "https://gh-proxy.com/$url",
+                url
+            )
+            url.startsWith(LocalModelRegistry.DEFAULT_HF_MIRROR) -> listOf(
+                url,
+                url.replace(
+                    LocalModelRegistry.DEFAULT_HF_MIRROR,
+                    LocalModelRegistry.FALLBACK_HF_ORIGIN
+                )
+            )
+            else -> listOf(url)
+        }
     }
 
     /**
@@ -321,6 +369,8 @@ class LocalModelDownloadService : Service() {
                 targetFile.sink().buffer().use { sink ->
                     var downloaded = 0L
                     val contentLength = response.body?.contentLength() ?: -1L
+                    // 通知节流：系统对通知更新有约 5 次/秒的限流，逐块回调会被整批丢弃并刷爆日志
+                    var lastNotifyAt = 0L
 
                     while (!source.exhausted() && !isCancelled.get()) {
                         val bytesRead = source.read(sink.buffer, 8192)
@@ -328,14 +378,18 @@ class LocalModelDownloadService : Service() {
                         sink.emit()
                         downloaded += bytesRead
 
-                        // 更新进度
-                        val currentTotal = baseDownloaded + downloaded
-                        val progress = if (totalSize > 0) {
-                            ((currentTotal * 100) / totalSize).toInt().coerceIn(0, 100)
-                        } else {
-                            0
+                        // 更新进度（最多约 1 秒一次）
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastNotifyAt >= 1000) {
+                            lastNotifyAt = now
+                            val currentTotal = baseDownloaded + downloaded
+                            val progress = if (totalSize > 0) {
+                                ((currentTotal * 100) / totalSize).toInt().coerceIn(0, 100)
+                            } else {
+                                0
+                            }
+                            updateProgressNotification(displayName, progress)
                         }
-                        updateProgressNotification(displayName, progress)
                     }
 
                     sink.flush()
@@ -343,11 +397,64 @@ class LocalModelDownloadService : Service() {
             }
 
             response.close()
+            // 取消时半截文件不能算成功，否则取消会被误判为下载完成
+            if (isCancelled.get()) {
+                TtsLogger.i("Download interrupted by user cancel", tag = TAG)
+                return false
+            }
             return targetFile.exists() && targetFile.length() > 0
         } catch (e: IOException) {
             TtsLogger.e("Download error: ${e.message}", tag = TAG)
             return false
         }
+    }
+
+    /**
+     * 归一化归档解压布局
+     *
+     * 部分官方 tarball（如 sherpa-onnx-zipvoice-distill-*）内含一层与压缩包同名的
+     * 顶层目录，解压后必需文件位于该 wrapper 目录而非模型根目录，直接校验必然失败。
+     * 检测逻辑：若必需文件不在根目录，但恰好都位于唯一的顶层目录内，则将该目录
+     * 内容整体上移一层。必需文件本就在根目录的归档（如 espeak-ng-data.tar.bz2）不受影响。
+     *
+     * @return true 归一化后必需文件全部就位，false 布局无法修复
+     */
+    private fun normalizeArchiveLayout(
+        modelDir: File,
+        modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo
+    ): Boolean {
+        val required = modelInfo.requiredLocalFiles
+        if (required.isEmpty()) return true
+
+        fun allPresentAt(base: File): Boolean = required.all {
+            val f = File(base, it)
+            f.exists() && f.length() > 0
+        }
+
+        if (allPresentAt(modelDir)) return true
+
+        val topDirs = modelDir.listFiles()?.filter { it.isDirectory } ?: return false
+        if (topDirs.size != 1 || !allPresentAt(topDirs[0])) {
+            TtsLogger.e(
+                "Archive layout unexpected: root missing required files, top dirs=${topDirs.map { it.name }}",
+                tag = TAG
+            )
+            return false
+        }
+
+        val wrapper = topDirs[0]
+        var allMoved = true
+        wrapper.listFiles()?.forEach { child ->
+            if (!child.renameTo(File(modelDir, child.name))) {
+                TtsLogger.e("Failed to move ${child.name} out of wrapper dir", tag = TAG)
+                allMoved = false
+            }
+        }
+        if (allMoved) {
+            wrapper.delete()
+            TtsLogger.i("Flattened archive wrapper dir: ${wrapper.name}", tag = TAG)
+        }
+        return allMoved && allPresentAt(modelDir)
     }
 
     /**
@@ -446,15 +553,26 @@ class LocalModelDownloadService : Service() {
 
     /**
      * 快速校验已下载文件：所有文件必须存在且非空
+     *
+     * @param entries downloadFileInfo 的 URL→文件名映射项
+     * @param requiredLocalFiles 解压产物等不在 downloadFileInfo 中的必需文件（相对路径）
      */
     private fun verifyDownloadedFiles(
         modelDir: File,
-        entries: List<Map.Entry<String, String>>
+        entries: List<Map.Entry<String, String>>,
+        requiredLocalFiles: List<String> = emptyList()
     ): Boolean {
         for ((_, fileName) in entries) {
             val file = File(modelDir, fileName)
             if (!file.exists() || file.length() <= 0) {
                 TtsLogger.e("File verification failed: $fileName (exists=${file.exists()}, size=${file.length()})", tag = TAG)
+                return false
+            }
+        }
+        for (fileName in requiredLocalFiles) {
+            val file = File(modelDir, fileName)
+            if (!file.exists() || file.length() <= 0) {
+                TtsLogger.e("Required file verification failed: $fileName (exists=${file.exists()}, size=${file.length()})", tag = TAG)
                 return false
             }
         }
@@ -482,10 +600,10 @@ class LocalModelDownloadService : Service() {
     }
 
     private fun buildProgressNotification(displayName: String, progress: Int): android.app.Notification {
-        val cancelIntent = PendingIntent.getBroadcast(
+        val cancelIntent = PendingIntent.getForegroundService(
             this,
             0,
-            Intent(ACTION_CANCEL).apply { setPackage(packageName) },
+            Intent(this, LocalModelDownloadService::class.java).setAction(ACTION_CANCEL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 

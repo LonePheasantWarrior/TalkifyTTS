@@ -70,7 +70,7 @@ sealed class ProviderIds {
      */
     data object LocalModel : ProviderIds() {
         override val providerId: String = "localModel"
-        override val defaultModelId: String = "vits-zh-aishell3"
+        override val defaultModelId: String = "zipvoice_distill"
         override val provider: String = "本地模型"
     }
 
