@@ -20,7 +20,25 @@ import java.io.File
 data class SynthesisResult(
     val audioData: ByteArray,
     val sampleRate: Int
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as SynthesisResult
+
+        if (sampleRate != other.sampleRate) return false
+        if (!audioData.contentEquals(other.audioData)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = sampleRate
+        result = 31 * result + audioData.contentHashCode()
+        return result
+    }
+}
 
 /**
  * Sherpa-onnx 本地 TTS 推理引擎封装
@@ -39,7 +57,7 @@ class SherpaTtsEngine(
     private val modelDir: File
 ) {
 
-    private val tag = "SherpaTtsEngine[${modelInfo.id}]"
+    private val tag = "SherpaItsEngine[${modelInfo.id}]"
 
     @Volatile
     private var tts: OfflineTts? = null
@@ -53,6 +71,7 @@ class SherpaTtsEngine(
     /**
      * 获取引擎当前使用的模型 ID
      */
+    @Suppress("unused")
     fun getModelId(): String = modelInfo.id
 
     /**

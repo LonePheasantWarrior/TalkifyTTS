@@ -7,17 +7,17 @@ junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
-composeBom = "2026.06.01"
-dashscope = "2.22.27"
+composeBom = "2026.08.00"
+dashscope = "2.22.32"
 jlayer = "1.0.1"
 aptabase = "0.0.8"
-navigationCompose = "2.9.8"
+navigationCompose = "2.10.0"
 #为兼容dashscope，okhttp停留在4.12.0版本
 #noinspection NewerVersionAvailable
 okhttp = "4.12.0"
 sherpa-onnx = "v1.13.1"
 commons-compress = "1.28.0"
-org-json = "20240303"
+org-json = "20260814"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
