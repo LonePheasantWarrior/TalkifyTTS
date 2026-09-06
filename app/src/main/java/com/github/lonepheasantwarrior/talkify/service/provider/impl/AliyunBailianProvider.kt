@@ -21,6 +21,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.WavHeaderSanitizer
 import io.reactivex.Flowable
 import io.reactivex.disposables.Disposable
 import io.reactivex.subscribers.DisposableSubscriber
@@ -66,6 +67,8 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         @JvmName("getAudioConfigProperty") get() = AudioConfig.QWEN3_TTS
 
     init {
+        // DashScope SDK 的请求端点是全局静态（Constants.baseHttpApiUrl），仅在此设置一次默认值；
+        // 用户自定义地址的写入收敛见 buildConversationParam
         Constants.baseHttpApiUrl = DEFAULT_API_URL
     }
 
@@ -239,7 +242,11 @@ class AliyunBailianProvider : AbstractTtsProvider() {
 
                         // 【核心修复】：如果是第一个数据包，检查并剥离 WAV 文件头
                         if (isFirstAudioPacket) {
-                            audioData = stripWavHeader(audioData)
+                            val stripped = WavHeaderSanitizer.stripWavHeader(audioData)
+                            if (stripped !== audioData) {
+                                logInfo("Detected WAV header in stream, stripping the first 44 bytes to prevent audio cracking.")
+                            }
+                            audioData = stripped
                             isFirstAudioPacket = false
                         }
 
@@ -277,24 +284,6 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         }
     }
 
-    /**
-     * 【核心修复】：移除音频流中的 WAV 文件头（如果存在）
-     * 检查数据是否以 RIFF 和 WAVE 开头，如果是，则安全截取 44 字节之后的数据
-     */
-    private fun stripWavHeader(data: ByteArray): ByteArray {
-        // 标准 WAV 头包含 44 个字节
-        if (data.size >= 44 &&
-            data[0] == 'R'.code.toByte() && data[1] == 'I'.code.toByte() &&
-            data[2] == 'F'.code.toByte() && data[3] == 'F'.code.toByte() &&
-            data[8] == 'W'.code.toByte() && data[9] == 'A'.code.toByte() &&
-            data[10] == 'V'.code.toByte() && data[11] == 'E'.code.toByte()
-        ) {
-            logInfo("Detected WAV header in stream, stripping the first 44 bytes to prevent audio cracking.")
-            return data.copyOfRange(44, data.size)
-        }
-        return data
-    }
-
     private fun buildConversationParam(
         text: String, params: SynthesisParams, config: AliyunBailianConfig
     ): MultiModalConversationParam {
@@ -307,9 +296,13 @@ class AliyunBailianProvider : AbstractTtsProvider() {
 
         val languageType = convertToQwenLanguageType(params.language)
 
-        // 用户自定义 API 地址优先，为空时回退到默认地址
+        // 用户自定义 API 地址优先，为空时回退到默认地址。
+        // 注意：Constants.baseHttpApiUrl 是 SDK 全局静态，仅在值变化时写入，
+        // 且本 Provider 的分块合成为串行执行，避免并发写竞态
         val effectiveApiUrl = config.apiUrl.ifBlank { DEFAULT_API_URL }
-        Constants.baseHttpApiUrl = effectiveApiUrl
+        if (effectiveApiUrl != Constants.baseHttpApiUrl) {
+            Constants.baseHttpApiUrl = effectiveApiUrl
+        }
 
         // 用户自定义模型 ID 优先，为空时回退到默认模型
         val effectiveModel = config.modelId.ifBlank { getDefaultModelId() }
@@ -372,7 +365,7 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         return SUPPORTED_LANGUAGES.toSet()
     }
 
-    override fun getDefaultLanguages(): Array<String> {
+    override fun createDefaultLanguages(): Array<String> {
         return arrayOf(Locale.SIMPLIFIED_CHINESE.isO3Language, Locale.SIMPLIFIED_CHINESE.isO3Country, "")
     }
 
@@ -426,23 +419,13 @@ class AliyunBailianProvider : AbstractTtsProvider() {
     }
 
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
-        val qwenConfig = config as? AliyunBailianConfig
-        var result = false
-        if (qwenConfig != null) {
-            result = qwenConfig.apiKey.isNotBlank()
-        }
-        TtsLogger.d("$tag: isConfigured = $result")
-        return result
+        return isConfiguredAs(config) { c: AliyunBailianConfig -> c.apiKey.isNotBlank() }
     }
 
     override fun createDefaultConfig(): BaseProviderConfig {
         return AliyunBailianConfig()
     }
 
-    override fun getConfigLabel(configKey: String, context: android.content.Context): String? {
-        return when (configKey) {
-            "api_key" -> context.getString(R.string.api_key_label)
-            else -> super.getConfigLabel(configKey, context)
-        }
-    }
+    override val configLabels: Map<String, Int>
+        get() = mapOf("api_key" to R.string.api_key_label)
 }

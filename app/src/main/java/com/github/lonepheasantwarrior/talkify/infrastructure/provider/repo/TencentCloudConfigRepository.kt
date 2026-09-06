@@ -1,73 +1,44 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo
 
 import android.content.Context
-import android.content.SharedPreferences
-import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentCloudConfig
-import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 
 /**
  * 腾讯云语音合成供应商 - 配置仓储实现
  *
- * 使用 Android SharedPreferences 持久化存储供应商配置
- * 遵循 [ProviderConfigRepository] 接口，便于后续扩展其他存储方式
+ * 字段读写由 [BasePrefsConfigRepository] 统一提供，此处仅声明字段映射。
  *
  * 注意：全局配置（如"选择的供应商"）由 [SharedPreferencesAppConfigRepository] 管理
  */
 class TencentCloudConfigRepository(
     context: Context
-) : ProviderConfigRepository {
+) : BasePrefsConfigRepository<TencentCloudConfig>(context, TencentCloudConfig::class.java) {
 
-    private val sharedPreferences: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    override fun serialize(config: TencentCloudConfig): Map<String, String> = mapOf(
+        KEY_APP_ID to config.appId,
+        KEY_SECRET_ID to config.secretId,
+        KEY_SECRET_KEY to config.secretKey,
+        KEY_VOICE_ID to config.voiceId,
+        KEY_API_URL to config.apiUrl,
+        KEY_MODEL_ID to config.modelId
+    )
 
-    override fun getConfig(providerId: String): BaseProviderConfig {
-        val prefsKey = getPrefsKey(providerId)
-        return TencentCloudConfig(
-            appId = sharedPreferences.getString("${prefsKey}_$KEY_APP_ID", "") ?: "",
-            secretId = sharedPreferences.getString("${prefsKey}_$KEY_SECRET_ID", "") ?: "",
-            secretKey = sharedPreferences.getString("${prefsKey}_$KEY_SECRET_KEY", "") ?: "",
-            voiceId = sharedPreferences.getString("${prefsKey}_$KEY_VOICE_ID", "") ?: "",
-            apiUrl = sharedPreferences.getString("${prefsKey}_$KEY_API_URL", "") ?: "",
-            modelId = sharedPreferences.getString("${prefsKey}_$KEY_MODEL_ID", "") ?: ""
-        )
-    }
+    override fun deserialize(values: Map<String, String>): TencentCloudConfig = TencentCloudConfig(
+        appId = values[KEY_APP_ID] ?: "",
+        secretId = values[KEY_SECRET_ID] ?: "",
+        secretKey = values[KEY_SECRET_KEY] ?: "",
+        voiceId = values[KEY_VOICE_ID] ?: "",
+        apiUrl = values[KEY_API_URL] ?: "",
+        modelId = values[KEY_MODEL_ID] ?: ""
+    )
 
-    override fun saveConfig(providerId: String, config: BaseProviderConfig) {
-        val prefsKey = getPrefsKey(providerId)
-        val tencentConfig = config as? TencentCloudConfig ?: return
-        sharedPreferences.edit()
-            .putString("${prefsKey}_$KEY_APP_ID", tencentConfig.appId)
-            .putString("${prefsKey}_$KEY_SECRET_ID", tencentConfig.secretId)
-            .putString("${prefsKey}_$KEY_SECRET_KEY", tencentConfig.secretKey)
-            .putString("${prefsKey}_$KEY_VOICE_ID", tencentConfig.voiceId)
-            .putString("${prefsKey}_$KEY_API_URL", tencentConfig.apiUrl)
-            .putString("${prefsKey}_$KEY_MODEL_ID", tencentConfig.modelId)
-            .apply()
-    }
-
-    override fun hasConfig(providerId: String): Boolean {
-        val prefsKey = getPrefsKey(providerId)
-        return sharedPreferences.contains("${prefsKey}_$KEY_APP_ID") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_SECRET_ID") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_SECRET_KEY") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_VOICE_ID") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_API_URL") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_MODEL_ID")
-    }
-
-    private fun getPrefsKey(providerId: String): String {
-        return "engine_${providerId}"
-    }
-
-    companion object {
-        private const val PREFS_NAME = "talkify_engine_configs"
-        private const val KEY_APP_ID = "app_id"
-        private const val KEY_SECRET_ID = "secret_id"
-        private const val KEY_SECRET_KEY = "secret_key"
-        private const val KEY_VOICE_ID = "voice_id"
-        private const val KEY_API_URL = "api_url"
-        private const val KEY_MODEL_ID = "model_id"
+    private companion object {
+        const val KEY_APP_ID = "app_id"
+        const val KEY_SECRET_ID = "secret_id"
+        const val KEY_SECRET_KEY = "secret_key"
+        const val KEY_VOICE_ID = "voice_id"
+        const val KEY_API_URL = "api_url"
+        const val KEY_MODEL_ID = "model_id"
     }
 }

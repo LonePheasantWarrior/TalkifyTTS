@@ -15,7 +15,6 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRe
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TtsTelemetryTracker
-import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AliyunBailianConfigRepository
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
@@ -26,8 +25,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
-import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -48,24 +47,17 @@ private const val FOREGROUND_SERVICE_N_ID = 1001
  * 采用请求队列机制实现请求调度，支持请求优先级和流量控制
  * 支持兼容模式和非兼容模式两种音频处理方式
  *
- * @property processingSemaphore 请求处理信号量，限制并发处理数量为 1
  * @property isStopped 服务停止标志，使用 AtomicBoolean 保证线程安全
- * @property isSynthesisInProgress 合成进行中标志，用于状态追踪
  * @property wakeLock 电源唤醒锁，防止合成过程中设备休眠
  * @property isForegroundServiceRunning 前台服务运行状态
  * @property appConfigRepository 应用配置仓储，管理全局应用设置
- * @property providerConfigRepository 供应商配置仓储，管理各供应商配置
  * @property currentProvider 当前活动的 TTS 供应商实例
  * @property currentProviderId 当前供应商的唯一标识符
  * @property currentConfig 当前供应商的配置信息
  */
 class TalkifyTtsService : TextToSpeechService() {
 
-    private val processingSemaphore = Semaphore(1)
-
     private var isStopped = AtomicBoolean(false)
-
-    private var isSynthesisInProgress = AtomicBoolean(false)
 
     @Volatile
     private var activeContinuation: CancellableContinuation<Int?>? = null
@@ -80,8 +72,6 @@ class TalkifyTtsService : TextToSpeechService() {
     private var isForegroundServiceRunning = false
 
     private var appConfigRepository: AppConfigRepository? = null
-
-    private var providerConfigRepository: ProviderConfigRepository? = null
 
     private var currentProvider: TtsProviderApi? = null
 
@@ -230,13 +220,10 @@ class TalkifyTtsService : TextToSpeechService() {
     /**
      * 在空闲时停止前台服务
      *
-     * 当请求队列为空且没有正在处理的请求时，停止前台服务
-     * 减少后台资源占用
+     * 每次合成请求结束后调用（TTS 请求由系统串行调度，无并发请求），
+     * 释放前台状态以减少后台资源占用
      */
     private fun stopForegroundServiceIfIdle() {
-        if (processingSemaphore.availablePermits() == 0) {
-            return
-        }
         stopForegroundService()
     }
 
@@ -255,13 +242,15 @@ class TalkifyTtsService : TextToSpeechService() {
      * @param providerId 供应商唯一标识符
      * @return 对应供应商的配置仓储实例
      */
-    private fun getProviderConfigRepository(providerId: String): ProviderConfigRepository {
-        return providerConfigRepositoryMap.getOrPut(providerId) {
-            TtsProviderFactory.createConfigRepository(providerId, applicationContext) ?: run {
-                TtsLogger.w("Unknown provider ID: $providerId, using default Qwen3TtsConfigRepository")
-                AliyunBailianConfigRepository(applicationContext)
-            }
+    private fun getProviderConfigRepository(providerId: String): ProviderConfigRepository? {
+        providerConfigRepositoryMap[providerId]?.let { return it }
+        val repository = TtsProviderFactory.createConfigRepository(providerId, applicationContext)
+        if (repository == null) {
+            TtsLogger.e("Unknown provider ID: $providerId, config repository unavailable")
+            return null
         }
+        providerConfigRepositoryMap[providerId] = repository
+        return repository
     }
 
     /**
@@ -324,7 +313,7 @@ class TalkifyTtsService : TextToSpeechService() {
             return false
         }
 
-        currentConfig = providerConfigRepository?.getConfig(providerId)
+        currentConfig = getProviderConfigRepository(providerId)?.getConfig(providerId)
         TtsLogger.d("Provider initialized: ${currentProvider?.getProviderName()}")
         return true
     }
@@ -595,7 +584,12 @@ class TalkifyTtsService : TextToSpeechService() {
                 return@runBlocking
             }
 
-            val config = getProviderConfigRepository(providerId).getConfig(providerId)
+            val config = getProviderConfigRepository(providerId)?.getConfig(providerId)
+            if (config == null) {
+                TtsLogger.e("processRequestSynchronously: config repository unavailable for $providerId")
+                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
+                return@runBlocking
+            }
             if (!provider.isConfigured(config)) {
                 TtsLogger.e("processRequestSynchronously: config not ready")
                 callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED))
@@ -619,7 +613,9 @@ class TalkifyTtsService : TextToSpeechService() {
 
             // 4. 初始化音频参数并通知系统开始
             var audioInitialized = false
-            var synthesisErrorMessage: String? = null
+
+            // 合成错误消息：provider 回调线程写、下方读取，用 AtomicReference 保证可见性
+            val synthesisErrorMessage = AtomicReference<String?>(null)
 
             // 语音合成事件信息收集（限频上报：模型切换或累计10次触发）
             val effectiveModelId = config.modelId.ifBlank { provider.getDefaultModelId() }
@@ -646,13 +642,13 @@ class TalkifyTtsService : TextToSpeechService() {
                                 audioInitialized = true
                                 callback.start(sampleRate, audioFormat, channelCount)
                             }
-                            
+
+                            // 直接以 offset 分块写出，避免每 4KB 一次数组拷贝
                             val maxChunkSize = 4096
                             var offset = 0
                             while (offset < audioData.size) {
                                 val chunkSize = minOf(maxChunkSize, audioData.size - offset)
-                                val chunk = audioData.copyOfRange(offset, offset + chunkSize)
-                                callback.audioAvailable(chunk, 0, chunk.size)
+                                callback.audioAvailable(audioData, offset, chunkSize)
                                 offset += chunkSize
                             }
                         }
@@ -670,7 +666,7 @@ class TalkifyTtsService : TextToSpeechService() {
 
                         override fun onError(error: String) {
                             TtsLogger.e("Synthesis error: $error")
-                            synthesisErrorMessage = error
+                            synthesisErrorMessage.set(error)
                             val errorCode = TtsErrorCode.inferErrorCodeFromMessage(error)
                             if (continuation.isActive) {
                                 try {
@@ -699,7 +695,7 @@ class TalkifyTtsService : TextToSpeechService() {
                 callback.error(TtsErrorCode.toAndroidError(result))
                 TalkifyNotificationHelper.sendSystemNotification(
                     this@TalkifyTtsService,
-                    TtsErrorCode.getErrorMessage(result, synthesisErrorMessage)
+                    TtsErrorCode.getErrorMessage(result, synthesisErrorMessage.get())
                 )
             } else {
                 // 正常完成
@@ -726,7 +722,6 @@ class TalkifyTtsService : TextToSpeechService() {
         } finally {
             // 7. 统一清理资源
             activeContinuation = null
-            isSynthesisInProgress.set(false)
             stopForegroundServiceIfIdle()
             releaseWifiLock()
             releaseWakeLock()
@@ -771,7 +766,6 @@ class TalkifyTtsService : TextToSpeechService() {
      */
     override fun onStop() {
         TtsLogger.d("onStop called")
-        isSynthesisInProgress.set(false)
 
         val continuation = activeContinuation
         if (continuation != null && continuation.isActive) {
@@ -788,10 +782,6 @@ class TalkifyTtsService : TextToSpeechService() {
             TtsLogger.w("Provider connection lost during onStop: ${e.message}")
         } catch (e: Exception) {
             TtsLogger.e("Unexpected error during provider stop in onStop", e)
-        }
-
-        if (processingSemaphore.availablePermits() == 0) {
-            processingSemaphore.release()
         }
     }
 }

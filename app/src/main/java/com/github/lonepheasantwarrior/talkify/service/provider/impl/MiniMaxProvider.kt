@@ -1,25 +1,20 @@
 package com.github.lonepheasantwarrior.talkify.service.provider.impl
 
-import android.speech.tts.Voice
 import com.github.lonepheasantwarrior.talkify.R
-import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LanguageBoost
 import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
-import com.github.lonepheasantwarrior.talkify.infrastructure.xml.VoiceXmlParser
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
-import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
+import com.github.lonepheasantwarrior.talkify.service.provider.HexCodec
+import com.github.lonepheasantwarrior.talkify.service.provider.MiniMaxErrorParser
+import com.github.lonepheasantwarrior.talkify.service.provider.MiniMaxParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.Mp3StreamDecoder
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
-import javazoom.jl.decoder.Bitstream
-import javazoom.jl.decoder.Decoder
-import javazoom.jl.decoder.Header
-import javazoom.jl.decoder.SampleBuffer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +31,6 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
@@ -54,12 +48,9 @@ import kotlin.math.roundToInt
 class MiniMaxProvider : AbstractTtsProvider() {
 
     companion object {
-        private const val VOICE_NAME_SEPARATOR = "::"
         const val DEFAULT_WSS_URL = "wss://api.minimaxi.com/ws/v1/t2a_v2"
 
         private const val MAX_TEXT_LENGTH = 10000
-
-        private val SUPPORTED_LANGUAGES = arrayOf("zho", "eng")
 
         private const val PIPE_BUFFER_SIZE = 65536
     }
@@ -87,16 +78,21 @@ class MiniMaxProvider : AbstractTtsProvider() {
     /**
      * 缓存的声音ID列表，从资源文件加载
      */
-    private val voiceIds: List<String> by lazy {
-        loadVoiceIdsFromResource()
+    override val voiceIds: List<String> by lazy {
+        loadVoiceIdsFromXml(R.xml.minimax_voices)
     }
+
+    override val fallbackVoiceId: String = "male-qn-qingse"
+
+    override val configLabels: Map<String, Int> = mapOf(
+        "api_key" to R.string.api_key_label,
+        "continuous_sound" to R.string.label_continuous_sound
+    )
+
+    override val supportedLanguages: Array<String> = arrayOf("zho", "eng")
 
     val audioConfig: AudioConfig
         @JvmName("getAudioConfigProperty") get() = AudioConfig.MINI_MAX_TTS
-
-    private fun loadVoiceIdsFromResource(): List<String> {
-        return loadVoiceIdsFromXml(R.xml.minimax_voices)
-    }
 
     override fun getProviderId(): String = ProviderIds.MiniMax.providerId
 
@@ -242,13 +238,10 @@ class MiniMaxProvider : AbstractTtsProvider() {
                 listener.onError(e.message ?: "WebSocket连接失败")
             }
         } finally {
-            try {
-                withContext(Dispatchers.IO) {
-                    pipedOutputStream.flush()
-                    pipedOutputStream.close()
-                }
-            } catch (_: Exception) {
-            }
+            // 非挂起关闭：协程被 stop() 取消时 withContext 会直接抛 CancellationException，
+            // 导致管道永不关闭、解码线程永久阻塞在 readFrame（线程/管道泄漏）
+            runCatching { pipedOutputStream.flush() }
+            runCatching { pipedOutputStream.close() }
             pipeClosed.set(true)
             decodeJob.join()
             currentWebSocket = null
@@ -295,7 +288,7 @@ class MiniMaxProvider : AbstractTtsProvider() {
                         val statusCode = baseResp?.optInt("status_code", -1) ?: -1
                         if (statusCode != 0) {
                             val statusMsg = baseResp?.optString("status_msg", "") ?: ""
-                            val errorMsg = parseMiniMaxError(statusCode, statusMsg)
+                            val errorMsg = MiniMaxErrorParser.parse(statusCode, statusMsg)
                             logError("connected_success error: $errorMsg")
                             if (!errorDeferred.isCompleted) {
                                 errorDeferred.complete(errorMsg)
@@ -309,7 +302,7 @@ class MiniMaxProvider : AbstractTtsProvider() {
                         val statusCode = baseResp?.optInt("status_code", -1) ?: -1
                         if (statusCode != 0) {
                             val statusMsg = baseResp?.optString("status_msg", "") ?: ""
-                            val errorMsg = parseMiniMaxError(statusCode, statusMsg)
+                            val errorMsg = MiniMaxErrorParser.parse(statusCode, statusMsg)
                             logError("task_started error: $errorMsg")
                             if (!errorDeferred.isCompleted) {
                                 errorDeferred.complete(errorMsg)
@@ -334,7 +327,7 @@ class MiniMaxProvider : AbstractTtsProvider() {
                         val baseResp = json.optJSONObject("base_resp")
                         val statusCode = baseResp?.optInt("status_code", -1) ?: -1
                         val statusMsg = baseResp?.optString("status_msg", "") ?: ""
-                        val errorMsg = parseMiniMaxError(statusCode, statusMsg)
+                        val errorMsg = MiniMaxErrorParser.parse(statusCode, statusMsg)
                         logError("Received task_failed: $errorMsg")
                         if (!errorDeferred.isCompleted) {
                             errorDeferred.complete(errorMsg)
@@ -361,7 +354,7 @@ class MiniMaxProvider : AbstractTtsProvider() {
                     val statusMsg = baseResp.optString("status_msg", "")
                     logError("task_continued error: status_code=$statusCode, status_msg=$statusMsg")
                     if (!errorDeferred.isCompleted) {
-                        errorDeferred.complete(parseMiniMaxError(statusCode, statusMsg))
+                        errorDeferred.complete(MiniMaxErrorParser.parse(statusCode, statusMsg))
                     }
                     return
                 }
@@ -371,13 +364,15 @@ class MiniMaxProvider : AbstractTtsProvider() {
             if (dataObj != null) {
                 val audioHex = dataObj.optString("audio", "")
                 if (audioHex.isNotBlank()) {
-                    val mp3Bytes = hexToBytes(audioHex)
+                    val mp3Bytes = HexCodec.decode(audioHex)
                     if (mp3Bytes.isNotEmpty() && !pipeClosed.get()) {
                         try {
                             pipedOutputStream.write(mp3Bytes)
                         } catch (e: Exception) {
                             logDebug("Pipe write error: ${e.message}")
                         }
+                    } else if (mp3Bytes.isEmpty()) {
+                        logWarning("Audio hex decode failed, length=${audioHex.length}")
                     }
                 }
             }
@@ -452,8 +447,8 @@ class MiniMaxProvider : AbstractTtsProvider() {
          * @param webSocket 已连接的 WebSocket 实例
          */
         fun sendTaskStart(webSocket: WebSocket) {
-            val speed = convertSpeechRate(params.speechRate)
-            val vol = convertVolume(params)
+            val speed = MiniMaxParamMapper.convertSpeechRate(params.speechRate)
+            val vol = MiniMaxParamMapper.convertVolume(params.volume)
             val pitch = ((params.pitch - 100f) * 12f / 100f).roundToInt().coerceIn(-12, 12)
             val emotion = resolveEmotion(params)
 
@@ -522,33 +517,6 @@ class MiniMaxProvider : AbstractTtsProvider() {
     }
 
     /**
-     * 将十六进制字符串转换为字节数组
-     *
-     * 用于解码 WebSocket 返回的 hex 编码 MP3 音频数据
-     *
-     * @param hex 十六进制字符串
-     * @return 解码后的字节数组，解码失败时返回空数组
-     */
-    private fun hexToBytes(hex: String): ByteArray {
-        return try {
-            val cleanHex = hex.replace("\\s".toRegex(), "")
-            if (cleanHex.length % 2 != 0) {
-                logWarning("Invalid hex string length: ${cleanHex.length}")
-                return ByteArray(0)
-            }
-            val bytes = ByteArray(cleanHex.length / 2)
-            for (i in bytes.indices) {
-                val index = i * 2
-                bytes[i] = cleanHex.substring(index, index + 2).toInt(16).toByte()
-            }
-            bytes
-        } catch (e: Exception) {
-            logError("Failed to decode hex audio data", e)
-            ByteArray(0)
-        }
-    }
-
-    /**
      * 解码 MP3 流并输出 PCM 音频数据
      *
      * 从管道输入流读取 MP3 帧，使用 JLayer 逐帧解码为 PCM，
@@ -558,43 +526,16 @@ class MiniMaxProvider : AbstractTtsProvider() {
      * @param listener 音频合成监听器，接收解码后的 PCM 数据
      */
     private fun decodeMp3Stream(inputStream: PipedInputStream, listener: TtsSynthesisListener) {
-        val bitstream = Bitstream(inputStream)
-        val decoder = Decoder()
-        var sampleRate: Int
-
-        try {
-            while (!isCancelled) {
-                val header: Header = bitstream.readFrame() ?: break
-
-                sampleRate = header.frequency()
-
-                val sampleBuffer = decoder.decodeFrame(header, bitstream) as SampleBuffer
-                val samples = sampleBuffer.buffer
-                val sampleCount = sampleBuffer.bufferLength
-
-                if (sampleCount > 0) {
-                    val pcmBytes = Mp3StreamDecoder.shortArrayToByteArray(samples, sampleCount)
-                    listener.onAudioAvailable(
-                        pcmBytes,
-                        sampleRate,
-                        AudioConfig.DEFAULT_AUDIO_FORMAT,
-                        sampleBuffer.channelCount  // 使用 JLayer 实际解码的声道数
-                    )
-                }
-
-                bitstream.closeFrame()
-            }
-        } catch (e: Exception) {
-            logDebug("MP3 decoding finished or interrupted: ${e.message}")
-        } finally {
-            try {
-                bitstream.close()
-            } catch (_: Exception) {
-            }
-            try {
-                inputStream.close()
-            } catch (_: Exception) {
-            }
+        Mp3StreamDecoder.decodeMp3Stream(
+            inputStream,
+            isCancelled = { isCancelled }
+        ) { pcmBytes, sampleRate, channelCount ->
+            listener.onAudioAvailable(
+                pcmBytes,
+                sampleRate,
+                AudioConfig.DEFAULT_AUDIO_FORMAT,
+                channelCount  // 使用 JLayer 实际解码的声道数
+            )
         }
     }
 
@@ -635,146 +576,6 @@ class MiniMaxProvider : AbstractTtsProvider() {
 
 
     /**
-     * 解析 MiniMax API 错误码为中文错误消息
-     *
-     * 对应 MiniMax WebSocket API 的 base_resp.status_code 错误码表
-     *
-     * @param statusCode API 返回的状态码
-     * @param statusMsg API 返回的状态消息原文
-     * @return 中文错误描述消息
-     */
-    private fun parseMiniMaxError(statusCode: Int, statusMsg: String): String {
-        return when (statusCode) {
-            1000 -> "未知错误: $statusMsg"
-            1001 -> "请求超时，请稍后重试"
-            1002 -> "触发限流，请稍后重试"
-            1004 -> "鉴权失败，请检查 API Key"
-            1039 -> "触发 TPM 限流，请稍后重试"
-            1042 -> "非法字符超过 10%，请检查文本内容"
-            2013 -> "输入参数错误: $statusMsg"
-            2201 -> "超时断开连接"
-            2202 -> "非法事件: $statusMsg"
-            2203 -> "空文本，已跳过"
-            2204 -> "超出字符限制，已跳过"
-            2205 -> "请求超限"
-            else -> "语音合成失败: $statusMsg (code: $statusCode)"
-        }
-    }
-
-    /**
-     * 将 Android TTS 语速（50-200）转换为 MiniMax API 语速（0.5-2.0）
-     *
-     * @param androidRate Android TTS 语速值，范围 0-200
-     * @return MiniMax API 语速值，范围 0.5-2.0
-     */
-    private fun convertSpeechRate(androidRate: Float): Float {
-        return when {
-            androidRate <= 50f -> 0.5f
-            androidRate >= 200f -> 2.0f
-            else -> androidRate / 100f
-        }
-    }
-
-    /**
-     * 转换音量参数
-     *
-     * Android TTS 音量范围 [0.0, 1.0]（默认 1.0 = 正常音量） →
-     * MiniMax API vol 范围 (0, 10]（默认 1.0）。
-     * 采用保守映射，避免极端增益导致 API 输出音频削波失真。
-     *
-     * @param params 合成参数
-     * @return MiniMax API 音量值，范围 (0, 10]
-     */
-    private fun convertVolume(params: SynthesisParams): Float {
-        return (1.0f + params.volume * 1.0f).coerceIn(0.1f, 10f)
-    }
-
-    /**
-     * 获取供应商支持的语言代码集合
-     *
-     * @return 支持的语言代码集合（zho, eng）
-     */
-    override fun getSupportedLanguages(): Set<String> {
-        return SUPPORTED_LANGUAGES.toSet()
-    }
-
-    /**
-     * 获取默认语言设置
-     *
-     * @return 默认使用简体中文
-     */
-    override fun getDefaultLanguages(): Array<String> {
-        return arrayOf(Locale.SIMPLIFIED_CHINESE.language, Locale.SIMPLIFIED_CHINESE.country, "")
-    }
-
-    /**
-     * 获取所有支持的声音列表
-     *
-     * 对每种支持的语言组合所有音色 ID，生成 Voice 对象列表
-     *
-     * @return 可用于 TTS 系统的 Voice 列表
-     */
-    override fun getSupportedVoices(): List<Voice> {
-        val voices = mutableListOf<Voice>()
-
-        for (langCode in getSupportedLanguages()) {
-            for (voiceId in voiceIds) {
-                voices.add(
-                    Voice(
-                        "$voiceId$VOICE_NAME_SEPARATOR$langCode",
-                        Locale.forLanguageTag(langCode),
-                        Voice.QUALITY_NORMAL,
-                        Voice.LATENCY_NORMAL,
-                        true,
-                        emptySet()
-                    )
-                )
-            }
-        }
-        return voices
-    }
-
-    /**
-     * 获取默认声音 ID
-     *
-     * 当用户未指定音色时，返回内置默认音色；否则返回用户选择的音色
-     *
-     * @param lang 语言代码
-     * @param country 国家代码
-     * @param variant 变体代码
-     * @param currentVoiceId 用户当前选择的声音 ID
-     * @return 带语言标记的声音完整名称
-     */
-    override fun getDefaultVoiceId(
-        lang: String?,
-        country: String?,
-        variant: String?,
-        currentVoiceId: String?
-    ): String {
-        val defaultVoice = voiceIds.firstOrNull() ?: "male-qn-qingse"
-        if (!currentVoiceId.isNullOrBlank()) {
-            return "$currentVoiceId$VOICE_NAME_SEPARATOR$lang"
-        }
-        return "$defaultVoice$VOICE_NAME_SEPARATOR$lang"
-    }
-
-    /**
-     * 验证声音 ID 是否有效
-     *
-     * 提取真实音色名称后检查是否在支持列表中
-     *
-     * @param voiceId 格式为 "voiceName::langCode" 的声音 ID
-     * @return true 表示声音 ID 有效
-     */
-    override fun isVoiceIdCorrect(voiceId: String?): Boolean {
-        if (voiceId == null) {
-            return false
-        }
-        val realVoiceName = extractRealVoiceName(voiceId)
-        return realVoiceName != null && voiceIds.contains(realVoiceName)
-    }
-
-    /**
      * 停止当前语音合成
      *
      * 关闭 WebSocket 连接并取消合成协程
@@ -809,24 +610,13 @@ class MiniMaxProvider : AbstractTtsProvider() {
      * 检查供应商是否已完成配置
      *
      * 验证 API Key 是否已填写
-     *
-     * @param config 供应商配置对象
-     * @return true 表示已配置
      */
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
-        val miniMaxConfig = config as? MiniMaxConfig
-        var result = false
-        if (miniMaxConfig != null) {
-            result = miniMaxConfig.apiKey.isNotBlank()
-        }
-        TtsLogger.d("$tag: isConfigured = $result")
-        return result
+        return isConfiguredAs(config) { c: MiniMaxConfig -> c.apiKey.isNotBlank() }
     }
 
     /**
      * 创建默认供应商配置
-     *
-     * @return 默认的 [MiniMaxConfig] 实例
      */
     override fun createDefaultConfig(): BaseProviderConfig {
         return MiniMaxConfig()
@@ -834,14 +624,9 @@ class MiniMaxProvider : AbstractTtsProvider() {
 
     /**
      * 获取配置项的中文标签
-     *
-     * @param configKey 配置项键名
-     * @param context Android 上下文
-     * @return 配置项的中文标签，不支持则返回 null
      */
     override fun getConfigLabel(configKey: String, context: android.content.Context): String? {
         return when (configKey) {
-            "api_key" -> context.getString(R.string.api_key_label)
             "continuous_sound" -> "合成配置"
             else -> super.getConfigLabel(configKey, context)
         }

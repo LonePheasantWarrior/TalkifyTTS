@@ -1,6 +1,5 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo
 
-import android.content.Context
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProvider
@@ -18,12 +17,8 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
  * - Kokoro 模型支持多个可选音色
  */
 class LocalModelVoiceRepository(
-    private val context: Context
+    private val configRepository: LocalModelConfigRepository
 ) : VoiceRepository {
-
-    private val configRepository by lazy {
-        LocalModelConfigRepository(context)
-    }
 
     override suspend fun getVoicesForProvider(provider: TtsProvider): List<VoiceInfo> {
         if (provider.id != ProviderIds.LocalModel.providerId) return emptyList()

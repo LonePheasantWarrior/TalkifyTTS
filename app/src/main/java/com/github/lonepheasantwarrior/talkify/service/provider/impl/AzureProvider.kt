@@ -7,16 +7,12 @@ import com.github.lonepheasantwarrior.talkify.domain.model.AzureConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
-import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
+import com.github.lonepheasantwarrior.talkify.service.provider.AzureParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.Mp3StreamDecoder
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
-import javazoom.jl.decoder.Bitstream
-import javazoom.jl.decoder.Decoder
-import javazoom.jl.decoder.Header
-import javazoom.jl.decoder.SampleBuffer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -360,15 +356,14 @@ class AzureProvider : AbstractTtsProvider() {
         val decodeJob = providerScope.launch(Dispatchers.Default) {
             decodeMp3Stream(pipedInputStream, listener)
         }
-
         try {
             // 1. 获取或复用持久化 WebSocket 连接
             val (webSocket, wsListener) = getOrCreateConnection(pipedOutputStream, pipeClosed)
 
             val voice = config.voiceId.ifEmpty { DEFAULT_VOICE }
-            val rate = convertRate(params.speechRate)
-            val volume = convertVolume(params.volume)
-            val pitch = convertPitch(params.pitch)
+            val rate = AzureParamMapper.convertRate(params.speechRate)
+            val volume = AzureParamMapper.convertVolume(params.volume)
+            val pitch = AzureParamMapper.convertPitch(params.pitch)
 
             // 2. 为每个 chunk 生成唯一 RequestId 并创建完成信号
             val requestIds = chunks.map { connectId() }
@@ -412,11 +407,9 @@ class AzureProvider : AbstractTtsProvider() {
             closeConnection()
             throw e
         } finally {
-            try {
-                withContext(Dispatchers.IO) {
-                    pipedOutputStream.close()
-                }
-            } catch (_: Exception) {}
+            // 非挂起关闭：协程被 stop() 取消时 withContext 会直接抛 CancellationException，
+            // 导致管道永不关闭、解码线程永久阻塞在 readFrame（线程/管道泄漏）
+            runCatching { pipedOutputStream.close() }
             pipeClosed.set(true)
 
             decodeJob.join()
@@ -820,37 +813,16 @@ class AzureProvider : AbstractTtsProvider() {
     // ==================== 音频解码 ====================
 
     private fun decodeMp3Stream(inputStream: PipedInputStream, listener: TtsSynthesisListener) {
-        val bitstream = Bitstream(inputStream)
-        val decoder = Decoder()
-        var sampleRate: Int
-
-        try {
-            while (!isCancelled) {
-                val header: Header = bitstream.readFrame() ?: break
-
-                sampleRate = header.frequency()
-
-                val sampleBuffer = decoder.decodeFrame(header, bitstream) as SampleBuffer
-                val samples = sampleBuffer.buffer
-                val sampleCount = sampleBuffer.bufferLength
-
-                if (sampleCount > 0) {
-                    val pcmBytes = Mp3StreamDecoder.shortArrayToByteArray(samples, sampleCount)
-                    listener.onAudioAvailable(
-                        pcmBytes,
-                        sampleRate,
-                        AudioConfig.DEFAULT_AUDIO_FORMAT,
-                        AudioConfig.DEFAULT_CHANNEL_COUNT
-                    )
-                }
-
-                bitstream.closeFrame()
-            }
-        } catch (e: Exception) {
-            logDebug("MP3 decoding finished or interrupted: ${e.message}")
-        } finally {
-            try { bitstream.close() } catch (_: Exception) {}
-            try { inputStream.close() } catch (_: Exception) {}
+        Mp3StreamDecoder.decodeMp3Stream(
+            inputStream,
+            isCancelled = { isCancelled }
+        ) { pcmBytes, sampleRate, channelCount ->
+            listener.onAudioAvailable(
+                pcmBytes,
+                sampleRate,
+                AudioConfig.DEFAULT_AUDIO_FORMAT,
+                channelCount
+            )
         }
     }
 
@@ -881,23 +853,6 @@ class AzureProvider : AbstractTtsProvider() {
         val ssml = mkssml(voice, rate, volume, pitch, text)
         val message = ssmlHeadersPlusData(requestId, dateToString(), ssml)
         webSocket.send(message)
-    }
-
-    // ==================== 参数转换 ====================
-
-    private fun convertRate(speechRate: Float): String {
-        val ratePercent = ((speechRate - 100) / 100 * 100).toInt()
-        return if (ratePercent >= 0) "+${ratePercent}%" else "${ratePercent}%"
-    }
-
-    private fun convertVolume(volume: Float): String {
-        val volumePercent = (volume * 100 - 100).toInt()
-        return if (volumePercent >= 0) "+${volumePercent}%" else "${volumePercent}%"
-    }
-
-    private fun convertPitch(pitch: Float): String {
-        val pitchHz = ((pitch - 100) / 100 * 50).toInt()
-        return if (pitchHz >= 0) "+${pitchHz}Hz" else "${pitchHz}Hz"
     }
 
     // ==================== 供应商元数据 ====================
@@ -956,19 +911,17 @@ class AzureProvider : AbstractTtsProvider() {
     }
 
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
-        val result = config is AzureConfig
-        TtsLogger.d("$tag: isConfigured = $result")
-        return result
+        return isConfiguredAs(config) { _: AzureConfig -> true }
     }
 
     override fun createDefaultConfig(): BaseProviderConfig {
         return AzureConfig()
     }
 
-    override fun getConfigLabel(configKey: String, context: Context): String? {
-        return when (configKey) {
-            "voice_id" -> context.getString(R.string.voice_select_label)
-            else -> super.getConfigLabel(configKey, context)
-        }
+    override fun createDefaultLanguages(): Array<String> {
+        return arrayOf(Locale.SIMPLIFIED_CHINESE.isO3Language, Locale.SIMPLIFIED_CHINESE.isO3Country, "")
     }
+
+    override val configLabels: Map<String, Int>
+        get() = mapOf("voice_id" to R.string.voice_select_label)
 }

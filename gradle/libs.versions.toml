@@ -17,6 +17,7 @@ navigationCompose = "2.9.8"
 okhttp = "4.12.0"
 sherpa-onnx = "v1.13.1"
 commons-compress = "1.28.0"
+org-json = "20240303"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -42,6 +43,8 @@ jlayer = { group = "javazoom", name = "jlayer", version.ref = "jlayer" }
 aptabase = { group = "com.github.aptabase", name = "aptabase-kotlin", version.ref = "aptabase" }
 sherpa-onnx = { module = "com.github.k2-fsa:sherpa-onnx", version.ref = "sherpa-onnx" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
+# 本地 JVM 单测用：覆盖 android.jar 中抛 Stub 异常的 org.json
+org-json = { group = "org.json", name = "json", version.ref = "org-json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

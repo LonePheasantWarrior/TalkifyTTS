@@ -140,7 +140,7 @@ object TtsProviderFactory {
             ProviderIds.LocalModel.providerId to ComponentFactories(
                 createProvider = { LocalTTSProvider() },
                 createConfigRepo = { ctx -> LocalModelConfigRepository(ctx) },
-                createVoiceRepo = { ctx -> LocalModelVoiceRepository(ctx) }
+                createVoiceRepo = { ctx -> LocalModelVoiceRepository(LocalModelConfigRepository(ctx)) }
             )
         ).also {
             TtsLogger.i("TtsProviderFactory: ${it.size} providers registered")

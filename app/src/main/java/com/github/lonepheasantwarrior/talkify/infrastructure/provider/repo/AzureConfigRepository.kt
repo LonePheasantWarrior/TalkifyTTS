@@ -1,56 +1,33 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.github.lonepheasantwarrior.talkify.domain.model.AzureConfig
-import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
-import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 
 /**
  * 微软语音合成供应商 - 配置仓储实现
  *
- * 使用 Android SharedPreferences 持久化存储供应商配置
- * 遵循 [ProviderConfigRepository] 接口，便于后续扩展其他存储方式
+ * 微软语音合成无需 API Key，仅存储音色 ID 与 API 地址。
+ * 字段读写由 [BasePrefsConfigRepository] 统一提供，此处仅声明字段映射。
  *
- * 注意：微软语音合成无需 API Key，仅存储音色 ID
+ * 注意：全局配置（如"选择的供应商"）由 [SharedPreferencesAppConfigRepository] 管理
  */
 class AzureConfigRepository(
     context: Context
-) : ProviderConfigRepository {
+) : BasePrefsConfigRepository<AzureConfig>(context, AzureConfig::class.java) {
 
-    private val sharedPreferences: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    override fun serialize(config: AzureConfig): Map<String, String> = mapOf(
+        KEY_VOICE_ID to config.voiceId,
+        KEY_API_URL to config.apiUrl
+    )
 
-    override fun getConfig(providerId: String): BaseProviderConfig {
-        val prefsKey = getPrefsKey(providerId)
-        return AzureConfig(
-            voiceId = sharedPreferences.getString("${prefsKey}_$KEY_VOICE_ID", "") ?: "",
-            apiUrl = sharedPreferences.getString("${prefsKey}_$KEY_API_URL", "") ?: ""
-        )
-    }
+    override fun deserialize(values: Map<String, String>): AzureConfig = AzureConfig(
+        voiceId = values[KEY_VOICE_ID] ?: "",
+        apiUrl = values[KEY_API_URL] ?: ""
+    )
 
-    override fun saveConfig(providerId: String, config: BaseProviderConfig) {
-        val prefsKey = getPrefsKey(providerId)
-        val msConfig = config as? AzureConfig ?: return
-        sharedPreferences.edit()
-            .putString("${prefsKey}_$KEY_VOICE_ID", msConfig.voiceId)
-            .putString("${prefsKey}_$KEY_API_URL", msConfig.apiUrl)
-            .apply()
-    }
-
-    override fun hasConfig(providerId: String): Boolean {
-        val prefsKey = getPrefsKey(providerId)
-        return sharedPreferences.contains("${prefsKey}_$KEY_VOICE_ID") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_API_URL")
-    }
-
-    private fun getPrefsKey(providerId: String): String {
-        return "engine_${providerId}"
-    }
-
-    companion object {
-        private const val PREFS_NAME = "talkify_engine_configs"
-        private const val KEY_VOICE_ID = "voice_id"
-        private const val KEY_API_URL = "api_url"
+    private companion object {
+        const val KEY_VOICE_ID = "voice_id"
+        const val KEY_API_URL = "api_url"
     }
 }

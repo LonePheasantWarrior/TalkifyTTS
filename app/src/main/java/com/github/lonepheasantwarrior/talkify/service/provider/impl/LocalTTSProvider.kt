@@ -47,9 +47,17 @@ class LocalTTSProvider : AbstractTtsProvider() {
 
         /** 默认语速倍率 */
         private const val DEFAULT_SPEED = 1.0f
+
+        /** 引擎空闲释放超时：Kokoro 模型约 440MB native 内存，空闲期间应归还系统 */
+        private const val ENGINE_IDLE_TIMEOUT_MS = 5 * 60 * 1000L
     }
 
     // ---- 引擎缓存 ----
+
+    private val engineLock = Any()
+
+    /** 引擎代际计数：空闲释放任务执行前校验，防止释放正在使用的新引擎 */
+    private var engineGeneration = 0
 
     @Volatile
     private var engine: SherpaTtsEngine? = null
@@ -62,6 +70,7 @@ class LocalTTSProvider : AbstractTtsProvider() {
     private val providerJob = SupervisorJob()
     private val providerScope = CoroutineScope(Dispatchers.Default + providerJob)
     private var synthesisJob: Job? = null
+    private var engineIdleJob: Job? = null
 
     @Volatile
     private var isCancelled = false
@@ -146,8 +155,11 @@ class LocalTTSProvider : AbstractTtsProvider() {
         logInfo("Starting local synthesis: model=$modelId, textLength=${text.length}")
 
         isCancelled = false
+        cancelEngineIdleRelease()
+        engineGeneration++
 
         synthesisJob = providerScope.launch {
+            var synthesisSucceeded = true
             try {
                 val currentEngine = ensureEngine(modelId, modelInfo)
 
@@ -179,9 +191,14 @@ class LocalTTSProvider : AbstractTtsProvider() {
                     logInfo("Streaming synthesis completed successfully")
                 }
             } catch (e: Exception) {
+                synthesisSucceeded = false
                 if (!isCancelled) {
                     logError("Synthesis error", e)
                     listener.onError("本地合成失败: ${e.message}")
+                }
+            } finally {
+                if (synthesisSucceeded) {
+                    scheduleEngineIdleRelease()
                 }
             }
         }
@@ -198,7 +215,7 @@ class LocalTTSProvider : AbstractTtsProvider() {
     private fun ensureEngine(
         modelId: String,
         modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo
-    ): SherpaTtsEngine {
+    ): SherpaTtsEngine = synchronized(engineLock) {
         if (engine != null && currentModelId == modelId) {
             logDebug("Reusing cached engine for: $modelId")
             return engine!!
@@ -222,7 +239,31 @@ class LocalTTSProvider : AbstractTtsProvider() {
         currentModelId = modelId
 
         logInfo("Engine initialized for: $modelId")
-        return newEngine
+        newEngine
+    }
+
+    // ---- 引擎空闲释放 ----
+
+    private fun scheduleEngineIdleRelease() {
+        engineIdleJob?.cancel()
+        val generation = engineGeneration
+        engineIdleJob = providerScope.launch {
+            kotlinx.coroutines.delay(ENGINE_IDLE_TIMEOUT_MS)
+            synchronized(engineLock) {
+                // 代际校验：若期间有新合成开始（generation 变化）或已换引擎，跳过释放
+                if (engineGeneration != generation) return@synchronized
+                val idleEngine = engine ?: return@synchronized
+                logInfo("Engine idle for ${ENGINE_IDLE_TIMEOUT_MS}ms, releasing native resources")
+                engine = null
+                currentModelId = null
+                idleEngine.release()
+            }
+        }
+    }
+
+    private fun cancelEngineIdleRelease() {
+        engineIdleJob?.cancel()
+        engineIdleJob = null
     }
 
     // ==================== 生命周期管理 ====================
@@ -239,9 +280,12 @@ class LocalTTSProvider : AbstractTtsProvider() {
         isCancelled = true
         synthesisJob?.cancel()
         synthesisJob = null
+        cancelEngineIdleRelease()
         providerJob.cancel()
-        engine?.release()
-        engine = null
+        synchronized(engineLock) {
+            engine?.release()
+            engine = null
+        }
         currentModelId = null
         super.release()
     }

@@ -1,67 +1,41 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo
 
 import android.content.Context
-import android.content.SharedPreferences
-import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.XiaomiConfig
-import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
-import androidx.core.content.edit
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 
 /**
  * 小米 MiMo 语音合成供应商 - 配置仓储实现
  *
- * 使用 Android SharedPreferences 持久化存储供应商配置
- * 遵循 [ProviderConfigRepository] 接口，便于后续扩展其他存储方式
+ * 字段读写由 [BasePrefsConfigRepository] 统一提供，此处仅声明字段映射。
+ *
+ * 注意：全局配置（如"选择的供应商"）由 [SharedPreferencesAppConfigRepository] 管理
  */
 class XiaomiConfigRepository(
     context: Context
-) : ProviderConfigRepository {
+) : BasePrefsConfigRepository<XiaomiConfig>(context, XiaomiConfig::class.java) {
 
-    private val sharedPreferences: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    override fun serialize(config: XiaomiConfig): Map<String, String> = mapOf(
+        KEY_API_KEY to config.apiKey,
+        KEY_VOICE_ID to config.voiceId,
+        KEY_API_URL to config.apiUrl,
+        KEY_MODEL_ID to config.modelId,
+        KEY_STYLE_INSTRUCTION to config.styleInstruction
+    )
 
-    override fun getConfig(providerId: String): BaseProviderConfig {
-        val prefsKey = getPrefsKey(providerId)
-        return XiaomiConfig(
-            apiKey = sharedPreferences.getString("${prefsKey}_$KEY_API_KEY", "") ?: "",
-            voiceId = sharedPreferences.getString("${prefsKey}_$KEY_VOICE_ID", "") ?: "",
-            apiUrl = sharedPreferences.getString("${prefsKey}_$KEY_API_URL", "") ?: "",
-            modelId = sharedPreferences.getString("${prefsKey}_$KEY_MODEL_ID", "") ?: "",
-            styleInstruction = sharedPreferences.getString("${prefsKey}_$KEY_STYLE_INSTRUCTION", "") ?: ""
-        )
-    }
+    override fun deserialize(values: Map<String, String>): XiaomiConfig = XiaomiConfig(
+        apiKey = values[KEY_API_KEY] ?: "",
+        voiceId = values[KEY_VOICE_ID] ?: "",
+        apiUrl = values[KEY_API_URL] ?: "",
+        modelId = values[KEY_MODEL_ID] ?: "",
+        styleInstruction = values[KEY_STYLE_INSTRUCTION] ?: ""
+    )
 
-    override fun saveConfig(providerId: String, config: BaseProviderConfig) {
-        val prefsKey = getPrefsKey(providerId)
-        val mimoConfig = config as? XiaomiConfig ?: return
-        sharedPreferences.edit {
-            putString("${prefsKey}_$KEY_API_KEY", mimoConfig.apiKey)
-                .putString("${prefsKey}_$KEY_VOICE_ID", mimoConfig.voiceId)
-                .putString("${prefsKey}_$KEY_API_URL", mimoConfig.apiUrl)
-                .putString("${prefsKey}_$KEY_MODEL_ID", mimoConfig.modelId)
-                .putString("${prefsKey}_$KEY_STYLE_INSTRUCTION", mimoConfig.styleInstruction)
-        }
-    }
-
-    override fun hasConfig(providerId: String): Boolean {
-        val prefsKey = getPrefsKey(providerId)
-        return sharedPreferences.contains("${prefsKey}_$KEY_API_KEY") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_VOICE_ID") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_API_URL") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_MODEL_ID") ||
-                sharedPreferences.contains("${prefsKey}_$KEY_STYLE_INSTRUCTION")
-    }
-
-    private fun getPrefsKey(providerId: String): String {
-        return "engine_${providerId}"
-    }
-
-    companion object {
-        private const val PREFS_NAME = "talkify_engine_configs"
-        private const val KEY_API_KEY = "api_key"
-        private const val KEY_VOICE_ID = "voice_id"
-        private const val KEY_API_URL = "api_url"
-        private const val KEY_MODEL_ID = "model_id"
-        private const val KEY_STYLE_INSTRUCTION = "style_instruction"
+    private companion object {
+        const val KEY_API_KEY = "api_key"
+        const val KEY_VOICE_ID = "voice_id"
+        const val KEY_API_URL = "api_url"
+        const val KEY_MODEL_ID = "model_id"
+        const val KEY_STYLE_INSTRUCTION = "style_instruction"
     }
 }

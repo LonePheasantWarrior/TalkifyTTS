@@ -1,108 +1,58 @@
 package com.github.lonepheasantwarrior.talkify.service.provider.impl
 
-import android.speech.tts.Voice
 import android.util.Base64
 import com.github.lonepheasantwarrior.talkify.R
-import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.domain.model.VolcengineConfig
-import com.github.lonepheasantwarrior.talkify.infrastructure.xml.VoiceXmlParser
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
-import com.github.lonepheasantwarrior.talkify.service.TtsLogger
-import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
+import com.github.lonepheasantwarrior.talkify.service.provider.HttpStreamingTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
-import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
-import kotlinx.coroutines.CoroutineScope
+import com.github.lonepheasantwarrior.talkify.service.provider.VolcengineErrorParser
+import com.github.lonepheasantwarrior.talkify.service.provider.VolcengineParamMapper
+import com.github.lonepheasantwarrior.talkify.service.provider.toMaskedString
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.Call
-import okhttp3.ConnectionPool
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
-import java.io.IOException
-import java.net.SocketTimeoutException
-import java.util.Locale
-import java.util.concurrent.TimeUnit
-import kotlin.math.roundToInt
 
 /**
  * 火山引擎 - 豆包语音合成 2.0 供应商实现
  *
- * 继承 [AbstractTtsProvider]，实现 TTS 供应商接口
- * 基于 OkHttp 实现 HTTP 流式音频合成，支持连接复用
- * 将音频数据块实时回调给系统
+ * 继承 [HttpStreamingTtsProvider]，基于 OkHttp 实现 HTTP 流式音频合成（NDJSON 流）。
+ * 分块调度、取消、错误分类等通用逻辑由基类提供。
  *
  * 供应商 ID：volcengine
  * 服务提供商：火山引擎
  * API 文档：https://www.volcengine.com/docs/6561/1598757
  */
-class VolcengineProvider : AbstractTtsProvider() {
+class VolcengineProvider : HttpStreamingTtsProvider() {
 
     companion object {
-        private const val VOICE_NAME_SEPARATOR = "::"
         const val DEFAULT_API_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
 
-        // 文本分块配置
-        private const val MAX_TEXT_LENGTH = 300
-
-        // OkHttp 连接池配置（复用连接，空闲超时 45 秒）
-        // 火山服务端 keep-alive 为 1 分钟，客户端设置为略小于服务端的值
-        // 避免在刚好 1 分钟时服务端关闭连接而客户端仍尝试复用
-        private val connectionPool = ConnectionPool(5, 45, TimeUnit.SECONDS)
-
-        // 共享的 OkHttpClient 实例（支持连接复用）
-        private val sharedClient: OkHttpClient by lazy {
-            OkHttpClient.Builder()
-                .connectionPool(connectionPool)
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .build()
-        }
-
-        /**
-         * 支持的语言列表（ISO 639-2 三字母代码）
-         */
+        /** 保留静态访问入口（TalkifyCheckDataActivity 等无需实例化即可读取） */
         val SUPPORTED_LANGUAGES = arrayOf("zho", "eng")
     }
 
-    // 协程作用域用于异步处理
-    private val providerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    override val chunkMaxLength: Int = 300
 
-    @Volatile
-    private var isCancelled = false
+    override val configLabels: Map<String, Int> = mapOf(
+        "api_key" to R.string.api_key_label
+    )
 
-    @Volatile
-    private var hasCompleted = false
+    override val supportedLanguages: Array<String>
+        get() = SUPPORTED_LANGUAGES
 
-    @Volatile
-    private var currentCall: Call? = null
+    override val fallbackVoiceId: String = "zh_female_vv_uranus_bigtts"
 
-    @Volatile
-    private var isFirstChunk = true
-
-    val audioConfig: AudioConfig
-        @JvmName("getAudioConfigProperty") get() = AudioConfig.SEED_TTS2
-
-    /**
-     * 缓存的声音ID列表，从资源文件加载
-     */
-    private val voiceIds: List<String> by lazy {
-        loadVoiceIdsFromResource()
-    }
-
-    private fun loadVoiceIdsFromResource(): List<String> {
-        return loadVoiceIdsFromXml(R.xml.volcengine_seed_tts2_voices)
+    override val voiceIds: List<String> by lazy {
+        loadVoiceIdsFromXml(R.xml.volcengine_seed_tts2_voices)
     }
 
     override fun getProviderId(): String = ProviderIds.Volcengine.providerId
@@ -113,187 +63,102 @@ class VolcengineProvider : AbstractTtsProvider() {
 
     override fun getDefaultModelId(): String = ProviderIds.Volcengine.defaultModelId
 
-    override fun getAudioConfig(): AudioConfig = audioConfig
+    override fun getAudioConfig(): AudioConfig = AudioConfig.SEED_TTS2
 
-    override fun synthesize(
-        text: String, params: SynthesisParams, config: BaseProviderConfig, listener: TtsSynthesisListener
-    ) {
-        checkNotReleased()
-
-        val seedConfig = config as? VolcengineConfig
-        if (seedConfig == null) {
-            logError("Invalid config type, expected VolcengineConfig")
-            listener.onError(TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED))
-            return
+    override fun validateConfig(config: BaseProviderConfig): String? {
+        if (config !is VolcengineConfig) {
+            return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
         }
-
-        if (seedConfig.apiKey.isEmpty()) {
-            logError("API Key is not configured")
-            listener.onError(TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED))
-            return
+        if (config.apiKey.isEmpty()) {
+            return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
         }
-
-        if (text.isEmpty()) {
-            logWarning("待朗读文本内容为空")
-            listener.onSynthesisCompleted()
-            return
-        }
-
-        if (!containsReadableText(text)) {
-            logWarning("文本不包含可朗读的文字内容")
-            listener.onSynthesisCompleted()
-            return
-        }
-
-        logInfo("Starting synthesis: textLength=${text.length}, pitch=${params.pitch}, speechRate=${params.speechRate}")
-        logDebug("Audio config: ${audioConfig.getFormatDescription()}")
-
-        isCancelled = false
-        hasCompleted = false
-        isFirstChunk = true
-
-        // 将文本分块处理
-        val textChunks = TextChunkSplitter.split(text, MAX_TEXT_LENGTH)
-        if (textChunks.isEmpty()) {
-            listener.onError("文本为空")
-            return
-        }
-
-        logDebug("Text split into ${textChunks.size} chunks")
-
-        // 使用协程顺序处理所有文本块
-        providerScope.launch {
-            processChunksSequentially(textChunks, seedConfig, params, listener)
-        }
+        return null
     }
 
-    /**
-     * 顺序处理所有文本块
-     */
-    private suspend fun processChunksSequentially(
-        chunks: List<String>,
-        config: VolcengineConfig,
-        params: SynthesisParams,
-        listener: TtsSynthesisListener
-    ) {
-        for ((index, chunk) in chunks.withIndex()) {
-            if (isCancelled || hasCompleted) {
-                logDebug("Synthesis cancelled or completed, stopping chunk processing")
-                return
-            }
-
-            logDebug("Processing chunk $index/${chunks.size}, length=${chunk.length}")
-
-            val success = processSingleChunk(chunk, index, chunks.size, config, params, listener)
-            if (!success) {
-                logError("Failed to process chunk $index")
-                return
-            }
-        }
-
-        // 所有块处理完成
-        if (!isCancelled && !hasCompleted) {
-            hasCompleted = true
-            withContext(Dispatchers.Main) {
-                listener.onSynthesisCompleted()
-            }
-            logInfo("Synthesis completed successfully")
-        }
-    }
-
-    /**
-     * 处理单个文本块
-     * @return 是否成功处理
-     */
-    private suspend fun processSingleChunk(
+    override fun buildHttpRequest(
         text: String,
-        chunkIndex: Int,
-        totalChunks: Int,
-        config: VolcengineConfig,
-        params: SynthesisParams,
-        listener: TtsSynthesisListener
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val request = buildHttpRequest(text, config, params)
-
-            // 使用同步调用便于顺序处理
-            currentCall = sharedClient.newCall(request)
-
-            val response = currentCall?.execute()
-            if (response == null) {
-                logError("Failed to execute HTTP request")
-                withContext(Dispatchers.Main) {
-                    listener.onError(TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_NETWORK_UNAVAILABLE))
-                }
-                return@withContext false
-            }
-
-            // 打印响应详情
-            logDebug("HTTP Response Code: ${response.code}")
-            logDebug("HTTP Response Headers: ${response.headers}")
-
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string() ?: "No error body"
-                logError("HTTP error: ${response.code}, body: $errorBody")
-                
-                // 解析火山引擎错误码，提供更有针对性的错误提示
-                val errorMessage = parseVolcEngineError(errorBody)
-                
-                withContext(Dispatchers.Main) {
-                    listener.onError(errorMessage)
-                }
-                response.close()
-                return@withContext false
-            }
-
-            // 获取 LogId 用于问题定位
-            val logId = response.header("X-Tt-Logid")
-            if (logId != null) {
-                logDebug("X-Tt-Logid: $logId")
-            }
-
-            // 处理流式响应
-            processStreamResponse(response, chunkIndex, listener)
-
-        } catch (e: SocketTimeoutException) {
-            logError("Network timeout", e)
-            withContext(Dispatchers.Main) {
-                listener.onError(TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_NETWORK_TIMEOUT))
-            }
-            false
-        } catch (e: IOException) {
-            logError("Network error", e)
-            withContext(Dispatchers.Main) {
-                listener.onError(TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_NETWORK_UNAVAILABLE))
-            }
-            false
-        } catch (e: Exception) {
-            logError("Unexpected error during synthesis", e)
-            withContext(Dispatchers.Main) {
-                listener.onError(TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
-            }
-            false
-        } finally {
-            currentCall = null
+        config: BaseProviderConfig,
+        params: SynthesisParams
+    ): Request {
+        val volcConfig = config as VolcengineConfig
+        val voiceId = if (volcConfig.voiceId.isNotEmpty()) {
+            extractRealVoiceName(volcConfig.voiceId) ?: volcConfig.voiceId
+        } else {
+            voiceIds.firstOrNull() ?: fallbackVoiceId
         }
+
+        val speechRate = VolcengineParamMapper.convertSpeechRate(params.speechRate)
+        logDebug("ttsSpeechRate: ${params.speechRate}, seedSpeechRate: $speechRate")
+
+        val loudnessRate = VolcengineParamMapper.convertLoudnessRate(params.volume)
+        logDebug("ttsLoudnessRate: ${params.volume}, seedLoudnessRate: $loudnessRate")
+
+        // 构建 additions 参数
+        val additions = JSONObject().apply {
+            // 明确语种设置
+            put("explicit_language", "zh")
+            // 禁用 markdown 过滤
+            put("disable_markdown_filter", true)
+        }
+
+        // 构建请求体
+        val requestBody = JSONObject().apply {
+            put("user", JSONObject().apply {
+                put("uid", "talkify_user_${System.currentTimeMillis()}")
+            })
+            put("req_params", JSONObject().apply {
+                put("text", text)
+                put("speaker", voiceId)
+                put("audio_params", JSONObject().apply {
+                    put("format", "pcm")
+                    put("sample_rate", getAudioConfig().sampleRate)
+                    put("speech_rate", speechRate)
+                    put("loudness_rate", loudnessRate)
+                })
+                put("additions", additions.toString())
+            })
+        }
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val body = requestBody.toString().toRequestBody(mediaType)
+
+        val effectiveApiUrl = volcConfig.apiUrl.ifBlank { DEFAULT_API_URL }
+        val effectiveResourceId = volcConfig.modelId.ifBlank { getDefaultModelId() }
+
+        val request = Request.Builder()
+            .url(effectiveApiUrl)
+            .post(body)
+            .header("x-api-key", volcConfig.apiKey)
+            .header("X-Api-Resource-Id", effectiveResourceId)
+            .header("Content-Type", "application/json")
+            .header("Connection", "keep-alive")
+            .build()
+
+        // 打印请求详情（Headers 脱敏处理仅用于日志显示，实际发送的是原始值）
+        logDebug("HTTP Request URL: ${request.url}")
+        logDebug("HTTP Request Headers (masked for log): ${request.headers.toMaskedString()}")
+        logDebug("HTTP Request Body: ${requestBody.toString(2)}")
+
+        return request
     }
 
     /**
-     * 处理流式响应
+     * 处理流式响应（NDJSON 格式：每行一个 JSON 对象）
      */
-    private suspend fun processStreamResponse(
+    override suspend fun processStreamResponse(
         response: Response,
         chunkIndex: Int,
+        config: BaseProviderConfig,
+        params: SynthesisParams,
         listener: TtsSynthesisListener
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): Boolean {
         val body = response.body
         if (body == null) {
             logError("Response body is null")
-            return@withContext false
+            return false
         }
 
         var hasError = false
-        var chunkStarted = false
 
         try {
             body.source().use { source ->
@@ -312,19 +177,7 @@ class VolcengineProvider : AbstractTtsProvider() {
                                 if (data.isNotBlank()) {
                                     val audioData = Base64.decode(data, Base64.DEFAULT)
                                     if (audioData.isNotEmpty()) {
-                                        // 首个音频块，触发开始回调
-                                        if (!chunkStarted && isFirstChunk) {
-                                            chunkStarted = true
-                                            isFirstChunk = false
-                                            listener.onSynthesisStarted()
-                                        }
-
-                                        listener.onAudioAvailable(
-                                            audioData,
-                                            audioConfig.sampleRate,
-                                            audioConfig.audioFormat,
-                                            audioConfig.channelCount
-                                        )
+                                        emitAudio(audioData, listener)
                                         logDebug("Received audio data: ${audioData.size} bytes")
                                     }
                                 }
@@ -364,267 +217,20 @@ class VolcengineProvider : AbstractTtsProvider() {
         } catch (e: Exception) {
             logError("Error reading response stream", e)
             hasError = true
-        } finally {
-            response.close()
         }
 
-        !hasError
+        return !hasError
     }
 
-    /**
-     * 构建 HTTP 请求
-     */
-    private fun buildHttpRequest(
-        text: String,
-        config: VolcengineConfig,
-        params: SynthesisParams
-    ): Request {
-        val voiceId = if (config.voiceId.isNotEmpty()) {
-            extractRealVoiceName(config.voiceId) ?: config.voiceId
-        } else {
-            // 默认声音
-            voiceIds.firstOrNull() ?: "zh_female_vv_uranus_bigtts"
-        }
-
-        val speechRate = convertSpeechRate(params.speechRate)
-        logDebug("ttsSpeechRate: ${params.speechRate}, seedSpeechRate: $speechRate")
-
-        val loudnessRate = convertLoudnessRate(params.volume)
-        logDebug("ttsLoudnessRate: ${params.volume}, seedLoudnessRate: $loudnessRate")
-
-        // 构建 additions 参数
-        val additions = JSONObject().apply {
-            // 明确语种设置
-            put("explicit_language", "zh")
-            // 禁用 markdown 过滤
-            put("disable_markdown_filter", true)
-        }
-
-        // 构建请求体
-        val requestBody = JSONObject().apply {
-            put("user", JSONObject().apply {
-                put("uid", "talkify_user_${System.currentTimeMillis()}")
-            })
-            put("req_params", JSONObject().apply {
-                put("text", text)
-                put("speaker", voiceId)
-                put("audio_params", JSONObject().apply {
-                    put("format", audioConfig.getVolcEngineFormat())
-                    put("sample_rate", audioConfig.sampleRate)
-                    put("speech_rate", speechRate)
-                    put("loudness_rate", loudnessRate)
-                })
-                put("additions", additions.toString())
-            })
-        }
-
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val body = requestBody.toString().toRequestBody(mediaType)
-
-        val effectiveApiUrl = config.apiUrl.ifBlank { DEFAULT_API_URL }
-        val effectiveResourceId = config.modelId.ifBlank { getDefaultModelId() }
-
-        val request = Request.Builder()
-            .url(effectiveApiUrl)
-            .post(body)
-            .header("x-api-key", config.apiKey)
-            .header("X-Api-Resource-Id", effectiveResourceId)
-            .header("Content-Type", "application/json")
-            .header("Connection", "keep-alive")
-            .build()
-
-        // 打印请求详情（Headers 脱敏处理仅用于日志显示，实际发送的是原始值）
-        logDebug("HTTP Request URL: ${request.url}")
-        logDebug("HTTP Request Headers (masked for log): ${request.headers.toMaskedString()}")
-        logDebug("HTTP Request Body: ${requestBody.toString(2)}")
-
-        return request
-    }
-
-    /**
-     * 将 Headers 转换为脱敏字符串用于日志
-     */
-    private fun okhttp3.Headers.toMaskedString(): String {
-        val sb = StringBuilder("{")
-        for (i in 0 until this.size) {
-            val name = this.name(i)
-            val value = this.value(i)
-            val maskedValue = when (name.lowercase()) {
-                "x-api-key" -> "${value.take(4)}****${value.takeLast(4)}"
-                else -> value
-            }
-            sb.append("$name=$maskedValue")
-            if (i < this.size - 1) sb.append(", ")
-        }
-        sb.append("}")
-        return sb.toString()
-    }
-
-    /**
-     * 解析火山引擎错误响应，返回用户友好的错误信息
-     */
-    private fun parseVolcEngineError(errorBody: String): String {
-        return try {
-            val json = JSONObject(errorBody)
-            // 优先尝试直接从根节点获取 message (Doubao 2.0 structure)
-            var message = json.optString("message", "")
-            
-            // 如果根节点没有，尝试从 header 获取 (Legacy structure)
-            val header = json.optJSONObject("header")
-            val code = header?.optInt("code", 0) ?: json.optInt("code", 0)
-            
-            if (message.isBlank()) {
-                message = header?.optString("message", "") ?: ""
-            }
-            
-            if (message.isNotBlank()) {
-                return message
-            }
-            
-            when (code) {
-                45000030 -> "资源未授权：请在火山引擎控制台开通对应服务服务 (code: $code)"
-                45000001 -> "认证失败：请检查 App ID 和 Access Key 是否正确 (code: $code)"
-                45000002 -> "参数错误：$message (code: $code)"
-                45000003 -> "请求过于频繁，请稍后重试 (code: $code)"
-                45000004 -> "服务暂时不可用，请稍后重试 (code: $code)"
-                45000005 -> "余额不足：请充值后再试 (code: $code)"
-                else -> "语音合成失败：$message (code: $code)"
-            }
-        } catch (_: Exception) {
-            TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED)
-        }
-    }
-
-    /**
-     * 将 AudioConfig 的音频格式转换为火山引擎 API 格式字符串
-     */
-    private fun AudioConfig.getVolcEngineFormat(): String {
-        return when (this.audioFormat) {
-            android.media.AudioFormat.ENCODING_PCM_16BIT -> "pcm"
-            android.media.AudioFormat.ENCODING_PCM_8BIT -> "pcm"
-            android.media.AudioFormat.ENCODING_PCM_FLOAT -> "pcm"
-            else -> "pcm"
-        }
-    }
-
-    /**
-     * 转换语速参数
-     * Android: [0, 200]，100 为默认值（表示 1.0x 倍速）
-     * 火山: [-50, 100]，0 为默认值
-     *
-     * 转换规则：
-     * - Android 50 (0.5x) -> 火山 -50
-     * - Android 100 (1.0x) -> 火山 0
-     * - Android 200 (2.0x) -> 火山 100
-     */
-    private fun convertSpeechRate(androidRate: Float): Int {
-        return when {
-            androidRate <= 50f -> -50
-            androidRate >= 200f -> 100
-            else -> ((androidRate - 100f) / 100f * 100f).roundToInt()
-        }
-    }
-
-    /**
-     * 转换音量参数
-     * 火山: [-50, 100]，0 为默认值
-     *
-     * 注意：SynthesisRequest.getVolume() 返回的是 [0.0, 1.0] 的浮点数
-     * 而 getSpeechRate() 和 getPitch() 返回的是 [0, 200] 的整数
-     */
-    private fun convertLoudnessRate(androidVolume: Float): Int {
-        return when {
-            androidVolume <= 0.25f -> -50
-            androidVolume >= 1.0f -> 100
-            else -> ((androidVolume - 0.5f) / 0.5f * 100f).roundToInt()
-        }
-    }
-
-
-    override fun getSupportedLanguages(): Set<String> {
-        return SUPPORTED_LANGUAGES.toSet()
-    }
-
-    override fun getDefaultLanguages(): Array<String> {
-        return arrayOf(Locale.SIMPLIFIED_CHINESE.language, Locale.SIMPLIFIED_CHINESE.country, "")
-    }
-
-    override fun getSupportedVoices(): List<Voice> {
-        val voices = mutableListOf<Voice>()
-
-        for (langCode in getSupportedLanguages()) {
-            for (voiceId in voiceIds) {
-                voices.add(
-                    Voice(
-                        "$voiceId$VOICE_NAME_SEPARATOR$langCode",
-                        Locale.forLanguageTag(langCode),
-                        Voice.QUALITY_NORMAL,
-                        Voice.LATENCY_NORMAL,
-                        true,
-                        emptySet()
-                    )
-                )
-            }
-        }
-        return voices
-    }
-
-    override fun getDefaultVoiceId(
-        lang: String?,
-        country: String?,
-        variant: String?,
-        currentVoiceId: String?
-    ): String {
-        val defaultVoice = voiceIds.firstOrNull() ?: "zh_female_vv_uranus_bigtts"
-        if (currentVoiceId != null && currentVoiceId.isNotBlank()) {
-            return "$currentVoiceId$VOICE_NAME_SEPARATOR$lang"
-        }
-        return "$defaultVoice$VOICE_NAME_SEPARATOR$lang"
-    }
-
-    override fun isVoiceIdCorrect(voiceId: String?): Boolean {
-        if (voiceId == null) {
-            return false
-        }
-        val realVoiceName = extractRealVoiceName(voiceId)
-        return realVoiceName != null && voiceIds.contains(realVoiceName)
-    }
-
-
-    override fun stop() {
-        logInfo("Stopping synthesis")
-        isCancelled = true
-        currentCall?.cancel()
-        currentCall = null
-    }
-
-    override fun release() {
-        logInfo("Releasing provider")
-        isCancelled = true
-        currentCall?.cancel()
-        currentCall = null
-        providerScope.cancel()
-        super.release()
+    override fun mapHttpError(errorBody: String): String {
+        return VolcengineErrorParser.parse(errorBody)
     }
 
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
-        val seedConfig = config as? VolcengineConfig
-        var result = false
-        if (seedConfig != null) {
-            result = seedConfig.apiKey.isNotBlank()
-        }
-        TtsLogger.d("$tag: isConfigured = $result")
-        return result
+        return isConfiguredAs(config) { c: VolcengineConfig -> c.apiKey.isNotBlank() }
     }
 
     override fun createDefaultConfig(): BaseProviderConfig {
         return VolcengineConfig()
-    }
-
-    override fun getConfigLabel(configKey: String, context: android.content.Context): String? {
-        return when (configKey) {
-            "api_key" -> context.getString(R.string.api_key_label)
-            else -> super.getConfigLabel(configKey, context)
-        }
     }
 }
