@@ -235,7 +235,7 @@ fun ConfigBottomSheet(
                                 return@ConfigEditor
                             }
                         }
-                        // 已部署或其他供应商，直接保存
+                        // 已下载或其他供应商，直接保存
                         configRepository.saveConfig(currentProvider.id, newConfig)
                         onConfigSaved?.invoke()
                         onDismiss()
@@ -467,14 +467,14 @@ private fun buildConfigItems(
         }
         is LocalModelConfig -> {
             // 模型选择：从 LocalModelRegistry 构建下拉选项（含下载状态标记）
-            val modelLabel = getLabel("model_id") ?: "选择模型"
+            val modelLabel = getLabel("model_id") ?: context.getString(R.string.model_select_label)
             val modelOptions = LocalModelRegistry.ALL_MODELS.map { model ->
                 val status = LocalModelManager.getModelStatus(model.id)
                 val statusSuffix = when (status) {
-                    ModelDownloadStatus.DEPLOYED -> " \u2713"
-                    ModelDownloadStatus.DOWNLOADING -> " [下载中...]"
-                    ModelDownloadStatus.NOT_DOWNLOADED -> " [未下载]"
-                    ModelDownloadStatus.ERROR -> " [错误]"
+                    ModelDownloadStatus.DOWNLOADED -> " " + context.getString(R.string.model_status_downloaded)
+                    ModelDownloadStatus.DOWNLOADING -> " " + context.getString(R.string.model_status_downloading)
+                    ModelDownloadStatus.NOT_DOWNLOADED -> " " + context.getString(R.string.model_not_downloaded)
+                    ModelDownloadStatus.ERROR -> " " + context.getString(R.string.model_status_error)
                 }
                 model.id to "${model.displayName}$statusSuffix"
             }
@@ -515,9 +515,9 @@ private fun buildConfigItems(
                     label = synthConfigLabel,
                     value = csValue,
                     dropdownOptions = listOf(
-                        "default" to "默认",
-                        "true" to "更自然韵律",
-                        "false" to "更快速度"
+                        "default" to context.getString(R.string.continuous_sound_default),
+                        "true" to context.getString(R.string.continuous_sound_natural),
+                        "false" to context.getString(R.string.continuous_sound_fast)
                     )
                 )
             )
@@ -531,10 +531,10 @@ private fun buildConfigItems(
                     label = languageBoostLabel,
                     value = config.languageBoost.name,
                     dropdownOptions = listOf(
-                        "OFF" to "关闭",
-                        "AUTO" to "自动",
-                        "CHINESE" to "中文",
-                        "ENGLISH" to "英文"
+                        "OFF" to context.getString(R.string.language_boost_off),
+                        "AUTO" to context.getString(R.string.language_boost_auto),
+                        "CHINESE" to context.getString(R.string.language_boost_chinese),
+                        "ENGLISH" to context.getString(R.string.language_boost_english)
                     )
                 )
             )
@@ -548,8 +548,8 @@ private fun buildConfigItems(
                     label = englishNormLabel,
                     value = config.englishNormalization.toString(),
                     dropdownOptions = listOf(
-                        "true" to "开启",
-                        "false" to "关闭"
+                        "true" to context.getString(R.string.switch_option_on),
+                        "false" to context.getString(R.string.switch_option_off)
                     )
                 )
             )

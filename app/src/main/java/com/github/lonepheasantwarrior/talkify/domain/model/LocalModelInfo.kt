@@ -8,9 +8,9 @@ enum class ModelDownloadStatus {
     NOT_DOWNLOADED,
     /** 正在下载中 */
     DOWNLOADING,
-    /** 已部署可用 */
-    DEPLOYED,
-    /** 下载/部署错误 */
+    /** 已下载且完整性校验通过，可用 */
+    DOWNLOADED,
+    /** 下载错误 */
     ERROR
 }
 

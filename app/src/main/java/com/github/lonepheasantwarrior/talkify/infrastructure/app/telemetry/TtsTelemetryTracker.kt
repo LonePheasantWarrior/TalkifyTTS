@@ -12,7 +12,7 @@ import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
  *
  * 限频规则：
  * 1. 与上一次使用的供应商/模型组合不一致 → 立即上报并重置该组合计数
- * 2. 同一供应商/模型组合累计合成 10 次 → 上报一次并重置计数
+ * 2. 同一供应商/模型组合累计合成 15 次 → 上报一次并重置计数
  *
  * 每个 "providerId_modelId" 组合独立计数，互不干扰。
  * 通过 [TalkifyTelemetry] 统一上报，不直接依赖 Aptabase SDK。

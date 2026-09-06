@@ -40,8 +40,8 @@ abstract class AbstractTtsProvider : TtsProviderApi {
     protected open val supportedLanguages: Array<String>
         get() = emptyArray()
 
-    /** [getDefaultLanguages] 的默认返回值 */
-    protected open fun createDefaultLanguages(): Array<String> {
+    /** [getDefaultLanguage] 的默认返回值 */
+    protected open fun createDefaultLanguage(): Array<String> {
         return arrayOf(Locale.SIMPLIFIED_CHINESE.language, Locale.SIMPLIFIED_CHINESE.country, "")
     }
 
@@ -53,8 +53,8 @@ abstract class AbstractTtsProvider : TtsProviderApi {
         return supportedLanguages.toSet()
     }
 
-    override fun getDefaultLanguages(): Array<String> {
-        return createDefaultLanguages()
+    override fun getDefaultLanguage(): Array<String> {
+        return createDefaultLanguage()
     }
 
     override fun getSupportedVoices(): List<Voice> {

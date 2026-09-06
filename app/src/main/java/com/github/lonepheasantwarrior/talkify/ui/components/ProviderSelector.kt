@@ -71,7 +71,7 @@ fun ProviderSelector(
                     .padding(top = 8.dp)
             ) {
                 Text(
-                    text = currentProvider.provider,
+                    text = currentProvider.defaultModelId,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -181,7 +181,7 @@ fun ProviderSelector(
                                     }
                                 )
                                 Text(
-                                    text = provider.provider,
+                                    text = provider.defaultModelId,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (isSelected) {
                                         MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)

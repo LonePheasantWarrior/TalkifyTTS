@@ -11,7 +11,7 @@ import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
-import com.github.lonepheasantwarrior.talkify.service.provider.TencentErrorMapper
+import com.github.lonepheasantwarrior.talkify.service.provider.TencentErrorParser
 import com.github.lonepheasantwarrior.talkify.service.provider.TencentParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
@@ -76,8 +76,7 @@ class TencentCloudProvider : AbstractTtsProvider() {
         "secret_key" to R.string.tencent_secret_key_label
     )
 
-    val audioConfig: AudioConfig
-        @JvmName("getAudioConfigProperty") get() = AudioConfig.TENCENT_TTS
+    override fun getAudioConfig(): AudioConfig = AudioConfig.TENCENT_TTS
 
     private val voiceSampleRateMap: MutableMap<String, Int> by lazy {
         loadVoiceSampleRatesFromResource()
@@ -256,8 +255,8 @@ class TencentCloudProvider : AbstractTtsProvider() {
                         listener.onAudioAvailable(
                             data,
                             sampleRate,
-                            audioConfig.audioFormat,
-                            audioConfig.channelCount
+                            getAudioConfig().audioFormat,
+                            getAudioConfig().channelCount
                         )
                     }
                 }
@@ -277,7 +276,7 @@ class TencentCloudProvider : AbstractTtsProvider() {
                     logError("onSynthesisFail: $errorMsg, code=$errorCode")
                     
                     if (firstErrorMessage == null) {
-                        firstErrorMessage = TencentErrorMapper.friendlyErrorMessage(errorCode, errorMsg)
+                        firstErrorMessage = TencentErrorParser.friendlyErrorMessage(errorCode, errorMsg)
                         providerScope.launch(Dispatchers.Main) {
                             listener.onError(firstErrorMessage!!)
                         }

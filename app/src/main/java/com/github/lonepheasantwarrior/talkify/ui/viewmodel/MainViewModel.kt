@@ -7,9 +7,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
-import com.github.lonepheasantwarrior.talkify.ui.viewmodel.demo.DemoPlaybackController
-import com.github.lonepheasantwarrior.talkify.ui.viewmodel.model.DownloadProgress
-import com.github.lonepheasantwarrior.talkify.ui.viewmodel.model.LocalModelDownloadController
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel.DownloadProgress
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel.LocalModelDownloadController
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.preview.PreviewPlaybackController
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup.StartupCoordinator
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup.StartupState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * 本身不承载业务状态，仅将三个独立状态域组合后暴露给 MainScreen：
  * - [StartupCoordinator]：启动检查状态机（网络/权限/电池/更新/默认供应商检测）
- * - [DemoPlaybackController]：Demo 试听
+ * - [PreviewPlaybackController]：语音预览播放
  * - [LocalModelDownloadController]：本地模型下载进度与冲突管理
  *
  * 供应商配置面板开关与系统设置跳转属于界面编排职责，保留在此处。
@@ -32,16 +32,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val context = application
 
     private val startup = StartupCoordinator(application, viewModelScope)
-    private val demoPlayback = DemoPlaybackController()
+    private val previewPlayback = PreviewPlaybackController()
     private val modelDownload = LocalModelDownloadController(application)
 
     // --- 启动流程状态（委托 StartupCoordinator）---
-    val uiState: StateFlow<StartupState> = startup.uiState
+    val startupState: StateFlow<StartupState> = startup.startupState
     val isDefaultProvider: StateFlow<Boolean> = startup.isDefaultProvider
 
-    // --- Demo 试听状态（委托 DemoPlaybackController）---
-    val isDemoPlaying: StateFlow<Boolean> = demoPlayback.isDemoPlaying
-    val demoErrorMessage: StateFlow<String?> = demoPlayback.demoErrorMessage
+    // --- 语音预览状态（委托 PreviewPlaybackController）---
+    val isPreviewPlaying: StateFlow<Boolean> = previewPlayback.isPreviewPlaying
+    val previewErrorMessage: StateFlow<String?> = previewPlayback.previewErrorMessage
 
     // --- 下载进度状态（委托 LocalModelDownloadController）---
     val downloadProgress: StateFlow<DownloadProgress?> = modelDownload.downloadProgress
@@ -62,8 +62,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshDefaultProviderStatus() = startup.refreshDefaultProviderStatus()
 
-    fun onNetworkRetry() = startup.onNetworkRetry()
-
     fun hasRequestedNotificationPermission(): Boolean =
         startup.hasRequestedNotificationPermission()
 
@@ -80,14 +78,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onUpdateDialogDismissed() = startup.onUpdateDialogDismissed()
 
-    // --- 委托：Demo 试听 ---
+    // --- 委托：语音预览 ---
 
-    fun playDemo(providerId: String, text: String, config: BaseProviderConfig) =
-        demoPlayback.playDemo(providerId, text, config)
+    fun playPreview(providerId: String, text: String, config: BaseProviderConfig) =
+        previewPlayback.playPreview(providerId, text, config)
 
-    fun stopDemo() = demoPlayback.stopDemo()
+    fun stopPreview() = previewPlayback.stopPreview()
 
-    fun clearDemoError() = demoPlayback.clearDemoError()
+    fun clearPreviewError() = previewPlayback.clearPreviewError()
 
     // --- 委托：本地模型下载 ---
 
@@ -140,6 +138,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         TtsLogger.d(logTag) { "ViewModel cleared, releasing resources" }
         modelDownload.unregister()
-        demoPlayback.release()
+        previewPlayback.release()
     }
 }

@@ -8,9 +8,7 @@ package com.github.lonepheasantwarrior.talkify.domain.model
  * 字段语义：
  * - [providerId]：供应商唯一标识符，如 "aliyunBailian"、"volcengine"，用于内部路由与持久化
  * - [defaultModelId]：该供应商的默认模型标识符，如 "qwen3-tts"、"seed-tts-2.0"
- * - [provider]：供应商（服务提供商）展示名称，如 "阿里云百炼"、"火山引擎"
- *
- * 供应商 ID 字典参见 [doc/供应商ID字典.txt]。
+ * - [provider]：供应商展示名称，如 "阿里云百炼"、"火山引擎"
  */
 sealed class ProviderIds {
     /**
@@ -87,7 +85,7 @@ sealed class ProviderIds {
     abstract val defaultModelId: String
 
     /**
-     * 供应商（服务提供商）展示名称，用于 UI 呈现。
+     * 供应商展示名称，用于 UI 呈现。
      */
     abstract val provider: String
 
@@ -107,7 +105,7 @@ sealed class ProviderIds {
  * 字段映射：
  * - [TtsProvider.id] ← [ProviderIds.providerId]（内部路由与持久化用）
  * - [TtsProvider.name] ← [ProviderIds.provider]（UI 主展示名）
- * - [TtsProvider.provider] ← [ProviderIds.defaultModelId]（UI 次展示模型标识）
+ * - [TtsProvider.defaultModelId] ← [ProviderIds.defaultModelId]（UI 次展示模型标识）
  *
  * @return TtsProvider 实例
  */
@@ -115,6 +113,6 @@ fun ProviderIds.toTtsProvider(): TtsProvider {
     return TtsProvider(
         id = this.providerId,
         name = this.provider,
-        provider = this.defaultModelId
+        defaultModelId = this.defaultModelId
     )
 }

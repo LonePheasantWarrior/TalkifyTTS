@@ -77,7 +77,7 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".TalkifyDownloadVoiceData"
+            android:name=".TalkifyDownloadVoiceDataActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.speech.tts.engine.INSTALL_TTS_DATA" />

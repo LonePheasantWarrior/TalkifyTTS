@@ -23,9 +23,9 @@ import kotlinx.coroutines.withContext
 sealed class StartupState {
     data object CheckingNetwork : StartupState()
     data object NetworkBlocked : StartupState()
-    data object CheckingNotification : StartupState()
-    data object RequestingNotification : StartupState()
-    data object CheckingBattery : StartupState()
+    data object CheckingNotificationPermission : StartupState()
+    data object RequestingNotificationPermission : StartupState()
+    data object CheckingBatteryOptimization : StartupState()
     data object RequestingBatteryOptimization : StartupState()
     data object CheckingUpdate : StartupState()
     data class UpdateAvailable(val updateInfo: UpdateInfo) : StartupState()
@@ -50,8 +50,8 @@ class StartupCoordinator(
     }
     private val updateChecker by lazy { UpdateChecker() }
 
-    private val _uiState = MutableStateFlow<StartupState>(StartupState.CheckingNetwork)
-    val uiState: StateFlow<StartupState> = _uiState.asStateFlow()
+    private val _startupState = MutableStateFlow<StartupState>(StartupState.CheckingNetwork)
+    val startupState: StateFlow<StartupState> = _startupState.asStateFlow()
 
     init {
         startStartupSequence()
@@ -68,12 +68,12 @@ class StartupCoordinator(
 
     // --- 启动流程实现 (步骤 1: 网络检查) ---
     private suspend fun checkNetworkStep() {
-        _uiState.value = StartupState.CheckingNetwork
+        _startupState.value = StartupState.CheckingNetwork
         TtsLogger.d(logTag) { "Step 1: Checking Network..." }
 
         if (!PermissionChecker.hasInternetPermission(application)) {
             TtsLogger.w(logTag) { "No internet permission" }
-            _uiState.value = StartupState.NetworkBlocked
+            _startupState.value = StartupState.NetworkBlocked
             return
         }
 
@@ -86,20 +86,20 @@ class StartupCoordinator(
             checkNotificationStep()
         } else {
             TtsLogger.w(logTag) { "Network unavailable." }
-            _uiState.value = StartupState.NetworkBlocked
+            _startupState.value = StartupState.NetworkBlocked
         }
     }
 
     // --- 步骤 2: 通知权限 ---
     private fun checkNotificationStep() {
-        _uiState.value = StartupState.CheckingNotification
+        _startupState.value = StartupState.CheckingNotificationPermission
         TtsLogger.d(logTag) { "Step 2: Checking Notification Permission..." }
 
         val hasPermission = PermissionChecker.hasNotificationPermission(application)
 
         if (!hasPermission) {
             TtsLogger.i(logTag) { "Need to request notification permission." }
-            _uiState.value = StartupState.RequestingNotification
+            _startupState.value = StartupState.RequestingNotificationPermission
         } else {
             TtsLogger.i(logTag) { "Notification permission check passed (Granted)." }
             checkBatteryStep()
@@ -108,14 +108,14 @@ class StartupCoordinator(
 
     // --- 步骤 3: 电池优化 ---
     private fun checkBatteryStep() {
-        _uiState.value = StartupState.CheckingBattery
+        _startupState.value = StartupState.CheckingBatteryOptimization
         TtsLogger.d(logTag) { "Step 3: Checking Battery Optimization..." }
 
         val isIgnoring = PowerOptimizationHelper.isIgnoringBatteryOptimizations(application)
 
         if (!isIgnoring) {
             TtsLogger.i(logTag) { "Need to request battery optimization." }
-            _uiState.value = StartupState.RequestingBatteryOptimization
+            _startupState.value = StartupState.RequestingBatteryOptimization
         } else {
             TtsLogger.i(logTag) { "Battery optimization check passed." }
             checkUpdateStep()
@@ -124,7 +124,7 @@ class StartupCoordinator(
 
     // --- 步骤 4: 检查更新 ---
     private fun checkUpdateStep() {
-        _uiState.value = StartupState.CheckingUpdate
+        _startupState.value = StartupState.CheckingUpdate
         TtsLogger.d(logTag) { "Step 4: Checking Updates..." }
 
         scope.launch {
@@ -136,7 +136,7 @@ class StartupCoordinator(
 
                 if (result is UpdateCheckResult.UpdateAvailable) {
                     TtsLogger.i(logTag) { "Update available: ${result.updateInfo.versionName}" }
-                    _uiState.value = StartupState.UpdateAvailable(result.updateInfo)
+                    _startupState.value = StartupState.UpdateAvailable(result.updateInfo)
                 } else {
                     TtsLogger.i(logTag) { "No update available or check failed: $result" }
                     finishStartup()
@@ -150,7 +150,7 @@ class StartupCoordinator(
 
     private fun finishStartup() {
         TtsLogger.i(logTag) { "Startup sequence completed." }
-        _uiState.value = StartupState.Completed
+        _startupState.value = StartupState.Completed
         checkDefaultProvider()
     }
 
@@ -165,13 +165,13 @@ class StartupCoordinator(
             val isDefault = withContext(Dispatchers.IO) {
                 try {
                     val tts = android.speech.tts.TextToSpeech(application, null)
-                    val providerName = tts.defaultEngine
+                    val systemDefaultEngine = tts.defaultEngine
                     tts.shutdown()
 
-                    TtsLogger.d(logTag) { "Default TTS provider: $providerName" }
+                    TtsLogger.d(logTag) { "Default TTS engine: $systemDefaultEngine" }
 
                     val talkifyPackageName = application.packageName
-                    providerName == talkifyPackageName || providerName?.contains("talkify") == true
+                    systemDefaultEngine == talkifyPackageName || systemDefaultEngine?.contains("talkify") == true
                 } catch (e: Exception) {
                     TtsLogger.e("Failed to get default TTS provider", e, logTag)
                     false
@@ -186,10 +186,6 @@ class StartupCoordinator(
     val isDefaultProvider: StateFlow<Boolean> = _isDefaultProvider.asStateFlow()
 
     // --- 用户交互回调 ---
-
-    fun onNetworkRetry() {
-        startStartupSequence()
-    }
 
     fun hasRequestedNotificationPermission(): Boolean {
         return appConfigRepository.hasRequestedNotificationPermission()

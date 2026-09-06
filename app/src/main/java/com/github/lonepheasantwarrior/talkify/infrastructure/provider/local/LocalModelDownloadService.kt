@@ -39,7 +39,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 本地模型下载前台服务
  *
  * 在前台 Service 中执行模型文件下载，展示实时进度通知。
- * 支持断点续传（Range 请求）、取消操作和下载完成校验。
+ * 支持取消操作，下载完成后进行完整性校验（文件存在性 + MD5）；
+ * 默认源失败时自动切换备用下载源。
  *
  * 启动方式：
  * ```kotlin
@@ -179,18 +180,18 @@ class LocalModelDownloadService : Service() {
      * 2. 失败时自动切换到备用源（huggingface.co）
      */
     private suspend fun downloadModel(modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo) {
-        val deployedDir = LocalModelManager.getModelDeployedDir(modelInfo.id)
-        if (deployedDir == null) {
+        val modelDir = LocalModelManager.getModelDownloadedDir(modelInfo.id)
+        if (modelDir == null) {
             onDownloadFailed(modelInfo, "无法创建模型目录")
             return
         }
-        if (!deployedDir.exists() && !deployedDir.mkdirs()) {
+        if (!modelDir.exists() && !modelDir.mkdirs()) {
             onDownloadFailed(modelInfo, "创建模型目录失败")
             return
         }
 
         // 清理旧文件
-        deployedDir.listFiles()?.forEach { it.delete() }
+        modelDir.listFiles()?.forEach { it.delete() }
 
         val urlEntries = modelInfo.downloadFileInfo.entries.toList()
         val totalFiles = urlEntries.size
@@ -203,13 +204,13 @@ class LocalModelDownloadService : Service() {
 
         for ((index, entry) in urlEntries.withIndex()) {
             if (isCancelled.get()) {
-                onDownloadCancelled(modelInfo, deployedDir)
+                onDownloadCancelled(modelInfo, modelDir)
                 return
             }
 
             val url = entry.key
             val fileName = entry.value
-            val targetFile = File(deployedDir, fileName)
+            val targetFile = File(modelDir, fileName)
 
             TtsLogger.d("Downloading file ${index + 1}/$totalFiles: $fileName", tag = TAG)
 
@@ -226,7 +227,7 @@ class LocalModelDownloadService : Service() {
 
             if (!success) {
                 onDownloadFailed(modelInfo, "文件下载失败: $fileName")
-                cleanupPartialFiles(deployedDir)
+                cleanupPartialFiles(modelDir)
                 return
             }
 
@@ -238,26 +239,26 @@ class LocalModelDownloadService : Service() {
             TtsLogger.i("Starting archive download phase: ${modelInfo.archiveAssets.size} archives", tag = TAG)
             for ((archiveUrl, subDir) in modelInfo.archiveAssets) {
                 if (isCancelled.get()) {
-                    onDownloadCancelled(modelInfo, deployedDir)
+                    onDownloadCancelled(modelInfo, modelDir)
                     return
                 }
 
-                val archiveFile = File(deployedDir, "temp_archive.tar.bz2")
+                val archiveFile = File(modelDir, "temp_archive.tar.bz2")
                 try {
                     TtsLogger.i("Downloading archive: $archiveUrl", tag = TAG)
                     if (!tryDownloadFile(archiveUrl, archiveFile, modelInfo.displayName, totalDownloaded, totalSize)) {
                         onDownloadFailed(modelInfo, "归档资源下载失败: $archiveUrl")
-                        cleanupPartialFiles(deployedDir)
+                        cleanupPartialFiles(modelDir)
                         return
                     }
 
                     totalDownloaded += archiveFile.length()
 
                     TtsLogger.i("Extracting archive to: $subDir", tag = TAG)
-                    val targetDir = if (subDir.isEmpty()) deployedDir else File(deployedDir, subDir)
+                    val targetDir = if (subDir.isEmpty()) modelDir else File(modelDir, subDir)
                     if (!extractTarBz2(archiveFile, targetDir)) {
                         onDownloadFailed(modelInfo, "归档资源解压失败: $subDir")
-                        cleanupPartialFiles(deployedDir)
+                        cleanupPartialFiles(modelDir)
                         return
                     }
                 } finally {
@@ -267,27 +268,27 @@ class LocalModelDownloadService : Service() {
             }
         }
 
-        // ========== 阶段切换：下载完成 → 部署校验 ==========
-        TtsLogger.i("All files downloaded for ${modelInfo.id}, starting deployment verification", tag = TAG)
+        // ========== 阶段切换：下载完成 → 完整性校验 ==========
+        TtsLogger.i("All files downloaded for ${modelInfo.id}, starting integrity verification", tag = TAG)
         updateVerifyingNotification(modelInfo.displayName)
 
         // 验证所有文件完整性
-        if (!verifyDownloadedFiles(deployedDir, urlEntries)) {
+        if (!verifyDownloadedFiles(modelDir, urlEntries)) {
             onDownloadFailed(modelInfo, "模型文件校验失败，部分文件不完整")
-            cleanupPartialFiles(deployedDir)
+            cleanupPartialFiles(modelDir)
             return
         }
 
         // MD5 校验（占位，后续补充真实 MD5 值后启用）
         if (modelInfo.md5.isNotBlank()) {
-            if (!verifyModelIntegrity(deployedDir, modelInfo)) {
+            if (!verifyModelIntegrity(modelDir, modelInfo)) {
                 onDownloadFailed(modelInfo, "MD5 校验失败，模型文件可能已损坏")
-                cleanupPartialFiles(deployedDir)
+                cleanupPartialFiles(modelDir)
                 return
             }
         }
 
-        // 部署完成
+        // 完整性校验通过
         onDownloadCompleted(modelInfo)
     }
 
@@ -412,7 +413,7 @@ class LocalModelDownloadService : Service() {
      * 校验模型完整性（MD5）
      */
     private fun verifyModelIntegrity(
-        deployedDir: File,
+        modelDir: File,
         modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo
     ): Boolean {
         try {
@@ -420,7 +421,7 @@ class LocalModelDownloadService : Service() {
             val digest = MessageDigest.getInstance("MD5")
 
             modelInfo.downloadFileInfo.values.forEach { fileName ->
-                val file = File(deployedDir, fileName)
+                val file = File(modelDir, fileName)
                 if (!file.exists()) return false
 
                 file.inputStream().use { input ->
@@ -447,11 +448,11 @@ class LocalModelDownloadService : Service() {
      * 快速校验已下载文件：所有文件必须存在且非空
      */
     private fun verifyDownloadedFiles(
-        deployedDir: File,
+        modelDir: File,
         entries: List<Map.Entry<String, String>>
     ): Boolean {
         for ((_, fileName) in entries) {
-            val file = File(deployedDir, fileName)
+            val file = File(modelDir, fileName)
             if (!file.exists() || file.length() <= 0) {
                 TtsLogger.e("File verification failed: $fileName (exists=${file.exists()}, size=${file.length()})", tag = TAG)
                 return false
@@ -600,11 +601,11 @@ class LocalModelDownloadService : Service() {
 
     private fun onDownloadCancelled(
         modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo,
-        deployedDir: File
+        modelDir: File
     ) {
         TtsLogger.i("Download cancelled: ${modelInfo.id}", tag = TAG)
         LocalModelManager.setDownloadingModelId(null)
-        cleanupPartialFiles(deployedDir)
+        cleanupPartialFiles(modelDir)
 
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID)
         stopForeground(STOP_FOREGROUND_REMOVE)

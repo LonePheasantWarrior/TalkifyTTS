@@ -27,7 +27,7 @@ import org.json.JSONObject
  * 分块调度、取消、错误分类等通用逻辑由基类提供。
  *
  * 供应商 ID：xiaomi
- * 服务提供商：小米
+ * 供应商：小米
  * API 模型：mimo-v2.5-tts (MiMo Speech Synthesis v2.5)
  * API 文档：https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis-v2.5
  */

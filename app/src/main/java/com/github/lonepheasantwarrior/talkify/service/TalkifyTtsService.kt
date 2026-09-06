@@ -444,9 +444,9 @@ class TalkifyTtsService : TextToSpeechService() {
             return null
         }
 
-        val defaultLanguages = provider.getDefaultLanguages()
-        TtsLogger.d("onGetLanguage: return ${defaultLanguages.contentToString()}")
-        return defaultLanguages
+        val defaultLanguage = provider.getDefaultLanguage()
+        TtsLogger.d("onGetLanguage: return ${defaultLanguage.contentToString()}")
+        return defaultLanguage
     }
 
     override fun onGetVoices(): List<Voice?>? {
@@ -617,7 +617,7 @@ class TalkifyTtsService : TextToSpeechService() {
             // 合成错误消息：provider 回调线程写、下方读取，用 AtomicReference 保证可见性
             val synthesisErrorMessage = AtomicReference<String?>(null)
 
-            // 语音合成事件信息收集（限频上报：模型切换或累计10次触发）
+            // 语音合成事件信息收集（限频上报：模型切换或累计15次触发）
             val effectiveModelId = config.modelId.ifBlank { provider.getDefaultModelId() }
             TtsTelemetryTracker.trackIfNeeded(providerId, effectiveModelId, text.length)
 

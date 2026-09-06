@@ -32,11 +32,11 @@ data class SynthesisResult(
  * - 线程安全与资源释放
  *
  * @param modelInfo 目标模型元信息
- * @param deployedDir 模型文件部署目录
+ * @param modelDir 模型文件所在目录（下载目录）
  */
 class SherpaTtsEngine(
     private val modelInfo: LocalModelInfo,
-    private val deployedDir: File
+    private val modelDir: File
 ) {
 
     private val tag = "SherpaTtsEngine[${modelInfo.id}]"
@@ -206,12 +206,12 @@ class SherpaTtsEngine(
      * 校验所有必需的模型文件是否存在
      */
     private fun checkModelFiles() {
-        if (!deployedDir.exists() || !deployedDir.isDirectory) {
-            throw IllegalStateException("Model directory not found: ${deployedDir.absolutePath}")
+        if (!modelDir.exists() || !modelDir.isDirectory) {
+            throw IllegalStateException("Model directory not found: ${modelDir.absolutePath}")
         }
 
         for (fileName in modelInfo.downloadFileInfo.values) {
-            val file = File(deployedDir, fileName)
+            val file = File(modelDir, fileName)
             if (!file.exists() || file.length() <= 0) {
                 throw IllegalStateException("Model file missing or empty: ${file.absolutePath}")
             }
@@ -264,7 +264,7 @@ class SherpaTtsEngine(
      * numThreads=4: 官方 RTF 基准测试显示 4 线程较 2 线程提升约 30%
      */
     private fun buildKokoroConfig(): OfflineTtsModelConfig {
-        val espeakDataDir = File(deployedDir, "espeak-ng-data")
+        val espeakDataDir = File(modelDir, "espeak-ng-data")
         // sherpa-onnx C++ Validate() 强制要求 dataDir 非空：
         //   if (data_dir.empty()) { LOGE(...); return false; }
         // Validate() 返回 false 后 JNI 不抛异常，留下未初始化状态 → generate() 时 SIGSEGV
@@ -298,23 +298,23 @@ class SherpaTtsEngine(
      */
     private fun resolveFilePath(expectedName: String): String {
         // 先尝试精确匹配
-        val exactFile = File(deployedDir, expectedName)
+        val exactFile = File(modelDir, expectedName)
         if (exactFile.exists()) return exactFile.absolutePath
 
         // 根据元信息中文件名映射查找
         val mappedName = modelInfo.downloadFileInfo.values.find { it == expectedName }
         if (mappedName != null) {
-            return File(deployedDir, mappedName).absolutePath
+            return File(modelDir, mappedName).absolutePath
         }
 
         // 回退：取目录中任意匹配扩展名的文件
-        val fallback = deployedDir.listFiles()?.find {
+        val fallback = modelDir.listFiles()?.find {
             it.nameWithoutExtension == expectedName.substringBeforeLast('.')
         }
         if (fallback != null) return fallback.absolutePath
 
         // 最终回退：仅拼接路径，让 Sherpa-onnx 自行报错
-        return File(deployedDir, expectedName).absolutePath
+        return File(modelDir, expectedName).absolutePath
     }
 
     /**

@@ -231,7 +231,9 @@ private fun PlayStopButton(
     ) {
         Icon(
             imageVector = if (isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
-            contentDescription = null,
+            contentDescription = stringResource(
+                if (isPlaying) R.string.cd_stop_button else R.string.cd_play_button
+            ),
             tint = if (isPlaying) {
                 MaterialTheme.colorScheme.onErrorContainer
             } else {

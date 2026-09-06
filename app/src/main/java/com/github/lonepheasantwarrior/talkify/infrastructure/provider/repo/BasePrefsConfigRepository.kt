@@ -84,9 +84,11 @@ abstract class BasePrefsConfigRepository<T : BaseProviderConfig>(
         }
     }
 
+    /** 历史键前缀（"engine" 实指供应商），勿改——已安装用户的 API Key 等配置存于该前缀下 */
     private fun prefsKey(providerId: String): String = "engine_${providerId}_"
 
     private companion object {
+        /** 历史文件名，勿改（兼容已安装用户数据） */
         const val PREFS_NAME = "talkify_engine_configs"
     }
 }

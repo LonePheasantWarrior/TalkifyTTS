@@ -16,6 +16,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvid
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VOICE_NAME_SEPARATOR
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,11 +40,11 @@ import java.io.File
  *
  * 供应商 ID：localModel
  */
-class LocalTTSProvider : AbstractTtsProvider() {
+class LocalModelProvider : AbstractTtsProvider() {
 
     companion object {
         /** 引擎级别的日志标签 */
-        private const val TAG = "LocalTTSProvider"
+        private const val TAG = "LocalModelProvider"
 
         /** 默认语速倍率 */
         private const val DEFAULT_SPEED = 1.0f
@@ -99,7 +100,7 @@ class LocalTTSProvider : AbstractTtsProvider() {
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
         val lc = config as? LocalModelConfig ?: return false
         val modelId = lc.modelId.ifBlank { return false }
-        return LocalModelManager.isModelDeployed(modelId)
+        return LocalModelManager.isModelDownloaded(modelId)
     }
 
     override fun createDefaultConfig(): BaseProviderConfig {
@@ -126,9 +127,9 @@ class LocalTTSProvider : AbstractTtsProvider() {
         // 确定目标模型 ID
         val modelId = lc.modelId.ifBlank { getDefaultModelId() }
 
-        // 检查模型是否已部署
-        if (!LocalModelManager.isModelDeployed(modelId)) {
-            logWarning("Model not deployed: $modelId")
+        // 检查模型是否已下载
+        if (!LocalModelManager.isModelDownloaded(modelId)) {
+            logWarning("Model not downloaded: $modelId")
             listener.onError("模型未下载，请先在设置中下载模型")
             return
         }
@@ -228,12 +229,12 @@ class LocalTTSProvider : AbstractTtsProvider() {
             engine = null
         }
 
-        // 获取部署目录
-        val deployedDir = LocalModelManager.getModelDeployedDir(modelId)
+        // 获取模型下载目录
+        val modelDir = LocalModelManager.getModelDownloadedDir(modelId)
             ?: throw IllegalStateException("无法获取模型目录: $modelId")
 
         // 创建新引擎
-        val newEngine = SherpaTtsEngine(modelInfo, deployedDir)
+        val newEngine = SherpaTtsEngine(modelInfo, modelDir)
         newEngine.initialize()
         engine = newEngine
         currentModelId = modelId
@@ -296,7 +297,7 @@ class LocalTTSProvider : AbstractTtsProvider() {
         return setOf("zho", "eng", "yue")
     }
 
-    override fun getDefaultLanguages(): Array<String> {
+    override fun getDefaultLanguage(): Array<String> {
         return arrayOf(Locale.SIMPLIFIED_CHINESE.language, Locale.SIMPLIFIED_CHINESE.country, "")
     }
 
@@ -308,7 +309,7 @@ class LocalTTSProvider : AbstractTtsProvider() {
         for (voice in modelInfo.voiceList) {
             voices.add(
                 Voice(
-                    "${voice.voiceId}::$voice.displayName",
+                    "${voice.voiceId}$VOICE_NAME_SEPARATOR${voice.displayName}",
                     Locale.forLanguageTag(voice.language),
                     Voice.QUALITY_NORMAL,
                     Voice.LATENCY_NORMAL,

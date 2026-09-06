@@ -6,12 +6,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -91,7 +88,6 @@ fun AboutScreen(
 
     var showDonateSheet by remember { mutableStateOf(false) }
     var showDonateInstruction by remember { mutableStateOf<DonateChannel?>(null) }
-    var showPermissionDialog by remember { mutableStateOf(false) }
     var pendingDonateChannel by remember { mutableStateOf<DonateChannel?>(null) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
 
@@ -102,11 +98,6 @@ fun AboutScreen(
     var showUpdateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
 
     val sheetState = rememberModalBottomSheetState()
-
-    rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { _ ->
-    }
 
     rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -151,7 +142,7 @@ fun AboutScreen(
                     IconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cancel)
+                            contentDescription = stringResource(R.string.cd_back)
                         )
                     }
                 },
@@ -675,39 +666,6 @@ fun AboutScreen(
                 }
             },
             shape = RoundedCornerShape(24.dp)
-        )
-    }
-
-    if (showPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.donate_photos_permission_title),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.donate_photos_permission_message),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
-                    }
-                    context.startActivity(intent)
-                }) {
-                    Text(stringResource(R.string.donate_photos_permission_grant))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPermissionDialog = false }) {
-                    Text(stringResource(R.string.donate_photos_permission_deny))
-                }
-            }
         )
     }
 }

@@ -77,20 +77,10 @@ data class AudioConfig(
          * 参考 MiniMax API 文档，音频输出格式为 PCM 16bit 32kHz
          * MiniMax 返回的是 hex 编码的 PCM 数据
          */
-        val MINI_MAX_TTS = AudioConfig(
+        val MINIMAX_TTS = AudioConfig(
             sampleRate = 32000,
             audioFormat = AudioFormat.ENCODING_PCM_16BIT,
             channelCount = 1
-        )
-
-        /**
-         * 本地模型 TTS 默认配置
-         * 采样率在运行时根据实际模型动态确定（通过 [LocalModelInfo.sampleRate]）
-         */
-        val LOCAL_TTS = AudioConfig(
-            sampleRate = DEFAULT_SAMPLE_RATE,
-            audioFormat = DEFAULT_AUDIO_FORMAT,
-            channelCount = DEFAULT_CHANNEL_COUNT
         )
 
         /**

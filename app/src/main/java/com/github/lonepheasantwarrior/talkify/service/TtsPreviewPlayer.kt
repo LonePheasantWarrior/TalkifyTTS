@@ -13,7 +13,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
-class TalkifyTtsDemoService(
+/**
+ * 语音预览播放器
+ *
+ * 组合 [TtsProviderApi] 供应商实例与 [TalkifyAudioPlayer]，
+ * 为应用内"语音预览"提供合成与本地播放能力。不是 Android Service。
+ */
+class TtsPreviewPlayer(
     private val providerId: String
 ) {
     companion object {
@@ -183,7 +189,7 @@ class TalkifyTtsDemoService(
     }
 
     fun release() {
-        TtsLogger.d("Releasing service")
+        TtsLogger.d("Releasing preview player")
         stop()
         try {
             currentProvider?.release()

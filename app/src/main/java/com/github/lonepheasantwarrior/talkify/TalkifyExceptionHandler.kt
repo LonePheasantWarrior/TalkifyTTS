@@ -9,6 +9,11 @@ import android.os.Process
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
+/**
+ * 全局未捕获异常处理器
+ *
+ * 捕获崩溃后发送系统通知提示用户，并弹出崩溃对话框（支持"重启应用"）。
+ */
 object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
 
     private const val TAG = "TalkifyException"
@@ -93,14 +98,4 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
             TtsLogger.e("Failed to restart app", throwable = e, tag = TAG)
         }
     }
-}
-
-object TalkifyAppHolder {
-    private var appContext: Context? = null
-
-    fun setContext(context: Context) {
-        appContext = context.applicationContext
-    }
-
-    fun getContext(): Context? = appContext
 }

@@ -94,6 +94,8 @@ class SharedPreferencesAppConfigRepository(
     companion object {
         private const val PREFS_NAME = "talkify_app_config"
         private const val KEY_SELECTED_PROVIDER = "selected_provider"
+
+        /** 历史键名（v1.x 把供应商叫 "engine"），勿改——仅用于读取并迁移老版本数据 */
         private const val KEY_SELECTED_PROVIDER_LEGACY = "selected_engine"
         private const val KEY_HAS_REQUESTED_NOTIFICATION = "has_requested_notification"
         private const val KEY_HAS_OPENED_ABOUT_PAGE = "has_opened_about_page"

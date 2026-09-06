@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.service.provider
 
+import android.media.AudioFormat
 import android.speech.tts.Voice
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 
@@ -19,7 +20,7 @@ data class SynthesisParams(
     val pitch: Float = 100.0f,
     val speechRate: Float = 100.0f,
     val volume: Float = 1.0f,
-    val audioFormat: Int = 2,
+    val audioFormat: Int = AudioFormat.ENCODING_PCM_16BIT,
     val language: String? = null
 )
 
@@ -94,9 +95,11 @@ interface TtsProviderApi {
     fun getSupportedLanguages(): Set<String>
 
     /**
-     * 获取供应商支持的默认语言
+     * 获取默认语言三元组 [language, country, variant]
+     *
+     * 对齐 Android `TextToSpeechService#onGetLanguage` 契约，返回值为三元组数组。
      */
-    fun getDefaultLanguages(): Array<String>
+    fun getDefaultLanguage(): Array<String>
 
     /**
      * 获取供应商支持的声音

@@ -75,7 +75,7 @@ internal object MiniMaxErrorParser {
     }
 }
 
-internal object TencentErrorMapper {
+internal object TencentErrorParser {
 
     private val ERROR_CODE_MAP = mapOf(
         -400 to "客户端参数不能为空",

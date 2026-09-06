@@ -1,4 +1,4 @@
-package com.github.lonepheasantwarrior.talkify.ui.viewmodel.model
+package com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel
 
 import android.app.Application
 import android.content.BroadcastReceiver

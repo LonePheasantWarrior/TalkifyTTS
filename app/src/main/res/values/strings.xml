@@ -3,21 +3,18 @@
     <string name="app_name">Talkify</string>
 
     <!-- 通用 -->
-    <string name="save">保存</string>
     <string name="cancel">取消</string>
     <string name="confirm">确认</string>
     <string name="error">错误</string>
     <string name="success">成功</string>
     <string name="loading">加载中…</string>
-    <string name="retry">重试</string>
 
     <!-- 主界面 -->
     <string name="app_subtitle">AI 语音合成</string>
 
     <string name="current_model">当前模型</string>
     <string name="select_provider">选择供应商</string>
-    <string name="provider_format">提供商: %1$s</string>
-    <string name="default_text">书和株植一样，简单，不贵，却让人觉得身心舒畅，生活踏实。</string>
+    <string name="provider_format">供应商: %1$s</string>
     <string name="checking_network">正在检查网络连接…</string>
 
     <!-- 语音预览 -->
@@ -29,12 +26,12 @@
     <string name="stop">停止</string>
     <string name="no_voices_available">暂无可用声音</string>
     <string name="voice_loading">正在加载声音列表…</string>
+    <string name="input_empty_hint">请输入要合成的文本</string>
+    <string name="provider_not_configured_hint">请先完成供应商配置</string>
 
     <!-- 配置编辑 -->
     <string name="config_title_format">%1$s 配置</string>
     <string name="api_key_label">API Key</string>
-    <string name="app_id_label">App ID</string>
-    <string name="access_key_label">Access Key</string>
     <string name="voice_select_label">声音选择</string>
     <string name="api_url_label">API 地址</string>
     <string name="model_id_label">模型 ID</string>
@@ -60,7 +57,6 @@
 
     <!-- 错误提示 -->
     <string name="error_voice_load_failed">加载声音列表失败</string>
-    <string name="error_config_load_failed">加载配置失败</string>
     <string name="error_invalid_api_key">API Key 格式无效</string>
     <string name="error_voice_not_selected">请先选择声音</string>
     <string name="error_empty_api_key">API Key 不能为空</string>
@@ -87,14 +83,10 @@
     <string name="cd_play_button">播放语音</string>
     <string name="cd_stop_button">停止播放</string>
     <string name="cd_settings_button">打开设置</string>
-    <string name="cd_provider_selector">选择供应商</string>
+    <string name="cd_back">返回</string>
 
     <!-- 权限检查 -->
-    <string name="permission_required_title">权限请求</string>
-    <string name="permission_required_message">联网权限是本应用正常运行所必需的。请授予权限以继续使用应用。</string>
-    <string name="permission_grant">授予权限</string>
     <string name="permission_exit">退出应用</string>
-    <string name="permission_denied_message">未授予联网权限，应用将退出。</string>
     <string name="network_blocked_title">无法连接网络</string>
     <string name="network_blocked_message">无法访问互联网，请检查网络设置后重试。</string>
     <string name="network_open_settings">打开系统设置</string>
@@ -111,6 +103,7 @@
     <string name="battery_optimization_message">Talkify 在后台进行语音合成时，可能会被系统电池优化策略中断网络连接，导致朗读停止。建议您允许 Talkify 忽略电池优化，以获得稳定的后台朗读体验。</string>
     <string name="battery_optimization_allow">去设置</string>
     <string name="battery_optimization_skip">以后再说</string>
+    <string name="battery_optimization_open_failed">无法打开电池优化设置页面，请手动去系统设置中开启</string>
 
     <!-- 检查更新 -->
     <string name="update_available_title">发现新版本</string>
@@ -171,39 +164,32 @@
 
     <!-- 检查更新 -->
     <string name="check_for_updates">检查更新</string>
-    <string name="update_no_available_title">已是最新版本</string>
-    <string name="update_no_available_message">当前版本已是最新版本</string>
-    <string name="update_network_timeout_title">无法检查更新</string>
-    <string name="update_network_timeout_message">网络超时，国内网络可能无法访问 GitHub</string>
-    <string name="update_network_error_title">网络错误</string>
-    <string name="update_network_error_message">网络连接失败: %1$s</string>
-    <string name="update_server_error_title">服务器错误</string>
-    <string name="update_server_error_message">GitHub 服务器返回错误: %1$d</string>
-    <string name="update_parse_error_title">解析错误</string>
-    <string name="update_parse_error_message">无法解析版本信息: %1$s</string>
 
     <!-- 打赏功能 -->
     <string name="donate_title">选择打赏方式</string>
     <string name="donate_wechat">微信</string>
     <string name="donate_alipay">支付宝</string>
-    <string name="donate_cancel">取消</string>
 
     <!-- 打赏操作说明 -->
     <string name="donate_wechat_title">微信打赏</string>
     <string name="donate_wechat_message">二维码图片已保存到手机相册。\n\n请打开微信，点击「扫一扫」，然后选择「相册」扫描二维码完成打赏。</string>
     <string name="donate_alipay_title">支付宝打赏</string>
     <string name="donate_alipay_message">二维码图片已保存到手机相册。\n\n请打开支付宝，点击「扫一扫」，然后选择「相册」扫描二维码完成打赏。</string>
-    <string name="donate_save_success">二维码已保存到相册</string>
     <string name="donate_save_failed">保存失败，请检查存储权限</string>
-    <string name="donate_photos_permission_title">需要存储权限</string>
-    <string name="donate_photos_permission_message">保存二维码图片到相册需要存储权限。是否前往授权？</string>
-    <string name="donate_photos_permission_grant">去授权</string>
-    <string name="donate_photos_permission_deny">取消</string>
 
     <!-- MiniMax 高级设置 -->
     <string name="label_continuous_sound">合成模式</string>
     <string name="label_language_boost">语言增强</string>
     <string name="label_english_normalization">英文文本规范化</string>
+    <string name="continuous_sound_default">默认</string>
+    <string name="continuous_sound_natural">更自然韵律</string>
+    <string name="continuous_sound_fast">更快速度</string>
+    <string name="language_boost_off">关闭</string>
+    <string name="language_boost_auto">自动</string>
+    <string name="language_boost_chinese">中文</string>
+    <string name="language_boost_english">英文</string>
+    <string name="switch_option_on">开启</string>
+    <string name="switch_option_off">关闭</string>
 
     <!-- 系统通知 -->
     <string name="system_notification_channel_name">系统通知</string>
@@ -211,30 +197,20 @@
     <string name="system_notification_title">系统通知</string>
 
     <!-- 本地模型 -->
-    <string name="local_model_label">本地模型</string>
     <string name="model_select_label">选择模型</string>
-    <string name="model_type_label">架构类型</string>
-    <string name="model_size_label">模型大小</string>
-    <string name="model_disk_usage_label">磁盘占用</string>
-    <string name="model_language_label">支持语言</string>
-    <string name="model_voice_count_label">音色数量</string>
     <string name="model_download_confirm_title">下载模型</string>
     <string name="model_download_confirm_message">该模型大小约 %1$s，需要下载后方可使用，是否立即下载？</string>
     <string name="model_downloading_title">正在下载 %1$s</string>
-    <string name="model_downloading_verifying_title">正在部署 %1$s</string>
+    <string name="model_downloading_verifying_title">正在校验 %1$s</string>
     <string name="model_downloading_verifying_hint">正在校验模型文件...</string>
-    <string name="model_download_complete">%1$s 部署完成</string>
+    <string name="model_download_complete">%1$s 下载完成</string>
     <string name="model_download_complete_hint">模型下载完成，可以开始使用</string>
     <string name="model_download_failed_title">下载失败</string>
     <string name="model_download_failed">下载失败: %1$s</string>
     <string name="model_downloading_busy">%1$s 正在下载中，请稍后再试</string>
     <string name="model_another_downloading">另一模型正在下载中，请等待完成后再试</string>
-    <string name="model_uninstall_confirm_title">卸载模型</string>
-    <string name="model_uninstall_confirm">确定要卸载 %1$s 吗？卸载后需要重新下载才能使用。</string>
+    <string name="model_status_downloaded">✓</string>
+    <string name="model_status_downloading">[下载中...]</string>
+    <string name="model_status_error">[错误]</string>
     <string name="model_not_downloaded">[未下载]</string>
-    <string name="model_deployed">&#x2713; 已下载</string>
-    <string name="model_manage">管理</string>
-    <string name="model_disk_usage">占用空间: %1$s</string>
-    <string name="model_download_hint">选择目标模型后点击"保存配置"，系统将提示下载</string>
-    <string name="model_uninstall">卸载模型</string>
 </resources>

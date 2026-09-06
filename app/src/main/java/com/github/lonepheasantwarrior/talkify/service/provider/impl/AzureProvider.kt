@@ -56,7 +56,7 @@ import kotlin.math.min
  *    让服务端在当前 chunk 音频传输期间就开始处理下一个 chunk，
  *    将 chunk 间的间隔从 ~3s 降低到 <1s
  *
- * 服务提供商：Azure
+ * 供应商：Azure
  */
 class AzureProvider : AbstractTtsProvider() {
 
@@ -857,12 +857,10 @@ class AzureProvider : AbstractTtsProvider() {
 
     // ==================== 供应商元数据 ====================
 
+    override fun getAudioConfig(): AudioConfig = AudioConfig.MICROSOFT_TTS
+
     override fun getSupportedLanguages(): Set<String> {
         return SUPPORTED_LANGUAGES.toSet()
-    }
-
-    override fun getDefaultLanguages(): Array<String> {
-        return arrayOf(Locale.SIMPLIFIED_CHINESE.isO3Language, Locale.SIMPLIFIED_CHINESE.isO3Country, "")
     }
 
     override fun getSupportedVoices(): List<Voice> {
@@ -918,7 +916,7 @@ class AzureProvider : AbstractTtsProvider() {
         return AzureConfig()
     }
 
-    override fun createDefaultLanguages(): Array<String> {
+    override fun createDefaultLanguage(): Array<String> {
         return arrayOf(Locale.SIMPLIFIED_CHINESE.isO3Language, Locale.SIMPLIFIED_CHINESE.isO3Country, "")
     }
 

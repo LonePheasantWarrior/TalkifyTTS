@@ -62,19 +62,19 @@ class ProviderErrorParsersTest {
 
     @Test
     fun `tencent null code uses original message`() {
-        assertEquals("语音合成失败: 未知错误", TencentErrorMapper.friendlyErrorMessage(null, null))
-        assertEquals("语音合成失败: net down", TencentErrorMapper.friendlyErrorMessage(null, "net down"))
+        assertEquals("语音合成失败: 未知错误", TencentErrorParser.friendlyErrorMessage(null, null))
+        assertEquals("语音合成失败: net down", TencentErrorParser.friendlyErrorMessage(null, "net down"))
     }
 
     @Test
     fun `tencent maps known error codes`() {
         assertEquals(
             "语音合成失败: 连接服务器失败 (错误码: -409)",
-            TencentErrorMapper.friendlyErrorMessage(-409, "raw")
+            TencentErrorParser.friendlyErrorMessage(-409, "raw")
         )
         assertEquals(
             "语音合成失败: 资源包配额已用尽，请检查您的资源包 (错误码: 3022)",
-            TencentErrorMapper.friendlyErrorMessage(3022, "raw")
+            TencentErrorParser.friendlyErrorMessage(3022, "raw")
         )
     }
 
@@ -82,7 +82,7 @@ class ProviderErrorParsersTest {
     fun `tencent unknown code passes through original message`() {
         assertEquals(
             "语音合成失败: boom (错误码: 12345)",
-            TencentErrorMapper.friendlyErrorMessage(12345, "boom")
+            TencentErrorParser.friendlyErrorMessage(12345, "boom")
         )
     }
 }

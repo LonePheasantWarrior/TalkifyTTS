@@ -41,8 +41,8 @@ import kotlin.math.roundToInt
  * 继承 [AbstractTtsProvider]，实现 TTS 供应商接口
  * 基于 OkHttp WebSocket 实现流式音频合成，相比 HTTP 方案显著降低首字播放延迟
  *
- * 供应商 ID：minimax-tts
- * 服务提供商：MiniMax
+ * 供应商 ID：miniMax
+ * 供应商：MiniMax
  * API 文档：https://platform.minimaxi.com/docs/llms.txt
  */
 class MiniMaxProvider : AbstractTtsProvider() {
@@ -91,9 +91,6 @@ class MiniMaxProvider : AbstractTtsProvider() {
 
     override val supportedLanguages: Array<String> = arrayOf("zho", "eng")
 
-    val audioConfig: AudioConfig
-        @JvmName("getAudioConfigProperty") get() = AudioConfig.MINI_MAX_TTS
-
     override fun getProviderId(): String = ProviderIds.MiniMax.providerId
 
     override fun getProviderName(): String = ProviderIds.MiniMax.provider
@@ -102,7 +99,7 @@ class MiniMaxProvider : AbstractTtsProvider() {
 
     override fun getDefaultModelId(): String = ProviderIds.MiniMax.defaultModelId
 
-    override fun getAudioConfig(): AudioConfig = audioConfig
+    override fun getAudioConfig(): AudioConfig = AudioConfig.MINIMAX_TTS
 
     override fun synthesize(
         text: String,
@@ -467,10 +464,10 @@ class MiniMaxProvider : AbstractTtsProvider() {
                     }
                 })
                 put("audio_setting", JSONObject().apply {
-                    put("sample_rate", audioConfig.sampleRate)
+                    put("sample_rate", getAudioConfig().sampleRate)
                     put("bitrate", 128000)
                     put("format", "mp3")
-                    put("channel", audioConfig.channelCount)
+                    put("channel", getAudioConfig().channelCount)
                 })
                 if (config.languageBoost != LanguageBoost.OFF) {
                     put("language_boost", config.languageBoost.apiValue)

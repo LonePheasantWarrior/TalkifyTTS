@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- textArray -->
-    <string-array name="texts">
+    <!-- 预置朗读样本文本（语音预览输入框的随机候选） -->
+    <string-array name="demo_texts">
         <item>你好，我是Talkify。虽然我只是由0和1构成的虚拟存在，但此时此刻，我所读出的每一个字，都倾注了开发者对文字的热爱。感谢你选择我，让我为你发声。</item>
         <item>真正的力量并非来自坚强，恰恰来自柔软。</item>
         <item>人有一种天生的、难以遏制的欲望，那就是在理解之前就评判。</item>

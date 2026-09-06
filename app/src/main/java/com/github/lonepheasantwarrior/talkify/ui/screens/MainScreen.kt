@@ -112,7 +112,7 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     // --- 启动流程状态管理 ---
-    val startupState by viewModel.uiState.collectAsState()
+    val startupState by viewModel.startupState.collectAsState()
     val isDefaultProvider by viewModel.isDefaultProvider.collectAsState()
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -134,13 +134,6 @@ fun MainScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ ->
         viewModel.onNotificationPermissionResult()
-    }
-
-    // 设置页跳转 Launcher (网络设置)
-    rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) {
-        viewModel.onNetworkRetry()
     }
 
     // --- 现有业务逻辑 ---
@@ -171,8 +164,6 @@ fun MainScreen(
     // 配置版本号，用于在配置保存后触发供应商列表展示刷新
     var configVersion by remember { mutableIntStateOf(0) }
 
-    // Demo Service logic moved to ViewModel
-
     LaunchedEffect(appConfigRepository) {
         val savedProviderId = appConfigRepository.getSelectedProviderId()
         if (savedProviderId != null) {
@@ -184,16 +175,20 @@ fun MainScreen(
         }
     }
 
-    // Demo state observation
-    val isPlaying by viewModel.isDemoPlaying.collectAsState()
-    val demoError by viewModel.demoErrorMessage.collectAsState()
-    
-    LaunchedEffect(demoError) {
-        demoError?.let { msg ->
+    // 语音预览状态观察
+    val isPreviewPlaying by viewModel.isPreviewPlaying.collectAsState()
+    val previewError by viewModel.previewErrorMessage.collectAsState()
+    // 提示文案提升到 Composable 顶层获取（回调 lambda 内不可调用 stringResource）
+    val emptyInputHint = stringResource(R.string.input_empty_hint)
+    val providerNotConfiguredHint = stringResource(R.string.provider_not_configured_hint)
+    val batteryOpenFailed = stringResource(R.string.battery_optimization_open_failed)
+
+    LaunchedEffect(previewError) {
+        previewError?.let { msg ->
             scope.launch {
                 snackbarHostState.showSnackbar(msg)
             }
-            viewModel.clearDemoError()
+            viewModel.clearPreviewError()
         }
     }
 
@@ -216,7 +211,7 @@ fun MainScreen(
     var availableVoices by remember { mutableStateOf<List<VoiceInfo>>(emptyList()) }
     var selectedVoice by remember { mutableStateOf<VoiceInfo?>(null) }
 
-    val sampleTexts = stringArrayResource(R.array.texts)
+    val sampleTexts = stringArrayResource(R.array.demo_texts)
     val defaultInputText = remember(sampleTexts) {
         sampleTexts.random()
     }
@@ -242,9 +237,9 @@ fun MainScreen(
         val effectiveModelId = savedConfig.modelId.ifBlank {
             // 用户未自定义模型 ID 时，使用供应商默认模型 ID（若支持），否则保持原始展示
             val provider = TtsProviderFactory.createProvider(currentProvider.id)
-            provider?.getDefaultModelId()?.ifBlank { currentProvider.provider } ?: currentProvider.provider
+            provider?.getDefaultModelId()?.ifBlank { currentProvider.defaultModelId } ?: currentProvider.defaultModelId
         }
-        currentProvider.copy(provider = effectiveModelId)
+        currentProvider.copy(defaultModelId = effectiveModelId)
     }
 
     // 供应商列表展示也自适应各供应商的自定义模型 ID
@@ -253,9 +248,9 @@ fun MainScreen(
             val config = getConfigRepository(provider.id).getConfig(provider.id)
             val effectiveModelId = config.modelId.ifBlank {
                 val p = TtsProviderFactory.createProvider(provider.id)
-                p?.getDefaultModelId()?.ifBlank { provider.provider } ?: provider.provider
+                p?.getDefaultModelId()?.ifBlank { provider.defaultModelId } ?: provider.defaultModelId
             }
-            provider.copy(provider = effectiveModelId)
+            provider.copy(defaultModelId = effectiveModelId)
         }
     }
 
@@ -392,11 +387,11 @@ fun MainScreen(
                             availableVoices = availableVoices,
                             selectedVoice = selectedVoice,
                             onVoiceSelected = { voice -> selectedVoice = voice },
-                            isPlaying = isPlaying,
+                            isPlaying = isPreviewPlaying,
                             onPlayClick = {
                                 if (inputText.isBlank()) {
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("请输入要合成的文本")
+                                        snackbarHostState.showSnackbar(emptyInputHint)
                                     }
                                     return@VoicePreview
                                 }
@@ -442,7 +437,7 @@ fun MainScreen(
                                     is AzureConfig -> true
                                     is XiaomiConfig -> config.apiKey.isNotBlank()
                                     is MiniMaxConfig -> config.apiKey.isNotBlank()
-                                    is LocalModelConfig -> config.modelId.isNotBlank() && LocalModelManager.isModelDeployed(config.modelId)
+                                    is LocalModelConfig -> config.modelId.isNotBlank() && LocalModelManager.isModelDownloaded(config.modelId)
                                     else -> false
                                 }
 
@@ -452,7 +447,7 @@ fun MainScreen(
                                         pendingLocalModelConfig = config
                                     } else {
                                         scope.launch {
-                                            snackbarHostState.showSnackbar("请先完成供应商配置")
+                                            snackbarHostState.showSnackbar(providerNotConfiguredHint)
                                         }
                                         viewModel.openConfigSheet()
                                     }
@@ -468,10 +463,10 @@ fun MainScreen(
                                     }
                                 }
 
-                                viewModel.playDemo(currentProvider.id, inputText, config)
+                                viewModel.playPreview(currentProvider.id, inputText, config)
                             },
                             onStopClick = {
-                                viewModel.stopDemo()
+                                viewModel.stopPreview()
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -540,7 +535,7 @@ fun MainScreen(
     // --- 启动流程中的非阻塞弹窗 ---
 
     when (startupState) {
-        StartupState.RequestingNotification -> {
+        StartupState.RequestingNotificationPermission -> {
             NotificationPermissionDialog(
                 onConfirm = {
                     val permission = Manifest.permission.POST_NOTIFICATIONS
@@ -577,7 +572,7 @@ fun MainScreen(
                             context.startActivity(intent)
                         } catch (_: Exception) {
                             scope.launch {
-                                snackbarHostState.showSnackbar("无法打开电池优化设置页面，请手动去系统设置中开启")
+                                snackbarHostState.showSnackbar(batteryOpenFailed)
                             }
                         }
                     }

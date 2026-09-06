@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<voices>
-    <voice id="mimo_default" displayName="MiMo-默认" description="因部署集群而异" />
-    <voice id="default_zh"    displayName="MiMo-中文女声" description="中文女声" language="中文" />
-    <voice id="default_en"    displayName="MiMo-英文女声" description="英文女声" language="英文" />
-</voices>

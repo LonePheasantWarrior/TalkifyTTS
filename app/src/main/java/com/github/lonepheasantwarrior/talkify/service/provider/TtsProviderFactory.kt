@@ -21,7 +21,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.Xiaom
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.AliyunBailianProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.AzureProvider
-import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalTTSProvider
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.MiniMaxProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.TencentCloudProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.VolcengineProvider
@@ -40,7 +40,7 @@ object TtsProviderFactory {
      * 封装了创建 Provider、ConfigRepo、VoiceRepo 的工厂 lambda
      */
     private data class ComponentFactories(
-        val createProvider: () -> TtsProviderApi,
+        val providerFactory: () -> TtsProviderApi,
         val createConfigRepo: (Context) -> ProviderConfigRepository,
         val createVoiceRepo: (Context) -> VoiceRepository
     )
@@ -59,7 +59,7 @@ object TtsProviderFactory {
             return null
         }
         return try {
-            factories.createProvider()
+            factories.providerFactory()
         } catch (e: Exception) {
             TtsLogger.e("TtsProviderFactory: failed to create provider - $providerId", e)
             null
@@ -108,37 +108,37 @@ object TtsProviderFactory {
         TtsLogger.d("TtsProviderFactory: initializing registry")
         return mapOf(
             ProviderIds.AliyunBailian.providerId to ComponentFactories(
-                createProvider = { AliyunBailianProvider() },
+                providerFactory = { AliyunBailianProvider() },
                 createConfigRepo = { ctx -> AliyunBailianConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> AliyunBailianVoiceRepository(ctx) }
             ),
             ProviderIds.Volcengine.providerId to ComponentFactories(
-                createProvider = { VolcengineProvider() },
+                providerFactory = { VolcengineProvider() },
                 createConfigRepo = { ctx -> VolcengineConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> VolcengineVoiceRepository(ctx) }
             ),
             ProviderIds.TencentCloud.providerId to ComponentFactories(
-                createProvider = { TencentCloudProvider() },
+                providerFactory = { TencentCloudProvider() },
                 createConfigRepo = { ctx -> TencentCloudConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> TencentCloudVoiceRepository(ctx) }
             ),
             ProviderIds.Azure.providerId to ComponentFactories(
-                createProvider = { AzureProvider() },
+                providerFactory = { AzureProvider() },
                 createConfigRepo = { ctx -> AzureConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> AzureVoiceRepository(ctx) }
             ),
             ProviderIds.Xiaomi.providerId to ComponentFactories(
-                createProvider = { XiaomiProvider() },
+                providerFactory = { XiaomiProvider() },
                 createConfigRepo = { ctx -> XiaomiConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> XiaomiVoiceRepository(ctx) }
             ),
             ProviderIds.MiniMax.providerId to ComponentFactories(
-                createProvider = { MiniMaxProvider() },
+                providerFactory = { MiniMaxProvider() },
                 createConfigRepo = { ctx -> MiniMaxConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> MiniMaxVoiceRepository(ctx) }
             ),
             ProviderIds.LocalModel.providerId to ComponentFactories(
-                createProvider = { LocalTTSProvider() },
+                providerFactory = { LocalModelProvider() },
                 createConfigRepo = { ctx -> LocalModelConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> LocalModelVoiceRepository(LocalModelConfigRepository(ctx)) }
             )

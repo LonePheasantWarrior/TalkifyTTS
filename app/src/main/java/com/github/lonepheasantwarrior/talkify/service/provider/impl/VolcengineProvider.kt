@@ -28,7 +28,7 @@ import org.json.JSONObject
  * 分块调度、取消、错误分类等通用逻辑由基类提供。
  *
  * 供应商 ID：volcengine
- * 服务提供商：火山引擎
+ * 供应商：火山引擎
  * API 文档：https://www.volcengine.com/docs/6561/1598757
  */
 class VolcengineProvider : HttpStreamingTtsProvider() {

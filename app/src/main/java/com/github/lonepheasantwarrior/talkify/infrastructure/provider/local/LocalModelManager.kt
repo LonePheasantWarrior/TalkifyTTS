@@ -13,11 +13,9 @@ import java.io.File
  * 本地模型生命周期管理器（单例）
  *
  * 核心职责：
- * 1. 模型状态查询（已部署 / 下载中 / 未下载 / 错误）
+ * 1. 模型状态查询（已下载 / 下载中 / 未下载）
  * 2. 模型完整性校验（检查所有必需文件是否就位）
- * 3. 模型卸载（递归删除模型目录）
- * 4. 磁盘用量统计
- * 5. 跨进程下载状态同步（通过 SharedPreferences）
+ * 3. 跨进程下载状态同步（通过 SharedPreferences）
  *
  * 存储路径结构：
  * ```
@@ -43,7 +41,11 @@ object LocalModelManager {
 
     private const val TAG = "LocalModelManager"
     private const val MODELS_ROOT = "tts_models"
+
+    /** 历史磁盘子目录名，勿改（已下载用户的模型文件都在该目录下） */
     private const val DEPLOYED_DIR = "deployed"
+
+    /** 历史文件名/键名，勿改（兼容跨进程下载状态数据） */
     private const val PREFS_NAME = "talkify_local_model_state"
     private const val KEY_DOWNLOADING_MODEL = "downloading_model_id"
 
@@ -61,9 +63,11 @@ object LocalModelManager {
     }
 
     /**
-     * 获取指定模型的部署目录（存放已下载的模型文件）
+     * 获取指定模型的下载目录（存放已下载的模型文件）
+     *
+     * 磁盘子目录名仍为历史路径 `deployed/`，勿改（兼容已下载用户）。
      */
-    fun getModelDeployedDir(modelId: String): File? {
+    fun getModelDownloadedDir(modelId: String): File? {
         return getModelsRootDir()?.let { File(it, "$modelId/$DEPLOYED_DIR") }
     }
 
@@ -79,7 +83,7 @@ object LocalModelManager {
      *
      * 查询逻辑：
      * 1. 优先检查是否有正在进行的下载任务
-     * 2. 然后检查部署目录中所有必需文件是否存在且非空
+     * 2. 然后检查下载目录中所有必需文件是否存在且非空
      *
      * @param modelId 模型 ID
      * @return 模型下载状态
@@ -90,80 +94,30 @@ object LocalModelManager {
             return ModelDownloadStatus.DOWNLOADING
         }
         // 检查文件是否完整
-        return if (isModelDeployed(modelId)) {
-            ModelDownloadStatus.DEPLOYED
+        return if (isModelDownloaded(modelId)) {
+            ModelDownloadStatus.DOWNLOADED
         } else {
             ModelDownloadStatus.NOT_DOWNLOADED
         }
     }
 
     /**
-     * 检查模型是否已部署
+     * 检查模型是否已下载（文件完整）
      *
-     * 校验注册表中定义的所有必需文件是否在部署目录中存在且非空
+     * 校验注册表中定义的所有必需文件是否在下载目录中存在且非空
      *
      * @param modelId 模型 ID
      * @return true 如果所有必需文件都存在且非空
      */
-    fun isModelDeployed(modelId: String): Boolean {
+    fun isModelDownloaded(modelId: String): Boolean {
         val modelInfo = LocalModelRegistry.getModel(modelId) ?: return false
-        val deployedDir = getModelDeployedDir(modelId) ?: return false
-        if (!deployedDir.exists() || !deployedDir.isDirectory) return false
+        val downloadedDir = getModelDownloadedDir(modelId) ?: return false
+        if (!downloadedDir.exists() || !downloadedDir.isDirectory) return false
 
         return modelInfo.downloadFileInfo.values.all { fileName ->
-            val file = File(deployedDir, fileName)
+            val file = File(downloadedDir, fileName)
             file.exists() && file.length() > 0
         }
-    }
-
-    /**
-     * 卸载模型
-     *
-     * 递归删除整个模型目录及其下所有文件。
-     * 卸载前应确保引擎已释放对该模型的引用。
-     *
-     * @param modelId 模型 ID
-     * @return true 如果卸载成功
-     */
-    fun uninstallModel(modelId: String): Boolean {
-        val modelDir = getModelDir(modelId)
-        if (modelDir == null) {
-            TtsLogger.w("Cannot access model directory for uninstall: $modelId", tag = TAG)
-            return false
-        }
-        if (!modelDir.exists()) {
-            TtsLogger.d("Model directory does not exist, nothing to uninstall: $modelId", tag = TAG)
-            return true
-        }
-
-        val success = modelDir.deleteRecursively()
-        if (success) {
-            TtsLogger.i("Model uninstalled successfully: $modelId", tag = TAG)
-            // 清理下载状态
-            clearDownloadingModelId()
-        } else {
-            TtsLogger.e("Failed to uninstall model: $modelId", tag = TAG)
-        }
-        return success
-    }
-
-    /**
-     * 获取模型占用的磁盘空间（字节）
-     *
-     * @param modelId 模型 ID
-     * @return 模型目录总大小，模型不存在时返回 0
-     */
-    fun getModelDiskUsage(modelId: String): Long {
-        return getModelDir(modelId)?.let { dir ->
-            if (dir.exists()) calculateDirSize(dir) else 0L
-        } ?: 0L
-    }
-
-    /**
-     * 计算所有已部署模型的总磁盘占用
-     */
-    fun getTotalDiskUsage(): Long {
-        return LocalModelRegistry.ALL_MODELS.sumOf { getModelDiskUsage(it.id) }
     }
 
     // ---- 下载状态跨进程同步 ----
@@ -230,40 +184,4 @@ object LocalModelManager {
      * 检查指定模型是否正在下载
      */
     fun isModelDownloading(modelId: String): Boolean = getDownloadingModelId() == modelId
-
-    /**
-     * 清除正在下载的模型 ID
-     */
-    private fun clearDownloadingModelId() {
-        setDownloadingModelId(null)
-    }
-
-    // ---- 内部工具方法 ----
-
-    /**
-     * 递归计算目录大小
-     */
-    private fun calculateDirSize(dir: File): Long {
-        var size = 0L
-        dir.listFiles()?.forEach { file ->
-            size += if (file.isDirectory) {
-                calculateDirSize(file)
-            } else {
-                file.length()
-            }
-        }
-        return size
-    }
-
-    /**
-     * 获取易读的磁盘大小字符串
-     */
-    fun formatDiskUsage(bytes: Long): String {
-        return when {
-            bytes < 1024 -> "$bytes B"
-            bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-            bytes < 1024 * 1024 * 1024 -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
-            else -> "${"%.2f".format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
-        }
-    }
 }

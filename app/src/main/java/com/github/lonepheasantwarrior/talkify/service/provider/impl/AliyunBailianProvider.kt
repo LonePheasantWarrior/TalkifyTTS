@@ -36,7 +36,7 @@ import java.util.Locale
  * 支持流式音频合成，将音频数据块实时回调给系统
  *
  * 供应商 ID：aliyunBailian
- * 服务提供商：阿里云百炼
+ * 供应商：阿里云百炼
  */
 class AliyunBailianProvider : AbstractTtsProvider() {
 
@@ -63,9 +63,6 @@ class AliyunBailianProvider : AbstractTtsProvider() {
 
     private var hasCompleted = false
 
-    val audioConfig: AudioConfig
-        @JvmName("getAudioConfigProperty") get() = AudioConfig.QWEN3_TTS
-
     init {
         // DashScope SDK 的请求端点是全局静态（Constants.baseHttpApiUrl），仅在此设置一次默认值；
         // 用户自定义地址的写入收敛见 buildConversationParam
@@ -79,6 +76,8 @@ class AliyunBailianProvider : AbstractTtsProvider() {
     override fun getDefaultApiUrl(): String = DEFAULT_API_URL
 
     override fun getDefaultModelId(): String = ProviderIds.AliyunBailian.defaultModelId
+
+    override fun getAudioConfig(): AudioConfig = AudioConfig.QWEN3_TTS
 
     override fun synthesize(
         text: String, params: SynthesisParams, config: BaseProviderConfig, listener: TtsSynthesisListener
@@ -106,7 +105,7 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         }
 
         logInfo("Starting streaming synthesis: textLength=${text.length}, chunks=${textChunks.size}, pitch=${params.pitch}, speechRate=${params.speechRate}")
-        logDebug("Audio config: ${audioConfig.getFormatDescription()}")
+        logDebug("Audio config: ${getAudioConfig().getFormatDescription()}")
 
         isCancelled = false
         hasCompleted = false
@@ -255,9 +254,9 @@ class AliyunBailianProvider : AbstractTtsProvider() {
                             logDebug("Received audio chunk: ${audioData.size} bytes")
                             listener.onAudioAvailable(
                                 audioData,
-                                audioConfig.sampleRate,
-                                audioConfig.audioFormat,
-                                audioConfig.channelCount
+                                getAudioConfig().sampleRate,
+                                getAudioConfig().audioFormat,
+                                getAudioConfig().channelCount
                             )
                         }
                     }
@@ -365,7 +364,7 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         return SUPPORTED_LANGUAGES.toSet()
     }
 
-    override fun createDefaultLanguages(): Array<String> {
+    override fun createDefaultLanguage(): Array<String> {
         return arrayOf(Locale.SIMPLIFIED_CHINESE.isO3Language, Locale.SIMPLIFIED_CHINESE.isO3Country, "")
     }
 

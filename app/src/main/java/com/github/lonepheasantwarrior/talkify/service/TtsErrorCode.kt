@@ -98,7 +98,7 @@ object TtsErrorCode {
             ERROR_PROVIDER_NOT_CONFIGURED, ERROR_API_AUTH_FAILED -> "请前往应用设置页面配置正确的 API Key"
             ERROR_NETWORK_UNAVAILABLE, ERROR_NETWORK_TIMEOUT -> "请检查网络连接后重试"
             ERROR_API_RATE_LIMITED -> "请等待片刻后重试"
-            ERROR_API_SERVER_ERROR -> "请稍后重试，或联系服务提供商"
+            ERROR_API_SERVER_ERROR -> "请稍后重试，或联系供应商"
             ERROR_PROVIDER_NOT_FOUND, ERROR_CONFIG_NOT_FOUND -> "请重启应用或重新选择供应商"
             ERROR_NOT_IMPLEMENTED -> "该供应商正在开发中，请稍后再试"
             else -> "请稍后重试"
