@@ -22,15 +22,18 @@ enum class ModelDownloadStatus {
  * @param voiceId 音色唯一标识符
  * @param displayName 音色展示名称
  * @param language 语言代码
- * @param referenceFileName 参考音频文件在模型目录内的相对路径（如 "test_wavs/leijun-1.wav"）
+ * @param referenceFileName 参考音频文件在模型目录内的相对路径（如 "test_wavs/leijun-1.wav"）；
+ *   内置音色（[isBundled] = true）时为 assets/voices/ 下的文件名
  * @param referenceText 参考音频的逐字稿，必须与音频内容完全一致，否则克隆质量明显下降
+ * @param isBundled 参考音频是否随 APK 内置（assets/voices/）；false 时从模型目录读取
  */
 data class LocalModelVoice(
     val voiceId: String,
     val displayName: String,
     val language: String,
     val referenceFileName: String = "",
-    val referenceText: String = ""
+    val referenceText: String = "",
+    val isBundled: Boolean = false
 )
 
 /**

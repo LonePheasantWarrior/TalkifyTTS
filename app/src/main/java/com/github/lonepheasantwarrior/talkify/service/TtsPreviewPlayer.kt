@@ -132,7 +132,23 @@ class TtsPreviewPlayer(
 
             override fun onSynthesisCompleted() {
                 TtsLogger.d("Synthesis completed")
-                stopPlayback()
+                // 合成完成 ≠ 播放完成：AudioTrack 缓冲中还有尾段未播的音频，
+                // 直接 stop/release 会把结尾截掉（表现为"戛然而止"），
+                // 先等缓冲排空（用户主动停止时经 shouldStop 立即退出）
+                serviceScope.launch {
+                    val player = audioPlayer
+                    if (player != null) {
+                        try {
+                            player.waitForPlaybackComplete(
+                                timeoutSeconds = 120,
+                                shouldStop = { isStopped.get() }
+                            )
+                        } catch (e: Exception) {
+                            TtsLogger.e("Wait playback drain error: ${e.message}", e)
+                        }
+                    }
+                    stopPlayback()
+                }
             }
 
             override fun onError(error: String) {

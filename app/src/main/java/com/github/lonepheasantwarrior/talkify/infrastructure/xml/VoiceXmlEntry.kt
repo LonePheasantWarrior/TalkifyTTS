@@ -9,5 +9,7 @@ data class VoiceXmlEntry(
     val sampleRate: String = "",
     val emotion: String = "",
     val model: String = "",
-    val group: String = ""
+    val group: String = "",
+    val referenceFileName: String = "",
+    val referenceText: String = ""
 )

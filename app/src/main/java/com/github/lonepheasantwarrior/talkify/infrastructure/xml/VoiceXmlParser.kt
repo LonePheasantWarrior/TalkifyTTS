@@ -28,7 +28,9 @@ object VoiceXmlParser {
                             sampleRate = p.getAttributeValue(null, "sampleRate") ?: "",
                             emotion = p.getAttributeValue(null, "emotion") ?: "",
                             model = p.getAttributeValue(null, "model") ?: "",
-                            group = p.getAttributeValue(null, "group") ?: ""
+                            group = p.getAttributeValue(null, "group") ?: "",
+                            referenceFileName = p.getAttributeValue(null, "referenceFileName") ?: "",
+                            referenceText = p.getAttributeValue(null, "referenceText") ?: ""
                         )
                     )
                 }

@@ -75,7 +75,7 @@ object LocalModelRegistry {
         voiceList = listOf(
             LocalModelVoice(
                 voiceId = "temp_leijun",
-                displayName = "临时测试音色（勿发布）",
+                displayName = "雷军",
                 language = "zh",
                 referenceFileName = "test_wavs/leijun-1.wav",
                 referenceText = "那还是三十六年前, 一九八七年. 我呢考上了武汉大学的计算机系."

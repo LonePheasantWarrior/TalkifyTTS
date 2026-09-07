@@ -5,16 +5,13 @@ import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProvider
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalVoiceCatalog
 
 /**
  * 本地模型供应商 - 音色仓储实现
  *
- * 音色信息从 [LocalModelRegistry] 动态获取（而非 XML 资源文件）。
- * 根据当前用户选中的 modelId 返回对应模型的音色列表。
- *
- * 与传统供应商不同，本地模型的音色因模型而异：
- * - VITS 模型通常只有 1 个默认音色
- * - Kokoro 模型支持多个可选音色
+ * 音色以内置音色目录（res/xml/local_model_voices.xml，参考音频随 APK 分发）为准；
+ * 目录异常为空时回退 [LocalModelRegistry] 注册表音色。
  */
 class LocalModelVoiceRepository(
     private val configRepository: LocalModelConfigRepository
@@ -29,11 +26,13 @@ class LocalModelVoiceRepository(
             ProviderIds.LocalModel.defaultModelId
         }
 
-        // 从注册表获取该模型的音色列表
+        // 从注册表获取该模型的元信息（采样率等）
         val modelInfo = LocalModelRegistry.getModel(modelId)
             ?: return emptyList()
 
-        return modelInfo.voiceList.map { voice ->
+        val catalogVoices = LocalVoiceCatalog.getVoices()
+        val voices = if (catalogVoices.isNotEmpty()) catalogVoices else modelInfo.voiceList
+        return voices.map { voice ->
             VoiceInfo(
                 voiceId = voice.voiceId,
                 displayName = "${voice.displayName} (${voice.language.uppercase()})",

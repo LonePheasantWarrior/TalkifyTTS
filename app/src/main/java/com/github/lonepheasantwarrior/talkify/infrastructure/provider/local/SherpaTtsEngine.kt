@@ -246,6 +246,16 @@ class SherpaTtsEngine(
      * 构建 ZipVoice 生成参数
      *
      * numSteps=4: 官方文档对 Distill 模型的推荐值（步数越少越快，音质略降）
+     * silenceScale=1: Kotlin 侧默认值 0.0 会被 JNI 原样透传，触发 C++ 端
+     * ScaleSilence(0) 把停顿压成数字零（非流式路径受影响），必须显式置 1 关闭
+     *
+     * extra 分句参数（ZipVoice 实现只读 extra，OfflineTtsConfig.maxNumSentences
+     * 对其无效——那是 VITS 等实现用的字段）：
+     *   - min_char_in_sentence: 短句合并阈值，默认 30 会攒句、推迟首段音频；
+     *     设 10 兼顾首音延迟与吞吐（每块推理都要对参考音频帧做注意力，
+     *     块数过多会成倍放大长文本的总耗时，不能一味取小）
+     *   - max_char_in_sentence: 无标点长句单块上限，默认 200；调小可同时降低
+     *     首块合成耗时与 stop() 的中断粒度
      */
     private fun buildGenerationConfig(
         referenceAudio: FloatArray,
@@ -253,11 +263,16 @@ class SherpaTtsEngine(
         referenceText: String,
         speed: Float
     ): GenerationConfig = GenerationConfig(
+        silenceScale = 1.0f,
         speed = speed.coerceIn(0.5f, 2.0f),
         referenceAudio = referenceAudio,
         referenceSampleRate = referenceSampleRate,
         referenceText = referenceText,
-        numSteps = 4
+        numSteps = 4,
+        extra = mapOf(
+            "min_char_in_sentence" to "10",
+            "max_char_in_sentence" to "80"
+        )
     )
 
     /**

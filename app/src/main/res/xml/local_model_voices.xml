@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    ZipVoice 本地模型内置音色目录
+    参考音频随 APK 内置于 assets/voices/（24kHz 单声道 PCM16 wav），
+    referenceText 为参考音频逐字稿，必须与音频内容完全一致，否则克隆质量明显下降。
+
+    长度说明：ZipVoice 每次推理都要对参考音频的梅尔帧做注意力，参考音频越长
+    单块合成越慢（官方建议 3~10 秒）。以下样音已在标点停顿处裁剪至约 4~7 秒，
+    referenceText 与裁剪后的音频内容严格逐字对齐（不能改回全文逐字稿）。
+-->
+<voices>
+    <voice
+        id="zh_female_vv_uranus_bigtts"
+        displayName="默认女声"
+        language="zh"
+        referenceFileName="zh_female_vv_uranus_bigtts.wav"
+        referenceText="今天的阳光真好啊，感觉整个人都充满了活力呢。" />
+    <voice
+        id="zh_female_qingchezizi_uranus_bigtts"
+        displayName="清澈女声"
+        language="zh"
+        referenceFileName="zh_female_qingchezizi_uranus_bigtts.wav"
+        referenceText="你好呀，我最近对于瑜伽特别着迷，每当我铺开瑜伽垫，舒展身体，" />
+    <voice
+        id="zh_female_meilinvyou_uranus_bigtts"
+        displayName="魅力女声"
+        language="zh"
+        referenceFileName="zh_female_meilinvyou_uranus_bigtts.wav"
+        referenceText="真正的吸引力，从来不是刻意讨好，而是骨子里的从容与风情。" />
+    <voice
+        id="zh_male_liufei_uranus_bigtts"
+        displayName="口播男声"
+        language="zh"
+        referenceFileName="zh_male_liufei_uranus_bigtts.wav"
+        referenceText="在这个信息越来越碎片化的时代，我们总是在追逐更快、" />
+    <voice
+        id="zh_male_m191_uranus_bigtts"
+        displayName="青年男声"
+        language="zh"
+        referenceFileName="zh_male_m191_uranus_bigtts.wav"
+        referenceText="风穿过林间的低语，像清泉淌过心尖，听着就好像可以吹散所有烦恼。" />
+    <voice
+        id="zh_male_cixingjieshuonan_uranus_bigtts"
+        displayName="磁性男解说"
+        language="zh"
+        referenceFileName="zh_male_cixingjieshuonan_uranus_bigtts.wav"
+        referenceText="在浩瀚的宇宙中，星辰闪烁，" />
+    <voice
+        id="zh_male_dongfanghaoran_uranus_bigtts"
+        displayName="经典男解说"
+        language="zh"
+        referenceFileName="zh_male_dongfanghaoran_uranus_bigtts.wav"
+        referenceText="我上知天文，从遥远星系的诞生到天体的运行规律，" />
+    <voice
+        id="zh_male_xuanyijieshuo_uranus_bigtts"
+        displayName="悬疑男解说"
+        language="zh"
+        referenceFileName="zh_male_xuanyijieshuo_uranus_bigtts.wav"
+        referenceText="那座古老的城堡中，传来阵阵诡异的声响。" />
+    <voice
+        id="zh_female_jiaochuannv_uranus_bigtts"
+        displayName="娇媚女声"
+        language="zh"
+        referenceFileName="zh_female_jiaochuannv_uranus_bigtts.wav"
+        referenceText="哎呀，这台阶好滑呀，差点就摔着了。" />
+    <voice
+        id="zh_female_gaolengyujie_uranus_bigtts"
+        displayName="高冷女声"
+        language="zh"
+        referenceFileName="zh_female_gaolengyujie_uranus_bigtts.wav"
+        referenceText="亲爱的。我们到此为止吧，我倦了，不想再继续这场无聊的游戏了。" />
+    <voice
+        id="zh_female_wenroushunv_uranus_bigtts"
+        displayName="温淑女声"
+        language="zh"
+        referenceFileName="zh_female_wenroushunv_uranus_bigtts.wav"
+        referenceText="愿时间皆被温柔以待，获一浅笑安然处之。" />
+    <voice
+        id="zh_female_wenroumama_uranus_bigtts"
+        displayName="知性女声"
+        language="zh"
+        referenceFileName="zh_female_wenroumama_uranus_bigtts.wav"
+        referenceText="宝贝们，别着急，妈妈来就好啦。操作失误没关系，" />
+</voices>

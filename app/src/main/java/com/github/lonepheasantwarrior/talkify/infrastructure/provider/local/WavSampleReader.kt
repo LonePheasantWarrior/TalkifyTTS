@@ -2,6 +2,7 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.provider.local
 
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -34,6 +35,13 @@ object WavSampleReader {
         }
         return parse(file.readBytes())
     }
+
+    /**
+     * 从输入流读取参考音频（内置音色经 assets 分发时使用）
+     *
+     * @throws IOException 流读取失败
+     */
+    fun read(stream: InputStream): WavSamples = parse(stream.use { it.readBytes() })
 
     /**
      * 解析 PCM16 WAV 字节数组

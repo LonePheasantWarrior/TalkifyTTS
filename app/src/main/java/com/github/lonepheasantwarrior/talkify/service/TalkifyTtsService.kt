@@ -10,6 +10,7 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProviderRegistry
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
@@ -20,6 +21,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -87,6 +89,26 @@ class TalkifyTtsService : TextToSpeechService() {
         initializeRepositories()
         val providerInitSuccess = initializeProvider()
         TtsLogger.d("Provider initialization result: $providerInitSuccess")
+        warmUpLocalModelEngineIfApplicable()
+    }
+
+    /**
+     * 本地模型供应商场景下异步预热引擎
+     *
+     * ZipVoice 引擎首次初始化需加载约 200MB 模型（秒级），在服务创建时
+     * （客户端刚绑定、通常尚未发起朗读）提前加载，消除首次朗读的首音延迟。
+     */
+    private fun warmUpLocalModelEngineIfApplicable() {
+        val provider = currentProvider as? LocalModelProvider ?: return
+        val modelId = (currentConfig as? LocalModelConfig)?.modelId
+            ?.takeIf { it.isNotBlank() }
+            ?: provider.getDefaultModelId()
+        try {
+            provider.warmUp(modelId)
+        } catch (e: Exception) {
+            // 预热失败静默忽略：首次合成时仍会走正常初始化路径
+            TtsLogger.w("Local engine warm-up skipped: ${e.message}")
+        }
     }
 
     /**
@@ -641,6 +663,14 @@ class TalkifyTtsService : TextToSpeechService() {
                             audioFormat: Int,
                             channelCount: Int
                         ) {
+                            // onStop 取消 continuation 后、provider 的 native 合成退出前，
+                            // 残留回调可能继续产出音频（且新请求会重置 provider 的取消标志），
+                            // 按 continuation 存活性丢弃过期音频，避免写给已废弃的请求
+                            if (!continuation.isActive) {
+                                TtsLogger.d("onAudioAvailable: request cancelled, dropping stale audio")
+                                return
+                            }
+
                             // 在收到第一个音频数据时初始化系统回调
                             if (!audioInitialized) {
                                 audioInitialized = true
