@@ -4,6 +4,7 @@ import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
@@ -545,6 +546,9 @@ class TalkifyTtsService : TextToSpeechService() {
         // 提升前台优先级，防止被系统查杀
         startForegroundService()
 
+        // 语音合成遥测计时器：创建于合成开始前，各出口标记终态，finally 统一上报
+        var attempt: TtsTelemetryTracker.Attempt? = null
+
         try {
             // 3. 准备供应商与配置
             // 每次合成前重新读取配置，确保获取最新的供应商选择
@@ -617,9 +621,9 @@ class TalkifyTtsService : TextToSpeechService() {
             // 合成错误消息：provider 回调线程写、下方读取，用 AtomicReference 保证可见性
             val synthesisErrorMessage = AtomicReference<String?>(null)
 
-            // 语音合成事件信息收集（限频上报：模型切换或累计15次触发）
+            // 语音合成遥测：创建计时器（完成后由 finally 统一上报）
             val effectiveModelId = config.modelId.ifBlank { provider.getDefaultModelId() }
-            TtsTelemetryTracker.trackIfNeeded(providerId, effectiveModelId, text.length)
+            attempt = TtsTelemetryTracker.begin(providerId, effectiveModelId, config.voiceId, text.length)
 
             // 5. 执行合成 (使用协程挂起)
             val result = withTimeoutOrNull(120_000L.milliseconds) {
@@ -640,6 +644,7 @@ class TalkifyTtsService : TextToSpeechService() {
                             // 在收到第一个音频数据时初始化系统回调
                             if (!audioInitialized) {
                                 audioInitialized = true
+                                attempt?.markFirstAudio(sampleRate)
                                 callback.start(sampleRate, audioFormat, channelCount)
                             }
 
@@ -684,6 +689,7 @@ class TalkifyTtsService : TextToSpeechService() {
             if (result == null) {
                 // 等待超时
                 TtsLogger.e("Synthesis timed out")
+                attempt?.markTimeout()
                 try { provider.stop() } catch (_: Exception) {}
                 callback.error(TextToSpeech.ERROR_NETWORK_TIMEOUT)
                 TalkifyNotificationHelper.sendSystemNotification(
@@ -692,6 +698,7 @@ class TalkifyTtsService : TextToSpeechService() {
                 )
             } else if (result != TtsErrorCode.SUCCESS) {
                 // 发生错误
+                attempt?.markError(result.toString())
                 callback.error(TtsErrorCode.toAndroidError(result))
                 TalkifyNotificationHelper.sendSystemNotification(
                     this@TalkifyTtsService,
@@ -699,11 +706,13 @@ class TalkifyTtsService : TextToSpeechService() {
                 )
             } else {
                 // 正常完成
+                attempt?.markSuccess()
                 callback.done()
             }
 
         } catch (_: InterruptedException) {
             TtsLogger.w("Synthesis interrupted")
+            attempt?.markError("InterruptedException")
             callback.error(TextToSpeech.ERROR_SERVICE)
             TalkifyNotificationHelper.sendSystemNotification(
                 this@TalkifyTtsService,
@@ -712,8 +721,10 @@ class TalkifyTtsService : TextToSpeechService() {
             Thread.currentThread().interrupt()
         } catch (_: CancellationException) {
             TtsLogger.i("Synthesis cancelled")
+            attempt?.markCancelled()
         } catch (e: Exception) {
             TtsLogger.e("Critical error in processRequestSynchronously", e)
+            attempt?.markError(e.javaClass.simpleName)
             callback.error(TextToSpeech.ERROR_SYNTHESIS)
             TalkifyNotificationHelper.sendSystemNotification(
                 this@TalkifyTtsService,
@@ -721,6 +732,7 @@ class TalkifyTtsService : TextToSpeechService() {
             )
         } finally {
             // 7. 统一清理资源
+            attempt?.report()
             activeContinuation = null
             stopForegroundServiceIfIdle()
             releaseWifiLock()

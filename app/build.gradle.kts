@@ -60,6 +60,8 @@ kotlin {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    // 应用级前后台监听（ProcessLifecycleOwner），供遥测在每次回到前台时上报启动信号
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -92,9 +94,6 @@ dependencies {
     
     // JLayer 用于 MP3 流式解码
     implementation(libs.jlayer)
-
-    // Aptabase 匿名使用统计
-    implementation(libs.aptabase)
 
     // Sherpa-onnx 本地 TTS 推理引擎
     implementation(libs.sherpa.onnx)

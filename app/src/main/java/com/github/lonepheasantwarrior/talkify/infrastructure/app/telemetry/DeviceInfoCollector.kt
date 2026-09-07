@@ -12,17 +12,17 @@ import java.util.Locale
 /**
  * 匿名设备信息收集器
  *
- * 在不访问任何隐私权限的前提下，收集设备基础信息，用于 Aptabase 遥测统计。
+ * 在不访问任何隐私权限的前提下，收集设备基础信息，用于匿名遥测统计。
  *
  * **信息收集原则**：
  * - 所有信息均来自 Android 公开 API，**无需任何运行时权限**
  * - 不收集任何可唯一标识设备或用户的信息（无 IMEI、无 MAC、无 Advertising ID）
  * - 不请求地理位置权限，仅通过 SIM 卡网络运营商或系统语言获取**国家级**区域信息
  *
- * **Aptabase SDK 已自动收集的信息（此处不再重复）**：
- * - OS 名称及版本、App 版本号 (versionName)、App 构建号 (versionCode)、locale、SDK 版本
+ * **Umami 传输层已随请求自动附带的信息（此处不再重复）**：
+ * - OS 名称及版本、App 版本号（User-Agent 派生）、语言 (language)、屏幕分辨率 (screen)
  *
- * @see [Aptabase 官方文档](https://aptabase.com/docs/sdks/kotlin)
+ * @see UmamiClient
  */
 object DeviceInfoCollector {
 
@@ -32,7 +32,7 @@ object DeviceInfoCollector {
      * 收集当前设备的匿名信息
      *
      * @param context 应用上下文
-     * @return 设备信息键值对，所有 value 均为 String 或 Int（满足 Aptabase 自定义属性限制）
+     * @return 设备信息键值对，所有 value 均为 String 或 Int（满足遥测属性类型约定）
      */
     fun collect(context: Context): Map<String, Any> {
         val info = linkedMapOf<String, Any>()

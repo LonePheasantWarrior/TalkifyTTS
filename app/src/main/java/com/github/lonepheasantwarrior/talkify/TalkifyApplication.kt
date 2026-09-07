@@ -1,6 +1,9 @@
 package com.github.lonepheasantwarrior.talkify
 
 import android.app.Application
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationChannel
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.DeviceInfoCollector
@@ -19,16 +22,40 @@ class TalkifyApplication : Application() {
         TalkifyAppHolder.setContext(this)
         TalkifyExceptionHandler.initialize()
         createNotificationChannels()
-        reportAppOpened()
+        deleteLegacyTelemetryPrefs()
+        observeAppForeground()
     }
 
     /**
-     * 上报应用启动事件，附带匿名设备画像
+     * 观察应用级前台切换，每次回到前台上报一次启动信号
      *
-     * [TalkifyTelemetry] 会在首次调用 [TalkifyTelemetry.trackEvent] 时延迟初始化，
-     * 此处无需显式初始化。
+     * 不能依赖 [Application.onCreate]：TTS 前台服务常驻，进程在任务划走后仍存活，
+     * 重开应用不会重建进程。[ProcessLifecycleOwner] 以可见 Activity 为准，
+     * 冷启动、划走重开、温热重进均触发 onStart，旋转屏幕等 Activity 重建不会误报
+     */
+    private fun observeAppForeground() {
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                reportAppOpened()
+            }
+        })
+    }
+
+    /**
+     * 清理旧版限频遥测遗留的计数存储
+     */
+    private fun deleteLegacyTelemetryPrefs() {
+        deleteSharedPreferences("talkify_tts_telemetry")
+    }
+
+    /**
+     * 上报应用回到前台信号与匿名设备画像
+     *
+     * pageview 作为会话锚点驱动 Umami 仪表盘核心指标；app_opened 事件附带设备画像，
+     * 显示在事件（Events）区域
      */
     private fun reportAppOpened() {
+        TalkifyTelemetry.trackPageView()
         TalkifyTelemetry.trackEvent("app_opened", DeviceInfoCollector.collect(this))
     }
 

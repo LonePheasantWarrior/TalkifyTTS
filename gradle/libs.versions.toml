@@ -10,7 +10,6 @@ activityCompose = "1.13.0"
 composeBom = "2026.08.00"
 dashscope = "2.22.32"
 jlayer = "1.0.1"
-aptabase = "0.0.8"
 navigationCompose = "2.10.0"
 #为兼容dashscope，okhttp停留在4.12.0版本
 #noinspection NewerVersionAvailable
@@ -25,6 +24,7 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycleRuntimeKtx" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -40,7 +40,6 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 dashscope-sdk = { group = "com.alibaba", name = "dashscope-sdk-java", version.ref = "dashscope" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 jlayer = { group = "javazoom", name = "jlayer", version.ref = "jlayer" }
-aptabase = { group = "com.github.aptabase", name = "aptabase-kotlin", version.ref = "aptabase" }
 sherpa-onnx = { module = "com.github.k2-fsa:sherpa-onnx", version.ref = "sherpa-onnx" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 # 本地 JVM 单测用：覆盖 android.jar 中抛 Stub 异常的 org.json

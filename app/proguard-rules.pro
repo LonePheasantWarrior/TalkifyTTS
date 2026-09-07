@@ -91,6 +91,3 @@
 -dontwarn javax.sound.sampled.**
 -keep class javazoom.jl.decoder.** { *; }
 -keep class javazoom.jl.player.** { *; }
-
-# ==================== Aptabase 匿名统计 ProGuard 规则 ====================
--keep class com.aptabase.** { *; }
