@@ -3,9 +3,9 @@
 
 # Talkify
 
-#### 云端大模型驱动的 Android TTS 引擎
+#### 云端大模型 + 本地 AI 驱动的 Android TTS 引擎
 
-Talkify 是一款基于 Android 的现代化 TTS 连接器。它不生产语音，而是作为桥梁，将云端顶尖大模型（微软、通义千问、豆包、腾讯云、MiniMax、小米 MiMo）的高质量拟人语音合成能力，通过 Android 标准 Text-to-Speech 接口赋予您的系统和阅读软件。
+Talkify 是一款基于 Android 的现代化 TTS 连接器。它将云端顶尖大模型（微软、通义千问、豆包、腾讯云、MiniMax、小米 MiMo）的高质量拟人语音合成能力，以及**完全离线运行的本地 AI 语音合成引擎**（ZipVoice，含 12 种精选音色），通过 Android 标准 Text-to-Speech 接口赋予您的系统和阅读软件。
 
 <p>
   <img src="https://img.shields.io/badge/Language-Kotlin-7f52ff?style=flat-square&logo=kotlin" alt="Kotlin"/>
@@ -21,6 +21,7 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它不生产语音�
 ## ✨ 核心特性
 
 - **🔌 多供应商支持**：内置 **阿里云通义千问**、**火山引擎豆包**、**腾讯云**、**微软 Azure**、**MiniMax** 和 **小米 MiMo**，支持一键切换。
+- **🆓 本地离线合成**：内置 ZipVoice 本地 AI 引擎与 12 种精选中文音色，无需 API Key、零调用费用、断网可用（详见 [本地 AI 语音合成](#️-本地-ai-语音合成)）。
 - **⚙️ 自定义配置**：支持为每个供应商自定义 API 地址和模型 ID，适配自建代理、私有化部署等高级场景。
 - **📱 系统级集成**：实现标准 Android TTS 接口，无缝支持 Legado（阅读）、Google Play图书 等任意支持调用TTS引擎的阅读软件。
 - **⚡️ 流式合成**：采用流式传输技术（Streaming），大幅降低首字延迟，实现近乎实时的响应速度。
@@ -38,6 +39,17 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它不生产语音�
 | **speech-2.8-turbo** | MiniMax | 🇨🇳 🇺🇸 | 32kHz 高采样率，WebSocket 流式 |
 | **mimo-v2.5-tts** | 小米 | 🇨🇳 🇺🇸 | OpenAI API 兼容 |
 
+## 🎙️ 本地 AI 语音合成
+
+除了云端供应商，Talkify 还内置了**完全离线运行**的本地语音合成引擎——无需申请任何 API Key，模型下载完成后断网也能朗读。
+
+- **🧠 高质量模型**：基于 [ZipVoice-Distill](https://github.com/k2-fsa/ZipVoice) 零样本流匹配 TTS（int8 量化），由 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 本地推理，支持中英文混读，24kHz 采样率，自然度显著优于传统 VITS 方案。
+- **🎭 精选音色**：内置 12 种精选中文音色（涵盖女声、男声、解说等多种风格）。
+- **📥 按需下载**：模型（约 200 MB）在首次使用时由 App 引导下载，不增加 APK 体积；针对中国大陆网络环境自动叠加 GitHub 加速链路（ghfast.top → gh-proxy.com → 源站），无需科学上网。
+- **🚫 零成本零依赖**：合成全程在设备端完成，无网络请求、无调用计费、无限流配额，隐私数据不出设备。
+- **⚡ 句级流式**：按句切分流式合成、边合成边播放，长文本朗读无需整段等待。
+
+> **许可说明**：ZipVoice 模型权重基于 Emilia 数据集训练（CC-BY-NC-4.0），本地合成能力仅供个人学习等非商业用途。
 
 ## 🛠️ 技术栈
 
@@ -45,6 +57,7 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它不生产语音�
 - **架构**: MVVM (Model-View-ViewModel) + Clean Architecture
 - **UI**: Jetpack Compose (BOM 2026.06.01) + Material 3 Expressive
 - **网络**: OkHttp 4.12.0 (HTTP/2, WebSocket, Streaming)
+- **本地推理**: sherpa-onnx v1.13.1 (ONNX Runtime, CPU int8) + ZipVoice-Distill
 - **最低兼容**: Android 11 (API 30)
 - **目标版本**: Android 17 (API 37)
 
@@ -52,7 +65,7 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它不生产语音�
 
 ### 前置准备
 
-> **提示**：Azure 供应商 **无需任何配置**，开箱即用！
+> **提示**：Azure 供应商 **无需任何配置**，开箱即用！本地 AI 语音合成同样无需配置，在 App 内选择本地模型并按引导下载（约 200 MB）即可。
 
 1. **火山引擎**：前往 [控制台](https://console.volcengine.com/speech/new/setting/apikeys) 申请 API Key。
 2. **腾讯云**：前往 [控制台](https://console.cloud.tencent.com/cam/capi) 获取 AppID、SecretID 和 SecretKey。
