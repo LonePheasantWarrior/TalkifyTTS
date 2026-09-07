@@ -27,13 +27,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -88,6 +87,7 @@ import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
 import com.github.lonepheasantwarrior.talkify.ui.components.BatteryOptimizationDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.ConfigBottomSheet
+import com.github.lonepheasantwarrior.talkify.ui.components.EqualizerBars
 import com.github.lonepheasantwarrior.talkify.ui.components.NetworkBlockedDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.NotificationPermissionDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.ProviderSelector
@@ -263,7 +263,7 @@ fun MainScreen(
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.List,
+                    imageVector = Icons.Rounded.Settings,
                     contentDescription = stringResource(R.string.cd_settings_button)
                 )
             }
@@ -271,18 +271,29 @@ fun MainScreen(
         topBar = {
             LargeTopAppBar(
                 title = {
-                    Column(
-                        modifier = Modifier.clickable(onClick = onAboutClick)
+                    Row(
+                        modifier = Modifier.clickable(onClick = onAboutClick),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Talkify",
-                            style = MaterialTheme.typography.headlineLarge
+                        EqualizerBars(
+                            barCount = 4,
+                            color = MaterialTheme.colorScheme.primary,
+                            animated = false,
+                            minHeight = 8.dp,
+                            maxHeight = 24.dp
                         )
-                        Text(
-                            text = stringResource(R.string.app_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.headlineLarge
+                            )
+                            Text(
+                                text = stringResource(R.string.app_subtitle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 navigationIcon = {},
@@ -338,9 +349,12 @@ fun MainScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(48.dp),
-                                color = MaterialTheme.colorScheme.primary
+                            EqualizerBars(
+                                barCount = 5,
+                                color = MaterialTheme.colorScheme.primary,
+                                barWidth = 5.dp,
+                                minHeight = 10.dp,
+                                maxHeight = 36.dp
                             )
                             Text(
                                 text = stringResource(R.string.checking_network),
@@ -653,7 +667,7 @@ fun AboutPageHintBanner(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
         ),
         shape = MaterialTheme.shapes.large
     ) {
@@ -667,7 +681,7 @@ fun AboutPageHintBanner(
                 imageVector = Icons.Filled.Info,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                tint = MaterialTheme.colorScheme.onSecondaryContainer
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(
@@ -676,7 +690,7 @@ fun AboutPageHintBanner(
                 Text(
                     text = stringResource(R.string.about_page_hint_banner_title),
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

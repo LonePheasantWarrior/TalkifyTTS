@@ -7,6 +7,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -45,7 +50,17 @@ class MainActivity : ComponentActivity() {
                 ) {
                     NavHost(
                         navController = navController,
-                        startDestination = "main"
+                        startDestination = "main",
+                        enterTransition = {
+                            slideInHorizontally(animationSpec = tween(250)) { it / 4 } +
+                                    fadeIn(animationSpec = tween(250))
+                        },
+                        exitTransition = { fadeOut(animationSpec = tween(200)) },
+                        popEnterTransition = { fadeIn(animationSpec = tween(250)) },
+                        popExitTransition = {
+                            slideOutHorizontally(animationSpec = tween(250)) { it / 4 } +
+                                    fadeOut(animationSpec = tween(200))
+                        }
                     ) {
                         composable("main") {
                             MainScreen(

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -37,7 +38,6 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -154,16 +154,12 @@ fun ConfigEditor(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+            Button(
+                onClick = onSaveClick,
+                enabled = isModified,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                OutlinedButton(
-                    onClick = onSaveClick,
-                    enabled = isModified
-                ) {
-                    Text(stringResource(R.string.save_config))
-                }
+                Text(stringResource(R.string.save_config))
             }
         }
     }
@@ -300,6 +296,7 @@ private fun ConfigItemEditor(
                 onValueChange = {},
                 readOnly = true,
                 label = { Text(item.label) },
+                shape = MaterialTheme.shapes.medium,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -337,6 +334,7 @@ private fun ConfigItemEditor(
                 onValueChange = {},
                 readOnly = true,
                 label = { Text(item.label) },
+                shape = MaterialTheme.shapes.medium,
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -370,6 +368,7 @@ private fun ConfigItemEditor(
             label = { Text(item.label) },
             placeholder = item.placeholder?.let { { Text(it) } },
             modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
             singleLine = true,
             enabled = !item.isVoiceSelector,
             visualTransformation = if (item.isPassword) {
@@ -404,7 +403,7 @@ private fun DialogEditorField(
             showEditorDialog = true
         },
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(4.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.outlinedCardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
