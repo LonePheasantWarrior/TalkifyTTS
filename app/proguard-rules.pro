@@ -91,3 +91,13 @@
 -dontwarn javax.sound.sampled.**
 -keep class javazoom.jl.decoder.** { *; }
 -keep class javazoom.jl.player.** { *; }
+
+# ==================== sherpa-onnx 本地 TTS 引擎 ProGuard 规则 ====================
+# 修复本地模型供应商在 Release 模式下 SIGABRT 崩溃的问题（AAR 自带的 consumer
+# proguard.txt 为空，R8 混淆会破坏 JNI 按名字进行的反射访问）：
+#   1) OfflineTts.newFromFile 用 GetFieldID 按字段名读取 OfflineTtsConfig 各字段，
+#      字段被混淆后返回 null，触发 "JNI DETECTED ERROR: fid == null" 中止
+#   2) 流式合成回调由 JNI 经 GetMethodID 查找 invoke([F)Ljava/lang/Integer;，
+#      方法被重命名会触发 NoSuchMethodError
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keep class com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.SherpaCallbackBridge { *; }
