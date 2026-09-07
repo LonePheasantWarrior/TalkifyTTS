@@ -20,7 +20,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://www.jitpack.io") } // JitPack 仓库（com.github.* 依赖，如 sherpa-onnx）
     }
 }
 

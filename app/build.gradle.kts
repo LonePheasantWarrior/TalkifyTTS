@@ -20,14 +20,20 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // 与 splits.abi.include 保持一致：universal 包收录的是通过 abiFilters 的全部 ABI
+        // （splits.include 只约束独立 APK），x86 需在此排除——其引擎库仍含全量 onnxruntime
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
 
     splits {
         abi {
-            isEnable = false
+            isEnable = true
+            reset()
+            // 一次构建产出 arm64-v8a / armeabi-v7a / x86_64 独立 APK + universal 兜底包
+            // x86 不再打包：真实设备不存在，且 static-link AAR 的 x86 引擎库仍含独立 onnxruntime（34.5MB）
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = true
         }
     }
@@ -54,6 +60,17 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_17
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            val abi = output.filters.firstOrNull()?.identifier ?: "universal"
+            // debug 加后缀，避免与 release 产物同名导致手动上传时拿错包
+            val kind = if (variant.name == "debug") "-debug" else ""
+            output.outputFileName.set("Talkify-v${output.versionName.get()}-${abi}${kind}.apk")
+        }
     }
 }
 
@@ -96,7 +113,9 @@ dependencies {
     implementation(libs.jlayer)
 
     // Sherpa-onnx 本地 TTS 推理引擎
-    implementation(libs.sherpa.onnx)
+    // 使用官方 static-link-onnxruntime 构建（onnxruntime 静态编入 jni 库并裁剪未用符号）；
+    // JitPack 坐标产出的 AAR 动态链接全量 onnxruntime .so，4 ABI 打包时 APK 膨胀至 140MB+
+    implementation(files("libs/sherpa-onnx-static-link-onnxruntime-1.13.1.aar"))
 
     // 压缩包解压（tar.bz2），用于解压 espeak-ng-data 等模型资源
     implementation(libs.commons.compress)

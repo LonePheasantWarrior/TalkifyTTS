@@ -14,7 +14,6 @@ navigationCompose = "2.10.0"
 #为兼容dashscope，okhttp停留在4.12.0版本
 #noinspection NewerVersionAvailable
 okhttp = "4.12.0"
-sherpa-onnx = "v1.13.1"
 commons-compress = "1.28.0"
 org-json = "20260814"
 
@@ -40,7 +39,6 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 dashscope-sdk = { group = "com.alibaba", name = "dashscope-sdk-java", version.ref = "dashscope" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 jlayer = { group = "javazoom", name = "jlayer", version.ref = "jlayer" }
-sherpa-onnx = { module = "com.github.k2-fsa:sherpa-onnx", version.ref = "sherpa-onnx" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 # 本地 JVM 单测用：覆盖 android.jar 中抛 Stub 异常的 org.json
 org-json = { group = "org.json", name = "json", version.ref = "org-json" }

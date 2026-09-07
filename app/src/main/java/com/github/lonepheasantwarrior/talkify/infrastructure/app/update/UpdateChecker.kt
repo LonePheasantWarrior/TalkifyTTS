@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.update
 
+import android.os.Build
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateInfo
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
@@ -120,8 +121,9 @@ class UpdateChecker(
     }
 
     private fun findApkAssetUrl(json: JSONObject, versionName: String): String? {
-        val assets = json.optJSONArray("assets") ?: return null
+        val assets = json.optJSONArray("assets") ?: return releasePageUrl(versionName)
 
+        val apkAssets = mutableListOf<Pair<String, String>>()
         val assetCount = assets.length()
         for (i in 0.until(assetCount).toList()) {
             val asset = assets.optJSONObject(i) ?: continue
@@ -129,12 +131,24 @@ class UpdateChecker(
 
             if (name.endsWith(".apk")) {
                 val downloadUrl = asset.optString("browser_download_url", "")
-                return downloadUrl.ifEmpty { null }
+                if (downloadUrl.isNotEmpty()) {
+                    apkAssets.add(name to downloadUrl)
+                }
             }
         }
+        if (apkAssets.isEmpty()) return releasePageUrl(versionName)
 
-        val releaseUrl = String.format(GITHUB_RELEASE_URL, owner, repo, versionName)
-        return releaseUrl
+        // Release 含多个 APK（按 ABI 拆分发布）时，优先选当前设备主 ABI 对应的包，
+        // 其次 universal 兜底包，最后退回任意 APK（兼容旧的单包命名）
+        val primaryAbi = Build.SUPPORTED_ABIS.firstOrNull()?.lowercase()
+        val matched = primaryAbi?.let { abi -> apkAssets.firstOrNull { it.first.contains("-$abi") } }
+        val universal = apkAssets.firstOrNull { it.first.contains("universal") }
+
+        return (matched ?: universal ?: apkAssets.first()).second
+    }
+
+    private fun releasePageUrl(versionName: String): String {
+        return String.format(GITHUB_RELEASE_URL, owner, repo, versionName)
     }
 
     private fun formatDate(isoDate: String): String {
