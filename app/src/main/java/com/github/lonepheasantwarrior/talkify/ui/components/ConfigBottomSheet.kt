@@ -46,6 +46,7 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel.DownloadProgress
 
 /**
  * 配置底部弹窗
@@ -65,6 +66,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactor
  * @param voiceRepository 声音仓储
  * @param onConfigSaved 配置保存后的回调
  * @param onDownloadRequested 请求下载本地模型时回调（参数为 modelId）
+ * @param downloadProgress 本地模型下载进度（下载中在模型项下方展示进度条；null 或已完成不展示）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,7 +78,8 @@ fun ConfigBottomSheet(
     configRepository: ProviderConfigRepository,
     voiceRepository: VoiceRepository,
     onConfigSaved: (() -> Unit)? = null,
-    onDownloadRequested: ((String) -> Unit)? = null
+    onDownloadRequested: ((String) -> Unit)? = null,
+    downloadProgress: DownloadProgress? = null
 ) {
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true
@@ -241,6 +244,7 @@ fun ConfigBottomSheet(
                         onDismiss()
                     },
                     advancedItemKeys = advancedItemKeys,
+                    downloadingModelProgress = downloadProgress,
                     onVoiceSelected = { voice ->
                         val voiceItem = configItems.find { it.key == "voice_id" }
                         if (voiceItem != null) {

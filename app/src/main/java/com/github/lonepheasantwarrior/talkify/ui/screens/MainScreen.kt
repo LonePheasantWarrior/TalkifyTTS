@@ -10,6 +10,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
@@ -60,6 +64,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -94,17 +99,23 @@ import com.github.lonepheasantwarrior.talkify.ui.components.ProviderSelector
 import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
 import com.github.lonepheasantwarrior.talkify.ui.components.rememberTelemetryScrollObserver
+import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandMark
+import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandTitle
+import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyMotion
+import com.github.lonepheasantwarrior.talkify.ui.theme.sharedBrandBounds
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.MainViewModel
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup.StartupState
 import kotlinx.coroutines.launch
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
     viewModel: MainViewModel = viewModel(),
-    onAboutClick: () -> Unit = {}
+    onAboutClick: () -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val context = LocalContext.current
@@ -285,13 +296,23 @@ fun MainScreen(
                             color = MaterialTheme.colorScheme.primary,
                             animated = false,
                             minHeight = 8.dp,
-                            maxHeight = 24.dp
+                            maxHeight = 24.dp,
+                            modifier = Modifier.sharedBrandBounds(
+                                SharedKeyBrandMark,
+                                sharedTransitionScope,
+                                animatedVisibilityScope
+                            )
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
                                 text = stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.headlineLarge
+                                style = MaterialTheme.typography.headlineLarge,
+                                modifier = Modifier.sharedBrandBounds(
+                                    SharedKeyBrandTitle,
+                                    sharedTransitionScope,
+                                    animatedVisibilityScope
+                                )
                             )
                             Text(
                                 text = stringResource(R.string.app_subtitle),
@@ -325,8 +346,14 @@ fun MainScreen(
 
             AnimatedVisibility(
                 visible = !aboutPageOpenedBefore && !aboutHintDismissed && startupState == StartupState.Completed,
-                enter = slideInVertically(initialOffsetY = { -it }),
-                exit = slideOutVertically(targetOffsetY = { -it })
+                enter = slideInVertically(
+                    initialOffsetY = { -it },
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntOffset.VisibilityThreshold)
+                ),
+                exit = slideOutVertically(
+                    targetOffsetY = { -it },
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntOffset.VisibilityThreshold)
+                )
             ) {
                 AboutPageHintBanner(
                     onClick = { aboutHintDismissed = true }
@@ -335,8 +362,14 @@ fun MainScreen(
 
             AnimatedVisibility(
                 visible = !isDefaultProvider && startupState == StartupState.Completed,
-                enter = slideInVertically(initialOffsetY = { -it }),
-                exit = slideOutVertically(targetOffsetY = { -it })
+                enter = slideInVertically(
+                    initialOffsetY = { -it },
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntOffset.VisibilityThreshold)
+                ),
+                exit = slideOutVertically(
+                    targetOffsetY = { -it },
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntOffset.VisibilityThreshold)
+                )
             ) {
                  DefaultProviderBanner(
                      onClick = { viewModel.openTtsSettings() }
@@ -507,6 +540,7 @@ fun MainScreen(
         },
         isOpen = isConfigSheetOpen,
         onDismiss = { viewModel.closeConfigSheet() },
+        downloadProgress = downloadProgress,
         currentProvider = currentProvider,
         configRepository = getConfigRepository(currentProvider.id),
         voiceRepository = getVoiceRepository(currentProvider.id),

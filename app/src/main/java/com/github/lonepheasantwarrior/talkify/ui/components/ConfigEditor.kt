@@ -1,8 +1,8 @@
 package com.github.lonepheasantwarrior.talkify.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +37,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
@@ -55,10 +56,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.ConfigItem
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
+import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyMotion
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel.DownloadProgress
 
 /**
  * 配置编辑器组件
@@ -73,6 +77,7 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
  * @param onVoiceSelected 声音选择的回调
  * @param modifier 修饰符
  * @param advancedItemKeys 应放入"高级设置"折叠面板的配置项 key 集合
+ * @param downloadingModelProgress 本地模型下载进度（model_id 项下方展示进度条；null 或已完成不展示）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,7 +89,8 @@ fun ConfigEditor(
     onSaveClick: () -> Unit,
     onVoiceSelected: (VoiceInfo) -> Unit,
     modifier: Modifier = Modifier,
-    advancedItemKeys: Set<String> = setOf("api_url", "model_id")
+    advancedItemKeys: Set<String> = setOf("api_url", "model_id"),
+    downloadingModelProgress: DownloadProgress? = null
 ) {
     var localConfigItems by remember(configItems) { mutableStateOf(configItems) }
     var isModified by remember { mutableStateOf(false) }
@@ -127,10 +133,30 @@ fun ConfigEditor(
                     },
                     onVoiceSelected = onVoiceSelected
                 )
+                val downloadState = downloadingModelProgress
+                if (item.key == "model_id" && downloadState != null && !downloadState.isCompleted) {
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = downloadState.progress / 100f,
+                        animationSpec = TalkifyMotion.effectsDefault,
+                        label = "model_download_progress"
+                    )
+                    LinearProgressIndicator(
+                        progress = { animatedProgress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.model_download_progress,
+                            downloadState.displayName,
+                            downloadState.progress
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(12.dp))
             }
-
-            // 高级设置折叠面板
             if (advancedItems.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -182,7 +208,7 @@ private fun AdvancedSettingsSection(
 ) {
     val rotationAngle by animateFloatAsState(
         targetValue = if (expanded) 90f else 0f,
-        animationSpec = tween(durationMillis = 300),
+        animationSpec = TalkifyMotion.spatialFast,
         label = "chevron_rotation"
     )
 
@@ -235,10 +261,12 @@ private fun AdvancedSettingsSection(
             // 高级设置内容（带动画展开/折叠）
             AnimatedVisibility(
                 visible = expanded,
-                enter = expandVertically(animationSpec = tween(300)) +
-                        fadeIn(animationSpec = tween(300)),
-                exit = shrinkVertically(animationSpec = tween(250)) +
-                        fadeOut(animationSpec = tween(200))
+                enter = expandVertically(
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntSize.VisibilityThreshold)
+                ) + fadeIn(animationSpec = TalkifyMotion.effectsDefaultOf()),
+                exit = shrinkVertically(
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntSize.VisibilityThreshold)
+                ) + fadeOut(animationSpec = TalkifyMotion.effectsDefaultOf())
             ) {
                 Column(
                     modifier = Modifier

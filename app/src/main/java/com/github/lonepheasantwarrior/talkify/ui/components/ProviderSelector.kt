@@ -1,7 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.ui.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProvider
+import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyMotion
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -183,7 +183,7 @@ fun ProviderSelector(
                         } else {
                             MaterialTheme.colorScheme.surfaceContainerLow
                         },
-                        animationSpec = tween(250),
+                        animationSpec = TalkifyMotion.effectsDefaultOf(),
                         label = "provider_row_color"
                     )
 

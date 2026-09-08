@@ -210,6 +210,7 @@
     <string name="model_download_failed">下载失败: %1$s</string>
     <string name="model_downloading_busy">%1$s 正在下载中，请稍后再试</string>
     <string name="model_another_downloading">另一模型正在下载中，请等待完成后再试</string>
+    <string name="model_download_progress">正在下载 %1$s · %2$d%%</string>
     <string name="model_status_downloaded">✓</string>
     <string name="model_status_downloading">[下载中...]</string>
     <string name="model_status_error">[错误]</string>

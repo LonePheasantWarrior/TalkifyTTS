@@ -12,6 +12,9 @@ import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -72,6 +75,9 @@ import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
 import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.rememberTelemetryScrollObserver
+import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandMark
+import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandTitle
+import com.github.lonepheasantwarrior.talkify.ui.theme.sharedBrandBounds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,11 +87,13 @@ enum class DonateChannel {
     ALIPAY
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun AboutScreen(
     onBackClick: () -> Unit,
-    versionName: String
+    versionName: String,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -183,6 +191,11 @@ fun AboutScreen(
                 modifier = Modifier
                     .size(88.dp)
                     .clip(MaterialTheme.shapes.large)
+                    .sharedBrandBounds(
+                        SharedKeyBrandMark,
+                        sharedTransitionScope,
+                        animatedVisibilityScope
+                    )
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -190,7 +203,12 @@ fun AboutScreen(
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.sharedBrandBounds(
+                    SharedKeyBrandTitle,
+                    sharedTransitionScope,
+                    animatedVisibilityScope
+                )
             )
 
             Surface(

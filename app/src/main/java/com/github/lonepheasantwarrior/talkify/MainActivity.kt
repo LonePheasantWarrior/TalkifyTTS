@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         TtsLogger.i(TAG) { "MainActivity.onCreate: 应用启动" }
@@ -60,37 +63,43 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     TelemetryCaptureHost(modifier = Modifier.fillMaxSize()) {
-                        NavHost(
-                            navController = navController,
-                            startDestination = ROUTE_MAIN,
-                            enterTransition = {
-                                slideInHorizontally(animationSpec = tween(250)) { it / 4 } +
-                                        fadeIn(animationSpec = tween(250))
-                            },
-                            exitTransition = { fadeOut(animationSpec = tween(200)) },
-                            popEnterTransition = { fadeIn(animationSpec = tween(250)) },
-                            popExitTransition = {
-                                slideOutHorizontally(animationSpec = tween(250)) { it / 4 } +
-                                        fadeOut(animationSpec = tween(200))
-                            }
-                        ) {
-                            composable(ROUTE_MAIN) {
-                                MainScreen(
-                                    modifier = Modifier.fillMaxSize(),
-                                    onAboutClick = {
-                                        getSharedPreferences("talkify_app_config", MODE_PRIVATE)
-                                            .edit()
-                                            .putBoolean("has_opened_about_page", true)
-                                            .apply()
-                                        navController.navigate(ROUTE_ABOUT)
-                                    }
-                                )
-                            }
-                            composable(ROUTE_ABOUT) {
-                                AboutScreen(
-                                    onBackClick = { navController.popBackStack() },
-                                    versionName = versionName
-                                )
+                        SharedTransitionLayout {
+                            NavHost(
+                                navController = navController,
+                                startDestination = ROUTE_MAIN,
+                                enterTransition = {
+                                    slideInHorizontally(animationSpec = tween(250)) { it / 4 } +
+                                            fadeIn(animationSpec = tween(250))
+                                },
+                                exitTransition = { fadeOut(animationSpec = tween(200)) },
+                                popEnterTransition = { fadeIn(animationSpec = tween(250)) },
+                                popExitTransition = {
+                                    slideOutHorizontally(animationSpec = tween(250)) { it / 4 } +
+                                            fadeOut(animationSpec = tween(200))
+                                }
+                            ) {
+                                composable(ROUTE_MAIN) {
+                                    MainScreen(
+                                        modifier = Modifier.fillMaxSize(),
+                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                        animatedVisibilityScope = this,
+                                        onAboutClick = {
+                                            getSharedPreferences("talkify_app_config", MODE_PRIVATE)
+                                                .edit()
+                                                .putBoolean("has_opened_about_page", true)
+                                                .apply()
+                                            navController.navigate(ROUTE_ABOUT)
+                                        }
+                                    )
+                                }
+                                composable(ROUTE_ABOUT) {
+                                    AboutScreen(
+                                        onBackClick = { navController.popBackStack() },
+                                        versionName = versionName,
+                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                        animatedVisibilityScope = this
+                                    )
+                                }
                             }
                         }
                     }
