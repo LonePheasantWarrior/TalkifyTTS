@@ -9,7 +9,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.github.lonepheasantwarrior.talkify.MainActivity
 import com.github.lonepheasantwarrior.talkify.R
-import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
@@ -17,13 +16,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okio.buffer
 import okio.sink
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import java.io.File
@@ -78,6 +75,16 @@ class LocalModelDownloadService : Service() {
         private const val CONNECT_TIMEOUT = 30L
         private const val READ_TIMEOUT = 120L
         private const val WRITE_TIMEOUT = 30L
+
+        /**
+         * 下载服务运行标志（onCreate 置位 / onDestroy 清零）
+         *
+         * 进程被杀后新进程内为 false，语义与活性校验需求一致，
+         * 替代已废弃且仅返回本应用服务的 getRunningServices
+         */
+        @Volatile
+        var isServiceRunning = false
+            private set
     }
 
     // ==================== 内部状态 ====================
@@ -100,6 +107,7 @@ class LocalModelDownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         createNotificationChannel()
     }
 
@@ -148,6 +156,7 @@ class LocalModelDownloadService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isServiceRunning = false
         isCancelled.set(true)
         downloadJob?.cancel()
         scope.cancel()

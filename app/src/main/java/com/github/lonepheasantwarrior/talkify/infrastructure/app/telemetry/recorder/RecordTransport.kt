@@ -1,5 +1,9 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder
 
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.FRAGMENT_CHUNK_BYTES
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_BATCH_BYTES
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_BATCH_EVENTS
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_HEATMAP_EVENTS
 import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets

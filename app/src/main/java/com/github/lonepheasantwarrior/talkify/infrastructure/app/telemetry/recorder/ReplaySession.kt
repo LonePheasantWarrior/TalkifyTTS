@@ -4,6 +4,9 @@ import android.graphics.Rect
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.CHECKOUT_INTERVAL_MS
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.POINTER_BATCH_INTERVAL_MS
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.POINTER_SAMPLE_INTERVAL_MS
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

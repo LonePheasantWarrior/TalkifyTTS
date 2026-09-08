@@ -8,14 +8,14 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.Aliyu
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AliyunBailianVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AzureConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AzureVoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.MiniMaxConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.MiniMaxVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.TencentCloudConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.TencentCloudVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.VolcengineConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.VolcengineVoiceRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelConfigRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.XiaomiConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.XiaomiVoiceRepository
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger

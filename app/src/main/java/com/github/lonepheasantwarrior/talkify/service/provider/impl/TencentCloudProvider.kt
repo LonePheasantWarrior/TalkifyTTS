@@ -21,7 +21,6 @@ import com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerRequest
 import com.tencent.cloud.stream.tts.SpeechSynthesizerResponse
 import com.tencent.cloud.stream.tts.core.ws.Credential
 import com.tencent.cloud.stream.tts.core.ws.SpeechClient
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

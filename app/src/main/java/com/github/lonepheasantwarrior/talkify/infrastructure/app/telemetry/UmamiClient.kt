@@ -3,6 +3,7 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 import android.content.Context
 import android.os.Build
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient.trackPage
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import okhttp3.Call
 import okhttp3.Callback

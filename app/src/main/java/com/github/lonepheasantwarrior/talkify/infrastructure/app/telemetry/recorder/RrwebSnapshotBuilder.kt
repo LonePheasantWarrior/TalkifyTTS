@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder
 
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RrwebSnapshotBuilder.MAX_TEXT_LENGTH
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -123,7 +124,7 @@ internal object RrwebSnapshotBuilder {
                 if (elementCount >= MAX_ELEMENTS) break
                 val target = collapse(child) ?: continue
                 elementCount++
-                serializeElement(target, node, depth)?.let { array.put(it) }
+                array.put(serializeElement(target, node, depth))
             }
             return array
         }

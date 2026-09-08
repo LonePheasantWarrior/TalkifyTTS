@@ -1,6 +1,5 @@
 package com.github.lonepheasantwarrior.talkify.service.provider.impl
 
-import android.content.Context
 import android.speech.tts.Voice
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.AzureConfig

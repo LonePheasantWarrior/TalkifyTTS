@@ -4,7 +4,6 @@ import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
-import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
@@ -674,7 +673,7 @@ class TalkifyTtsService : TextToSpeechService() {
                             // 在收到第一个音频数据时初始化系统回调
                             if (!audioInitialized) {
                                 audioInitialized = true
-                                attempt?.markFirstAudio(sampleRate)
+                                attempt.markFirstAudio(sampleRate)
                                 callback.start(sampleRate, audioFormat, channelCount)
                             }
 
@@ -719,7 +718,7 @@ class TalkifyTtsService : TextToSpeechService() {
             if (result == null) {
                 // 等待超时
                 TtsLogger.e("Synthesis timed out")
-                attempt?.markTimeout()
+                attempt.markTimeout()
                 try { provider.stop() } catch (_: Exception) {}
                 callback.error(TextToSpeech.ERROR_NETWORK_TIMEOUT)
                 TalkifyNotificationHelper.sendSystemNotification(
@@ -728,7 +727,7 @@ class TalkifyTtsService : TextToSpeechService() {
                 )
             } else if (result != TtsErrorCode.SUCCESS) {
                 // 发生错误
-                attempt?.markError(result.toString())
+                attempt.markError(result.toString())
                 callback.error(TtsErrorCode.toAndroidError(result))
                 TalkifyNotificationHelper.sendSystemNotification(
                     this@TalkifyTtsService,
@@ -736,7 +735,7 @@ class TalkifyTtsService : TextToSpeechService() {
                 )
             } else {
                 // 正常完成
-                attempt?.markSuccess()
+                attempt.markSuccess()
                 callback.done()
             }
 

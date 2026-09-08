@@ -1,6 +1,5 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder
 
-import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

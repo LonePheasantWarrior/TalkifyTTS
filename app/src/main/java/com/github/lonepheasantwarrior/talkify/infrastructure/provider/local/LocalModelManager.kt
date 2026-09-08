@@ -1,9 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.local
 
-import android.app.ActivityManager
 import android.content.Context
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
-import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
@@ -183,7 +181,8 @@ object LocalModelManager {
         if (value.isNullOrBlank()) return null
 
         // 活性校验：确认下载 Service 仍在运行，防止僵尸状态
-        if (!isDownloadServiceRunning(context)) {
+        // （进程被杀重启后标志复位，与 getRunningServices 的判定语义一致）
+        if (!LocalModelDownloadService.isServiceRunning) {
             TtsLogger.w("Download service not running, clearing stale state: $value", tag = TAG)
             prefs.edit().remove(KEY_DOWNLOADING_MODEL).apply()
             return null
@@ -192,26 +191,7 @@ object LocalModelManager {
         return value
     }
 
-    /**
-     * 检查下载 Service 是否正在运行
-     */
-    private fun isDownloadServiceRunning(context: Context): Boolean {
-        return try {
-            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
-            val serviceClass = LocalModelDownloadService::class.java.name
-            manager.getRunningServices(Int.MAX_VALUE)
-                ?.any { it.service.className == serviceClass }
-                ?: false
-        } catch (e: Exception) {
-            TtsLogger.w("Failed to check service status: ${e.message}", tag = TAG)
-            // 无法判断时保守处理：假定正在下载，避免重复启动
-            true
-        }
-    }
-
-    /**
-     * 检查是否有模型正在下载
-     */
+    /** 检查是否有模型正在下载 */
     fun isAnyModelDownloading(): Boolean = getDownloadingModelId() != null
 
     /**
