@@ -16,12 +16,14 @@ import com.github.lonepheasantwarrior.talkify.R
 /**
  * 网络阻塞弹窗组件
  *
- * 当应用无网络连接时显示，引导用户去设置或退出
+ * 当应用无网络连接时显示，引导用户去系统设置恢复网络；
+ * 正文按本地模型就绪情况自适应说明离线可用性，用户可点击"知道了"继续使用。
  */
 @Composable
 fun NetworkBlockedDialog(
+    offlineCapable: Boolean,
     onOpenSettings: () -> Unit,
-    onExit: () -> Unit,
+    onAcknowledge: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     AlertDialog(
@@ -43,7 +45,13 @@ fun NetworkBlockedDialog(
         },
         text = {
             Text(
-                text = stringResource(R.string.network_blocked_message),
+                text = stringResource(
+                    if (offlineCapable) {
+                        R.string.network_blocked_message_offline_ready
+                    } else {
+                        R.string.network_blocked_message
+                    }
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Start
@@ -61,12 +69,11 @@ fun NetworkBlockedDialog(
         },
         dismissButton = {
             TextButton(
-                onClick = onExit
+                onClick = onAcknowledge
             ) {
                 Text(
-                    text = stringResource(R.string.permission_exit),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.error
+                    text = stringResource(R.string.network_blocked_acknowledge),
+                    style = MaterialTheme.typography.labelLarge
                 )
             }
         }

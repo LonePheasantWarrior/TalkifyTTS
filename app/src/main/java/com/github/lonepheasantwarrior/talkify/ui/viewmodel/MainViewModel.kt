@@ -62,6 +62,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshDefaultProviderStatus() = startup.refreshDefaultProviderStatus()
 
+    fun onNetworkBlockedAcknowledged() = startup.onNetworkBlockedAcknowledged()
+
+    fun retryStartupCheck() = startup.startStartupSequence()
+
     fun hasRequestedNotificationPermission(): Boolean =
         startup.hasRequestedNotificationPermission()
 
@@ -97,6 +101,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearDownloadProgress() = modelDownload.clearDownloadProgress()
 
     // --- 系统设置跳转 ---
+
+    fun openNetworkSettings() {
+        try {
+            // 联网面板为轻量弹层，可直接开关 Wi-Fi/流量，关闭后立即回到应用触发网络重查
+            context.startActivity(Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (e: Exception) {
+            TtsLogger.e("Internet connectivity panel unavailable, falling back", e, logTag)
+            try {
+                context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (inner: Exception) {
+                TtsLogger.e("Failed to open network settings", inner, logTag)
+                openSystemSettings()
+            }
+        }
+    }
 
     fun openSystemSettings() {
         try {

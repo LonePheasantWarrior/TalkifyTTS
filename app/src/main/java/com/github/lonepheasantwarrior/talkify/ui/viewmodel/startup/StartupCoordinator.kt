@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup
 
 import android.app.Application
+import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
@@ -9,6 +10,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.Perm
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOptimizationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +24,9 @@ import kotlinx.coroutines.withContext
  */
 sealed class StartupState {
     data object CheckingNetwork : StartupState()
-    data object NetworkBlocked : StartupState()
+
+    /** 网络不可用；offlineCapable 表示任一本地模型已下载（可离线合成），弹窗文案据此自适应 */
+    data class NetworkBlocked(val offlineCapable: Boolean) : StartupState()
     data object CheckingNotificationPermission : StartupState()
     data object RequestingNotificationPermission : StartupState()
     data object CheckingBatteryOptimization : StartupState()
@@ -73,7 +77,7 @@ class StartupCoordinator(
 
         if (!PermissionChecker.hasInternetPermission(application)) {
             TtsLogger.w(logTag) { "No internet permission" }
-            _startupState.value = StartupState.NetworkBlocked
+            enterNetworkBlockedState()
             return
         }
 
@@ -86,8 +90,17 @@ class StartupCoordinator(
             checkNotificationStep()
         } else {
             TtsLogger.w(logTag) { "Network unavailable." }
-            _startupState.value = StartupState.NetworkBlocked
+            enterNetworkBlockedState()
         }
+    }
+
+    /** 进入网络阻断状态，并检测本地模型就绪情况以决定离线可用性（弹窗文案自适应） */
+    private suspend fun enterNetworkBlockedState() {
+        val offlineCapable = withContext(Dispatchers.IO) {
+            LocalModelRegistry.ALL_MODELS.any { LocalModelManager.isModelDownloaded(it.id) }
+        }
+        TtsLogger.i(logTag) { "Network blocked, offline capable: $offlineCapable" }
+        _startupState.value = StartupState.NetworkBlocked(offlineCapable)
     }
 
     // --- 步骤 2: 通知权限 ---
@@ -186,6 +199,12 @@ class StartupCoordinator(
     val isDefaultProvider: StateFlow<Boolean> = _isDefaultProvider.asStateFlow()
 
     // --- 用户交互回调 ---
+
+    /** 用户在网络阻断弹窗点击"知道了"：本地模型可离线使用（或用户已知悉后果），继续后续启动检查 */
+    fun onNetworkBlockedAcknowledged() {
+        TtsLogger.i(logTag) { "Network blocked acknowledged, continuing startup sequence." }
+        checkNotificationStep()
+    }
 
     fun hasRequestedNotificationPermission(): Boolean {
         return appConfigRepository.hasRequestedNotificationPermission()

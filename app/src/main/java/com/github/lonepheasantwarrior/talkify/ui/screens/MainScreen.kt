@@ -119,9 +119,13 @@ fun MainScreen(
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
+        // 从系统设置返回时，若仍停留在网络阻断态则重查网络，避免用户开网后仍被困在弹窗
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && startupState == StartupState.Completed) {
-                viewModel.refreshDefaultProviderStatus()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                when {
+                    startupState == StartupState.Completed -> viewModel.refreshDefaultProviderStatus()
+                    startupState is StartupState.NetworkBlocked -> viewModel.retryStartupCheck()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -339,7 +343,7 @@ fun MainScreen(
                  )
             }
 
-            when (startupState) {
+            when (val state = startupState) {
                 StartupState.CheckingNetwork -> {
                     // 显示加载中
                     Box(
@@ -365,13 +369,14 @@ fun MainScreen(
                         }
                     }
                 }
-                StartupState.NetworkBlocked -> {
+                is StartupState.NetworkBlocked -> {
                     NetworkBlockedDialog(
+                        offlineCapable = state.offlineCapable,
                         onOpenSettings = {
-                            viewModel.openSystemSettings()
+                            viewModel.openNetworkSettings()
                         },
-                        onExit = {
-                            activity?.finish()
+                        onAcknowledge = {
+                            viewModel.onNetworkBlockedAcknowledged()
                         }
                     )
                 }

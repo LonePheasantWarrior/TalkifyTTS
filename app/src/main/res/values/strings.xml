@@ -85,11 +85,12 @@
     <string name="cd_settings_button">打开设置</string>
     <string name="cd_back">返回</string>
 
-    <!-- 权限检查 -->
-    <string name="permission_exit">退出应用</string>
+    <!-- 网络检查 -->
     <string name="network_blocked_title">无法连接网络</string>
-    <string name="network_blocked_message">无法访问互联网，请检查网络设置后重试。</string>
-    <string name="network_open_settings">打开系统设置</string>
+    <string name="network_blocked_message">无法访问互联网，云端语音供应商暂不可用；本地模型文件尚未下载，离线状态下无法使用语音合成，请连接网络后重试。</string>
+    <string name="network_blocked_message_offline_ready">无法访问互联网，云端语音供应商暂不可用；本地模型已就绪，可离线使用语音合成。</string>
+    <string name="network_blocked_acknowledge">知道了</string>
+    <string name="network_open_settings">打开网络设置</string>
 
     <!-- 通知权限 -->
     <string name="notification_permission_title">通知权限</string>
