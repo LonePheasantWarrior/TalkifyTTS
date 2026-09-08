@@ -1,6 +1,8 @@
 package com.github.lonepheasantwarrior.talkify
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -8,6 +10,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.Ta
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.DeviceInfoCollector
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
 class TalkifyApplication : Application() {
@@ -24,6 +27,7 @@ class TalkifyApplication : Application() {
         createNotificationChannels()
         deleteLegacyTelemetryPrefs()
         observeAppForeground()
+        trackCurrentActivity()
     }
 
     /**
@@ -37,7 +41,41 @@ class TalkifyApplication : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 reportAppOpened()
+                UmamiRecorder.start()
             }
+
+            override fun onStop(owner: LifecycleOwner) {
+                UmamiRecorder.stop()
+            }
+        })
+    }
+
+    /**
+     * 追踪当前前台 Activity，供遥测录制子系统读取窗口语义树
+     *
+     * onResume 设置、onPause 清除，仅瞬态持有，不构成 Activity 泄漏
+     */
+    private fun trackCurrentActivity() {
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) {
+                TalkifyAppHolder.setCurrentActivity(activity)
+            }
+
+            override fun onActivityPaused(activity: Activity) {
+                if (TalkifyAppHolder.currentActivity() === activity) {
+                    TalkifyAppHolder.setCurrentActivity(null)
+                }
+            }
+
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+
+            override fun onActivityStarted(activity: Activity) = Unit
+
+            override fun onActivityStopped(activity: Activity) = Unit
+
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+
+            override fun onActivityDestroyed(activity: Activity) = Unit
         })
     }
 

@@ -27,12 +27,14 @@ object TalkifyTelemetry {
      * 上报一次页面访问（Pageview）
      *
      * Umami 仪表盘的访客/浏览量等核心指标仅由 pageview 驱动（自定义事件不参与计算），
-     * 应在应用启动时上报一次，作为统计会话锚点。
+     * 应在应用启动时上报一次，作为统计会话锚点；页面路由变化时也应补发（对齐
+     * script.js 的 SPA 行为）。
      *
-     * @param url 页面路径，默认 "/"
+     * @param url   页面路径，默认 "/"
+     * @param title 页面标题（可选，对齐 script.js 的 document.title 字段）
      */
-    fun trackPageView(url: String = "/") {
-        UmamiClient.trackPage(url)
+    fun trackPageView(url: String = "/", title: String? = null) {
+        UmamiClient.trackPage(url, title)
     }
 
     /**
@@ -65,5 +67,17 @@ object TalkifyTelemetry {
      */
     fun trackEvent(eventName: String, properties: Map<String, Any>) {
         UmamiClient.track(eventName, properties)
+    }
+
+    /**
+     * 上报一次会话身份声明（Identify）
+     *
+     * 为当前统计会话附加画像属性（对齐 script.js 的 `umami.identify()`），
+     * 不参与访客/浏览量等核心指标，仅与会话关联展示。
+     *
+     * @param properties 会话属性，仅支持 String 和 Int 类型值
+     */
+    fun identify(properties: Map<String, Any>) {
+        UmamiClient.identify(properties)
     }
 }

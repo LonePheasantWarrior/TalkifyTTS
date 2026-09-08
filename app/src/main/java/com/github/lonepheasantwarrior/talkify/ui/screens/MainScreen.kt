@@ -93,6 +93,7 @@ import com.github.lonepheasantwarrior.talkify.ui.components.NotificationPermissi
 import com.github.lonepheasantwarrior.talkify.ui.components.ProviderSelector
 import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
+import com.github.lonepheasantwarrior.talkify.ui.components.rememberTelemetryScrollObserver
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.MainViewModel
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup.StartupState
 import kotlinx.coroutines.launch
@@ -376,11 +377,13 @@ fun MainScreen(
                 }
                 else -> {
                     // 网络检查通过，显示主界面内容
+                    val scrollState = rememberScrollState()
+                    rememberTelemetryScrollObserver(scrollState)
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 16.dp)
-                            .verticalScroll(rememberScrollState()),
+                            .verticalScroll(scrollState),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Spacer(modifier = Modifier.height(8.dp))
