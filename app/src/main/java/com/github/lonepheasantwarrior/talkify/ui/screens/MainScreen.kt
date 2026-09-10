@@ -41,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -49,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -287,6 +289,36 @@ fun MainScreen(
         topBar = {
             LargeTopAppBar(
                 title = {
+                    // LargeTopAppBar 内部（TwoRowsTopAppBar）会把 title 槽位同时组合进折叠行与
+                    // 展开行：折叠行固定在左上角（ambient 字号 TitleLarge 22sp），展开行即大标题
+                    // 位置（HeadlineMedium 28sp）。共享元素只能注册在"当前可见行"的实例上，
+                    // 否则同一 shared key 有两份边界，转场目标在两者间漂移——表现为先飞向
+                    // 左上角折叠行、结束时回落到展开行。
+                    val isBottomRow = LocalTextStyle.current.fontSize.value >= 25f
+                    val isBottomRowVisible by remember {
+                        derivedStateOf { scrollBehavior.state.collapsedFraction < 0.5f }
+                    }
+                    val attachShared = isBottomRow == isBottomRowVisible
+                    val brandMarkModifier =
+                        if (attachShared) {
+                            Modifier.sharedBrandBounds(
+                                SharedKeyBrandMark,
+                                sharedTransitionScope,
+                                animatedVisibilityScope
+                            )
+                        } else {
+                            Modifier
+                        }
+                    val brandTitleModifier =
+                        if (attachShared) {
+                            Modifier.sharedBrandBounds(
+                                SharedKeyBrandTitle,
+                                sharedTransitionScope,
+                                animatedVisibilityScope
+                            )
+                        } else {
+                            Modifier
+                        }
                     Row(
                         modifier = Modifier.clickable(onClick = onAboutClick),
                         verticalAlignment = Alignment.CenterVertically
@@ -297,22 +329,14 @@ fun MainScreen(
                             animated = false,
                             minHeight = 8.dp,
                             maxHeight = 24.dp,
-                            modifier = Modifier.sharedBrandBounds(
-                                SharedKeyBrandMark,
-                                sharedTransitionScope,
-                                animatedVisibilityScope
-                            )
+                            modifier = brandMarkModifier
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
                                 text = stringResource(R.string.app_name),
                                 style = MaterialTheme.typography.headlineLarge,
-                                modifier = Modifier.sharedBrandBounds(
-                                    SharedKeyBrandTitle,
-                                    sharedTransitionScope,
-                                    animatedVisibilityScope
-                                )
+                                modifier = brandTitleModifier
                             )
                             Text(
                                 text = stringResource(R.string.app_subtitle),

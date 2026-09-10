@@ -76,6 +76,16 @@ class MainActivity : ComponentActivity() {
                                 popExitTransition = {
                                     slideOutHorizontally(animationSpec = tween(250)) { it / 4 } +
                                             fadeOut(animationSpec = tween(200))
+                                },
+                                // 返回手势期间 NavHost 会用 SeekableTransitionState 按手指进度
+                                // 搓动这套预测转场；不传则走默认的 scaleOut(0.7)（整页向中心
+                                // 缩放）。与 popExit/popEnter 保持同一规格，松手提交后续播无跳变
+                                predictivePopEnterTransition = {
+                                    fadeIn(animationSpec = tween(250))
+                                },
+                                predictivePopExitTransition = { _ ->
+                                    slideOutHorizontally(animationSpec = tween(250)) { it / 4 } +
+                                            fadeOut(animationSpec = tween(200))
                                 }
                             ) {
                                 composable(ROUTE_MAIN) {
