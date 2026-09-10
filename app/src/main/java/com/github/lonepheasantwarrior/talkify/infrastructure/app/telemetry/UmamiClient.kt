@@ -49,11 +49,11 @@ object UmamiClient {
 
     private const val TAG = "TalkifyTelemetry"
 
-    const val BASE_URL = "https://analytics.private-cloud.site:3000"
+    const val BASE_URL = "https://photon.private-cloud.site:3000/"
 
     private const val ENDPOINT = "$BASE_URL/api/send"
 
-    const val WEBSITE_ID = "d14bae38-0658-4b5e-a5d4-63befc13b0fd"
+    const val WEBSITE_ID = "231277c5-4b7b-4be3-a9d3-588d5ee2a352"
 
     /** 与 Umami 后台网站的 Domain 设置保持一致，保证仪表盘筛选与展示一致 */
     const val HOSTNAME = "com.github.lonepheasantwarrior.talkify"
