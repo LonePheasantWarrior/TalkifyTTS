@@ -64,9 +64,25 @@ object TalkifyTelemetry {
      *
      * @param eventName  事件名称（建议使用 snake_case）
      * @param properties 自定义属性，仅支持 String 和 Int 类型值
+     * @param url        事件发生的页面路径（默认 "/"；如关于页事件传 "/about"，
+     *                   供仪表盘按页面拆分事件）
      */
-    fun trackEvent(eventName: String, properties: Map<String, Any>) {
-        UmamiClient.track(eventName, properties)
+    fun trackEvent(eventName: String, properties: Map<String, Any>, url: String = "/") {
+        UmamiClient.track(eventName, properties, url)
+    }
+
+    /**
+     * 以阻塞方式上报一个带自定义属性的事件
+     *
+     * 仅供**崩溃链路**使用：进程随时可能被杀死，异步入队的请求大概率无法送达。
+     * 内部仍全量容错（失败静默），调用方应在外层限时（如后台线程 + join 超时），
+     * 避免拖慢崩溃处理。其余业务一律使用 [trackEvent]。
+     *
+     * @param eventName  事件名称（建议使用 snake_case）
+     * @param properties 自定义属性，仅支持 String 和 Int 类型值
+     */
+    fun trackEventBlocking(eventName: String, properties: Map<String, Any>) {
+        UmamiClient.trackBlocking(eventName, properties)
     }
 
     /**

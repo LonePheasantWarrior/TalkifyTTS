@@ -9,6 +9,8 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.Netw
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.PermissionChecker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOptimizationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
@@ -100,6 +102,8 @@ class StartupCoordinator(
             LocalModelRegistry.ALL_MODELS.any { LocalModelManager.isModelDownloaded(it.id) }
         }
         TtsLogger.i(logTag) { "Network blocked, offline capable: $offlineCapable" }
+        // 弹窗展示 = "去了哪里"，按虚拟路由上报 pageview；offline_capable 由按钮动作事件承载
+        AppPageTracker.open(AppPageTracker.PATH_NETWORK_BLOCKED, "NetworkBlocked")
         _startupState.value = StartupState.NetworkBlocked(offlineCapable)
     }
 
@@ -112,6 +116,7 @@ class StartupCoordinator(
 
         if (!hasPermission) {
             TtsLogger.i(logTag) { "Need to request notification permission." }
+            AppPageTracker.open(AppPageTracker.PATH_NOTIFICATION_PERMISSION, "NotificationPermission")
             _startupState.value = StartupState.RequestingNotificationPermission
         } else {
             TtsLogger.i(logTag) { "Notification permission check passed (Granted)." }
@@ -128,6 +133,7 @@ class StartupCoordinator(
 
         if (!isIgnoring) {
             TtsLogger.i(logTag) { "Need to request battery optimization." }
+            AppPageTracker.open(AppPageTracker.PATH_BATTERY_OPTIMIZATION, "BatteryOptimization")
             _startupState.value = StartupState.RequestingBatteryOptimization
         } else {
             TtsLogger.i(logTag) { "Battery optimization check passed." }
@@ -141,14 +147,21 @@ class StartupCoordinator(
         TtsLogger.d(logTag) { "Step 4: Checking Updates..." }
 
         scope.launch {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
             try {
                 val currentVersion = getCurrentAppVersion()
                 val result = withContext(Dispatchers.IO) {
                     updateChecker.checkForUpdates(currentVersion)
                 }
+                AppActionTracker.updateCheck(
+                    AppActionTracker.TRIGGER_STARTUP,
+                    result,
+                    (android.os.SystemClock.elapsedRealtime() - startedAt).toInt()
+                )
 
                 if (result is UpdateCheckResult.UpdateAvailable) {
                     TtsLogger.i(logTag) { "Update available: ${result.updateInfo.versionName}" }
+                    AppPageTracker.open(AppPageTracker.PATH_UPDATE, "Update")
                     _startupState.value = StartupState.UpdateAvailable(result.updateInfo)
                 } else {
                     TtsLogger.i(logTag) { "No update available or check failed: $result" }

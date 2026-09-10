@@ -87,6 +87,8 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOptimizationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AliyunBailianConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AliyunBailianVoiceRepository
@@ -150,7 +152,10 @@ fun MainScreen(
     // 权限请求 Launcher
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
-    ) { _ ->
+    ) { granted ->
+        AppActionTracker.notificationPermission(
+            if (granted) AppActionTracker.ACTION_GRANTED else AppActionTracker.ACTION_DENIED
+        )
         viewModel.onNotificationPermissionResult()
     }
 
@@ -236,6 +241,13 @@ fun MainScreen(
     }
     var inputText by remember { mutableStateOf(defaultInputText) }
     val isConfigSheetOpen by viewModel.isConfigSheetOpen.collectAsState()
+
+    // 预览"播放"按钮点击埋点（含被拦截的分支，构成完整漏斗）
+    val trackPlayClick: (String) -> Unit = { outcome ->
+        AppActionTracker.previewPlayClick(
+            currentProvider.id, selectedVoice?.voiceId.orEmpty(), inputText.length, outcome
+        )
+    }
 
     var savedConfig by remember(currentProvider.id) {
         mutableStateOf(getConfigRepository(currentProvider.id).getConfig(currentProvider.id))
@@ -397,7 +409,13 @@ fun MainScreen(
                 )
             ) {
                  DefaultProviderBanner(
-                     onClick = { viewModel.openTtsSettings() }
+                     onClick = {
+                         AppActionTracker.settingsJump(
+                             AppActionTracker.TARGET_TTS,
+                             AppActionTracker.SOURCE_DEFAULT_BANNER
+                         )
+                         viewModel.openTtsSettings()
+                     }
                  )
             }
 
@@ -431,9 +449,17 @@ fun MainScreen(
                     NetworkBlockedDialog(
                         offlineCapable = state.offlineCapable,
                         onOpenSettings = {
+                            AppActionTracker.startupNetworkAction(
+                                AppActionTracker.ACTION_OPEN_SETTINGS,
+                                state.offlineCapable
+                            )
                             viewModel.openNetworkSettings()
                         },
                         onAcknowledge = {
+                            AppActionTracker.startupNetworkAction(
+                                AppActionTracker.ACTION_ACKNOWLEDGED,
+                                state.offlineCapable
+                            )
                             viewModel.onNetworkBlockedAcknowledged()
                         }
                     )
@@ -455,6 +481,7 @@ fun MainScreen(
                             currentProvider = displayProvider,
                             availableProviders = displayProviders,
                             onProviderSelected = { provider ->
+                                AppActionTracker.providerSwitched(currentProvider.id, provider.id)
                                 currentProvider = provider
                                 appConfigRepository.saveSelectedProviderId(provider.id)
                             },
@@ -466,11 +493,15 @@ fun MainScreen(
                             onInputTextChange = { inputText = it },
                             availableVoices = availableVoices,
                             selectedVoice = selectedVoice,
-                            onVoiceSelected = { voice -> selectedVoice = voice },
+                            onVoiceSelected = { voice ->
+                                AppActionTracker.previewVoiceSelected(currentProvider.id, voice.voiceId)
+                                selectedVoice = voice
+                            },
                             isPlaying = isPreviewPlaying,
                             waveform = previewWaveform,
                             onPlayClick = {
                                 if (inputText.isBlank()) {
+                                    trackPlayClick(AppActionTracker.OUTCOME_EMPTY_TEXT)
                                     scope.launch {
                                         snackbarHostState.showSnackbar(emptyInputHint)
                                     }
@@ -525,8 +556,14 @@ fun MainScreen(
                                 if (!isConfigured) {
                                     // 本地模型：已选择模型但未下载 → 弹出下载确认对话框
                                     if (config is LocalModelConfig && config.modelId.isNotBlank()) {
+                                        trackPlayClick(AppActionTracker.OUTCOME_MODEL_NEED_DOWNLOAD)
+                                        AppPageTracker.open(
+                                            AppPageTracker.PATH_MODEL_DOWNLOAD_CONFIRM,
+                                            "ModelDownloadConfirm"
+                                        )
                                         pendingLocalModelConfig = config
                                     } else {
+                                        trackPlayClick(AppActionTracker.OUTCOME_NOT_CONFIGURED)
                                         scope.launch {
                                             snackbarHostState.showSnackbar(providerNotConfiguredHint)
                                         }
@@ -539,11 +576,13 @@ fun MainScreen(
                                 if (config is LocalModelConfig) {
                                     val conflict = viewModel.checkLocalModelPlayable(config.modelId)
                                     if (conflict != null) {
+                                        trackPlayClick(AppActionTracker.OUTCOME_MODEL_DOWNLOADING)
                                         scope.launch { snackbarHostState.showSnackbar(conflict) }
                                         return@VoicePreview
                                     }
                                 }
 
+                                trackPlayClick(AppActionTracker.OUTCOME_STARTED)
                                 viewModel.playPreview(currentProvider.id, inputText, config)
                             },
                             onStopClick = {
@@ -561,7 +600,15 @@ fun MainScreen(
 
     ConfigBottomSheet(
         onConfigSaved = {
-            savedConfig = getConfigRepository(currentProvider.id).getConfig(currentProvider.id)
+            val freshConfig = getConfigRepository(currentProvider.id).getConfig(currentProvider.id)
+            AppActionTracker.configSaved(
+                currentProvider.id,
+                isLocalModel = freshConfig is LocalModelConfig,
+                hasCustomApiUrl = freshConfig.apiUrl.isNotBlank() && freshConfig !is LocalModelConfig,
+                hasCustomModelId = freshConfig.modelId.isNotBlank() && freshConfig !is LocalModelConfig,
+                voiceId = freshConfig.voiceId
+            )
+            savedConfig = freshConfig
             configVersion++
         },
         isOpen = isConfigSheetOpen,
@@ -583,7 +630,15 @@ fun MainScreen(
     if (pendingConfig != null) {
         val modelInfo = LocalModelRegistry.getModel(pendingConfig.modelId)
         AlertDialog(
-            onDismissRequest = { pendingLocalModelConfig = null },
+            onDismissRequest = {
+                AppActionTracker.modelDownloadDialog(
+                    pendingConfig.modelId,
+                    modelInfo?.downloadSizeDisplay.orEmpty(),
+                    AppActionTracker.SOURCE_PREVIEW,
+                    confirmed = false
+                )
+                pendingLocalModelConfig = null
+            },
             title = { Text(stringResource(R.string.model_download_confirm_title)) },
             text = {
                 Text(
@@ -596,6 +651,12 @@ fun MainScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        AppActionTracker.modelDownloadDialog(
+                            pendingConfig.modelId,
+                            modelInfo?.downloadSizeDisplay.orEmpty(),
+                            AppActionTracker.SOURCE_PREVIEW,
+                            confirmed = true
+                        )
                         pendingLocalModelConfig = null
                         val conflict = viewModel.startModelDownload(pendingConfig.modelId)
                         if (conflict != null) {
@@ -607,7 +668,17 @@ fun MainScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingLocalModelConfig = null }) {
+                TextButton(
+                    onClick = {
+                        AppActionTracker.modelDownloadDialog(
+                            pendingConfig.modelId,
+                            modelInfo?.downloadSizeDisplay.orEmpty(),
+                            AppActionTracker.SOURCE_PREVIEW,
+                            confirmed = false
+                        )
+                        pendingLocalModelConfig = null
+                    }
+                ) {
                     Text(stringResource(android.R.string.cancel))
                 }
             }
@@ -620,12 +691,17 @@ fun MainScreen(
         StartupState.RequestingNotificationPermission -> {
             NotificationPermissionDialog(
                 onConfirm = {
+                    AppActionTracker.notificationPermission(AppActionTracker.ACTION_REQUESTED)
                     val permission = Manifest.permission.POST_NOTIFICATIONS
                     if (activity != null) {
                         val shouldShowRationale = activity.shouldShowRequestPermissionRationale(permission)
                         val hasRequestedBefore = viewModel.hasRequestedNotificationPermission()
 
                         if (!shouldShowRationale && hasRequestedBefore) {
+                            AppActionTracker.settingsJump(
+                                AppActionTracker.TARGET_NOTIFICATION,
+                                AppActionTracker.SOURCE_PERMISSION_DIALOG
+                            )
                             viewModel.openNotificationSettings()
                             viewModel.onNotificationPermissionResult()
                         } else {
@@ -637,6 +713,7 @@ fun MainScreen(
                     }
                 },
                 onDismiss = {
+                    AppActionTracker.notificationPermission(AppActionTracker.ACTION_SKIPPED)
                     viewModel.onSkipNotificationPermission()
                 }
             )
@@ -644,6 +721,7 @@ fun MainScreen(
         StartupState.RequestingBatteryOptimization -> {
             BatteryOptimizationDialog(
                 onConfirm = {
+                    AppActionTracker.batteryOptimization(AppActionTracker.ACTION_GO_SETTINGS)
                     try {
                         val intent = PowerOptimizationHelper.createRequestIgnoreBatteryOptimizationsIntent(context)
                         context.startActivity(intent)
@@ -661,6 +739,7 @@ fun MainScreen(
                     viewModel.onBatteryOptimizationResult()
                 },
                 onDismiss = {
+                    AppActionTracker.batteryOptimization(AppActionTracker.ACTION_SKIPPED)
                     viewModel.onBatteryOptimizationSkipped()
                 }
             )

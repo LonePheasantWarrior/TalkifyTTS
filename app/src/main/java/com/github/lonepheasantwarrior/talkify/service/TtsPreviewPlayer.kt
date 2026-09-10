@@ -2,6 +2,8 @@ package com.github.lonepheasantwarrior.talkify.service
 
 import android.media.AudioFormat
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker.PreviewAttempt
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
@@ -59,6 +61,10 @@ class TtsPreviewPlayer(
     @Volatile
     private var lastErrorMessage: String? = null
 
+    /** 本次预览播放的遥测计时器（stopPlayback 时消费并清空，防止跨场次串报） */
+    @Volatile
+    private var playbackAttempt: PreviewAttempt? = null
+
     private var stateListener: ((Int, String?) -> Unit)? = null
 
     private var amplitudeListener: ((FloatArray) -> Unit)? = null
@@ -109,6 +115,10 @@ class TtsPreviewPlayer(
             currentProvider = provider
         }
 
+        playbackAttempt = AppActionTracker.beginPreviewPlayback(
+            providerId, config.modelId, config.voiceId, text.length
+        )
+
         currentState = STATE_PLAYING
         notifyStateChange()
 
@@ -117,6 +127,7 @@ class TtsPreviewPlayer(
                 provider.synthesize(text, params, config, createListener())
             } catch (e: Exception) {
                 TtsLogger.e("Synthesis failed: ${e.message}", e)
+                playbackAttempt?.markError(e.javaClass.simpleName)
                 onError("合成失败：${e.message}")
             }
         }
@@ -138,6 +149,8 @@ class TtsPreviewPlayer(
                     TtsLogger.d("Audio skipped due to stop")
                     return
                 }
+
+                playbackAttempt?.markFirstAudio(sampleRate)
 
                 try {
                     if (audioPlayer == null) {
@@ -172,7 +185,9 @@ class TtsPreviewPlayer(
                 TtsLogger.d("Synthesis completed")
                 // 合成完成 ≠ 播放完成：AudioTrack 缓冲中还有尾段未播的音频，
                 // 直接 stop/release 会把结尾截掉（表现为"戛然而止"），
-                // 先等缓冲排空（用户主动停止时经 shouldStop 立即退出）
+                // 先等缓冲排空（用户主动停止时经 shouldStop 立即退出）。
+                // 捕获本场 attempt 局部引用，避免异步排空期间串到下一场次
+                val attempt = playbackAttempt
                 serviceScope.launch {
                     val player = audioPlayer
                     if (player != null) {
@@ -185,6 +200,8 @@ class TtsPreviewPlayer(
                             TtsLogger.e("Wait playback drain error: ${e.message}", e)
                         }
                     }
+                    // 用户已在此期间停止时 markStopped 先写终态，此处按首写生效语义为 no-op
+                    attempt?.markSuccess()
                     stopPlayback()
                 }
             }
@@ -201,6 +218,7 @@ class TtsPreviewPlayer(
     fun stop() {
         TtsLogger.d("Stopping playback")
         isStopped.set(true)
+        playbackAttempt?.markStopped()
         audioPlayer?.stop()
         stopPlayback()
     }
@@ -311,6 +329,10 @@ class TtsPreviewPlayer(
     }
 
     private fun stopPlayback() {
+        // 同步消费本场 attempt：后续 speak() 会立即写入新场次，
+        // 异步收尾协程只允许上报已捕获的局部引用
+        val attempt = playbackAttempt
+        playbackAttempt = null
         wavePollJob?.cancel()
         wavePollJob = null
         serviceScope.launch(Dispatchers.IO) {
@@ -326,6 +348,15 @@ class TtsPreviewPlayer(
                 currentProvider?.stop()
             } catch (e: Exception) {
                 TtsLogger.e("Error stopping provider: ${e.message}", e)
+            }
+
+            // 未经显式 mark 的终态（provider onError / 播放器错误路径）按错误收尾
+            attempt?.let {
+                val errMsg = lastErrorMessage
+                if (errMsg != null) {
+                    it.markError(TtsErrorCode.inferErrorCodeFromMessage(errMsg).toString())
+                }
+                it.report()
             }
 
             if (currentState != STATE_STOPPED) {

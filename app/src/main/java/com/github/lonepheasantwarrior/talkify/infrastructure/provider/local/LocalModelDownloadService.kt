@@ -5,11 +5,13 @@ import android.app.Service
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.github.lonepheasantwarrior.talkify.MainActivity
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +95,14 @@ class LocalModelDownloadService : Service() {
     private var downloadJob: Job? = null
     private val isCancelled = AtomicBoolean(false)
 
+    /** 最近一次通知展示的下载进度（终态上报"取消/失败时刻的进度"用） */
+    @Volatile
+    private var lastProgress = 0
+
+    /** 本次下载任务开始时刻（耗时统计） */
+    @Volatile
+    private var downloadStartUptimeMs = 0L
+
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(CONNECT_TIMEOUT, TimeUnit.SECONDS)
@@ -144,6 +154,14 @@ class LocalModelDownloadService : Service() {
         // 标记下载状态
         LocalModelManager.setDownloadingModelId(modelId)
         isCancelled.set(false)
+        downloadStartUptimeMs = SystemClock.elapsedRealtime()
+        lastProgress = 0
+
+        AppActionTracker.modelDownloadStart(
+            modelId,
+            modelInfo.downloadFileInfo.size,
+            (modelInfo.downloadSizeBytes / (1024L * 1024L)).toInt()
+        )
 
         // 启动下载任务
         downloadJob = scope.launch {
@@ -651,6 +669,7 @@ class LocalModelDownloadService : Service() {
     }
 
     private fun updateProgressNotification(displayName: String, progress: Int) {
+        lastProgress = progress
         val notification = buildProgressNotification(displayName, progress)
         NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
     }
@@ -665,6 +684,12 @@ class LocalModelDownloadService : Service() {
     private fun onDownloadCompleted(modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo) {
         TtsLogger.i("Download completed: ${modelInfo.id}", tag = TAG)
         LocalModelManager.setDownloadingModelId(null)
+        AppActionTracker.modelDownloadResult(
+            modelInfo.id,
+            AppActionTracker.STATUS_COMPLETED,
+            (SystemClock.elapsedRealtime() - downloadStartUptimeMs).toInt(),
+            progress = 100
+        )
 
         // 显示完成通知
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -705,6 +730,13 @@ class LocalModelDownloadService : Service() {
     ) {
         TtsLogger.e("Download failed: ${modelInfo.id}, reason: $reason", tag = TAG)
         LocalModelManager.setDownloadingModelId(null)
+        AppActionTracker.modelDownloadResult(
+            modelInfo.id,
+            AppActionTracker.STATUS_FAILED,
+            (SystemClock.elapsedRealtime() - downloadStartUptimeMs).toInt(),
+            lastProgress,
+            errorReason = reason
+        )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.model_download_failed_title))
@@ -732,6 +764,12 @@ class LocalModelDownloadService : Service() {
     ) {
         TtsLogger.i("Download cancelled: ${modelInfo.id}", tag = TAG)
         LocalModelManager.setDownloadingModelId(null)
+        AppActionTracker.modelDownloadResult(
+            modelInfo.id,
+            AppActionTracker.STATUS_CANCELLED,
+            (SystemClock.elapsedRealtime() - downloadStartUptimeMs).toInt(),
+            lastProgress
+        )
         cleanupPartialFiles(modelDir)
 
         NotificationManagerCompat.from(this).cancel(NOTIFICATION_ID)

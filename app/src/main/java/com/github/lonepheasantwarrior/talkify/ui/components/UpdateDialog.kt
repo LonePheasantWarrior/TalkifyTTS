@@ -25,20 +25,32 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateInfo
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 
+/**
+ * 更新弹窗
+ *
+ * @param source 弹窗来源：startup（启动自动检查弹出）/ manual（关于页手动检查弹出）
+ */
 @Composable
 fun UpdateDialog(
     updateInfo: UpdateInfo,
     onDismiss: () -> Unit,
     onRemindLater: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    source: String = AppActionTracker.TRIGGER_STARTUP
 ) {
     val context = LocalContext.current
     val hasReleaseNotes = updateInfo.releaseNotes.length > 0
     val scrollState = rememberScrollState()
 
     AlertDialog(
-        onDismissRequest = onRemindLater,
+        onDismissRequest = {
+            AppActionTracker.updateDialogAction(
+                source, AppActionTracker.ACTION_REMIND_LATER, updateInfo.versionName
+            )
+            onRemindLater()
+        },
         modifier = modifier,
         icon = {
             Icon(
@@ -103,6 +115,9 @@ fun UpdateDialog(
         confirmButton = {
             TextButton(
                 onClick = {
+                    AppActionTracker.updateDialogAction(
+                        source, AppActionTracker.ACTION_UPDATE_NOW, updateInfo.versionName
+                    )
                     openDownloadUrl(context, updateInfo)
                     onDismiss()
                 }
@@ -115,7 +130,12 @@ fun UpdateDialog(
         },
         dismissButton = {
             TextButton(
-                onClick = onRemindLater
+                onClick = {
+                    AppActionTracker.updateDialogAction(
+                        source, AppActionTracker.ACTION_REMIND_LATER, updateInfo.versionName
+                    )
+                    onRemindLater()
+                }
             ) {
                 Text(
                     text = stringResource(R.string.update_remind_later),

@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProvider
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
 import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyMotion
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,7 +64,10 @@ fun ProviderSelector(
     )
 
     Card(
-        onClick = { showBottomSheet = true },
+        onClick = {
+            AppPageTracker.open(AppPageTracker.PATH_PROVIDER_SELECT, "ProviderSelect")
+            showBottomSheet = true
+        },
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer

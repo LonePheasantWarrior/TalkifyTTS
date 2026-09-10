@@ -82,9 +82,23 @@ object UmamiClient {
      *
      * @param eventName  事件名称（建议使用 snake_case）
      * @param properties 自定义属性，仅支持 String 和 Int 类型值
+     * @param url        事件发生的页面路径（默认 "/"）
      */
-    fun track(eventName: String, properties: Map<String, Any>) {
-        send(url = "/", name = eventName, data = properties)
+    fun track(eventName: String, properties: Map<String, Any>, url: String = "/") {
+        send(url = url, name = eventName, data = properties)
+    }
+
+    /**
+     * 阻塞上报一个自定义事件（同步等待响应返回）
+     *
+     * 仅供崩溃链路使用：进程随时被杀，异步请求大概率无法送达。
+     * 失败静默（仅日志），调用方需在外层限时，绝不在常规业务路径调用
+     *
+     * @param eventName  事件名称（建议使用 snake_case）
+     * @param properties 自定义属性，仅支持 String 和 Int 类型值
+     */
+    fun trackBlocking(eventName: String, properties: Map<String, Any>) {
+        sendBlocking(url = "/", name = eventName, data = properties)
     }
 
     /**
@@ -138,6 +152,34 @@ object UmamiClient {
                     TtsLogger.w(TAG) { "Umami 上报失败: ${e.message}" }
                 }
             })
+        } catch (e: Exception) {
+            TtsLogger.w(TAG) { "Umami 上报异常: ${e.message}" }
+        }
+    }
+
+    /**
+     * 阻塞式上报（崩溃链路专用）
+     *
+     * 与 [send] 同一协议与容错策略，仅改为同步 execute：
+     * 进程随时可能被杀，异步请求大概率无法送达，故此路径同步等待响应
+     */
+    private fun sendBlocking(
+        url: String,
+        type: String = "event",
+        name: String? = null,
+        data: Map<String, Any> = emptyMap(),
+        title: String? = null,
+    ) {
+        if (disabled) return
+        val context = TalkifyAppHolder.getContext() ?: return
+        try {
+            httpClient.newCall(buildRequest(context, url, type, name, data, title)).execute().use { response ->
+                if (!response.isSuccessful) {
+                    TtsLogger.w(TAG) { "Umami 上报失败: HTTP ${response.code}" }
+                    return
+                }
+                parseSessionResponse(response.body?.string())
+            }
         } catch (e: Exception) {
             TtsLogger.w(TAG) { "Umami 上报异常: ${e.message}" }
         }
