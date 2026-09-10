@@ -42,6 +42,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- 语音预览状态（委托 PreviewPlaybackController）---
     val isPreviewPlaying: StateFlow<Boolean> = previewPlayback.isPreviewPlaying
     val previewErrorMessage: StateFlow<String?> = previewPlayback.previewErrorMessage
+    val previewWaveform: StateFlow<FloatArray> = previewPlayback.previewWaveform
 
     // --- 下载进度状态（委托 LocalModelDownloadController）---
     val downloadProgress: StateFlow<DownloadProgress?> = modelDownload.downloadProgress

@@ -26,11 +26,16 @@ class PreviewPlaybackController {
     private val _previewErrorMessage = MutableStateFlow<String?>(null)
     val previewErrorMessage: StateFlow<String?> = _previewErrorMessage.asStateFlow()
 
+    private val emptyWaveform = FloatArray(TtsPreviewPlayer.WAVE_POINTS)
+    private val _previewWaveform = MutableStateFlow(emptyWaveform)
+    val previewWaveform: StateFlow<FloatArray> = _previewWaveform.asStateFlow()
+
     fun playPreview(providerId: String, text: String, config: BaseProviderConfig) {
         if (previewPlayer == null || currentPreviewProviderId != providerId) {
             TtsLogger.d(logTag) { "Initializing preview player for provider: $providerId" }
             previewPlayer?.release()
             previewPlayer = TtsPreviewPlayer(providerId).apply {
+                setAmplitudeListener { waveform -> _previewWaveform.value = waveform }
                 setStateListener { state, errorMessage ->
                     _isPreviewPlaying.value = state == TtsPreviewPlayer.STATE_PLAYING
                     if (state == TtsPreviewPlayer.STATE_ERROR) {
@@ -43,6 +48,7 @@ class PreviewPlaybackController {
 
         // 清除之前的错误信息
         _previewErrorMessage.value = null
+        _previewWaveform.value = emptyWaveform
         previewPlayer?.speak(text, config)
     }
 

@@ -51,6 +51,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
@@ -64,6 +65,7 @@ fun VoicePreview(
     selectedVoice: VoiceInfo?,
     onVoiceSelected: (VoiceInfo) -> Unit,
     isPlaying: Boolean,
+    waveform: FloatArray = FloatArray(0),
     onPlayClick: () -> Unit,
     onStopClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -148,6 +150,7 @@ fun VoicePreview(
             ) {
                 PlayStopButton(
                     isPlaying = isPlaying,
+                    waveform = waveform,
                     onPlayClick = onPlayClick,
                     onStopClick = onStopClick
                 )
@@ -259,6 +262,7 @@ private fun VoiceItem(
 @Composable
 private fun PlayStopButton(
     isPlaying: Boolean,
+    waveform: FloatArray,
     onPlayClick: () -> Unit,
     onStopClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -328,13 +332,12 @@ private fun PlayStopButton(
         ) { playing ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (playing) {
-                    EqualizerBars(
-                        barCount = 3,
+                    VoiceWaveBars(
+                        amplitudes = waveform,
                         color = contentColor,
-                        barWidth = 4.dp,
-                        barGap = 2.dp,
-                        minHeight = 10.dp,
-                        maxHeight = 22.dp
+                        modifier = Modifier
+                            .width(76.dp)
+                            .height(20.dp)
                     )
                 } else {
                     Icon(

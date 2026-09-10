@@ -196,6 +196,7 @@ fun MainScreen(
     // 语音预览状态观察
     val isPreviewPlaying by viewModel.isPreviewPlaying.collectAsState()
     val previewError by viewModel.previewErrorMessage.collectAsState()
+    val previewWaveform by viewModel.previewWaveform.collectAsState()
     // 提示文案提升到 Composable 顶层获取（回调 lambda 内不可调用 stringResource）
     val emptyInputHint = stringResource(R.string.input_empty_hint)
     val providerNotConfiguredHint = stringResource(R.string.provider_not_configured_hint)
@@ -467,6 +468,7 @@ fun MainScreen(
                             selectedVoice = selectedVoice,
                             onVoiceSelected = { voice -> selectedVoice = voice },
                             isPlaying = isPreviewPlaying,
+                            waveform = previewWaveform,
                             onPlayClick = {
                                 if (inputText.isBlank()) {
                                     scope.launch {

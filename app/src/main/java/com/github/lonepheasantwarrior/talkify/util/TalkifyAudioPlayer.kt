@@ -250,6 +250,20 @@ class TalkifyAudioPlayer(
         return isPlaying.get()
     }
 
+    /**
+     * 当前播放头帧位置（绝对帧数，自本 player 创建起单调递增）
+     *
+     * 供波形包络映射"此刻正在播放的音频段"；stop() 后 AudioTrack 播放头归零，
+     * 调用方须以新会话重新计数
+     */
+    fun currentPlaybackHeadFrames(): Int {
+        return try {
+            audioTrack?.playbackHeadPosition ?: 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
     fun addProgressListener(listener: (Float, Long) -> Unit) {
         progressListeners.add(listener)
     }
