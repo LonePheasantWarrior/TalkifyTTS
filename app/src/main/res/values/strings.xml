@@ -156,12 +156,15 @@
     <string name="about_privacy_description">了解我们如何保护你的信息安全</string>
     <string name="about_privacy_dialog_title">匿名信息收集声明</string>
     <string name="about_privacy_dialog_subtitle">为改善服务，仅匿名收集以下信息：</string>
-    <string name="about_privacy_item_hardware">设备硬件信息（CPU 架构、屏幕分辨率等）</string>
-    <string name="about_privacy_item_country">所在国家或地区</string>
-    <string name="about_privacy_item_network">网络类型（Wi-Fi / 蜂窝网络）</string>
-    <string name="about_privacy_item_tts">语音合成时使用的供应商和模型 ID（包含合成内容字数）</string>
-    <string name="about_privacy_disclaimer">以上信息均无法识别个人身份，不涉及任何隐私内容。</string>
+    <string name="about_privacy_item_device">设备与运行环境信息（机型、品牌、芯片平台、屏幕分辨率、内存、应用版本、系统版本、语言、所在国家或地区）</string>
+    <string name="about_privacy_item_network">网络类型（Wi-Fi / 蜂窝网络 / 以太网）</string>
+    <string name="about_privacy_item_usage">界面浏览与功能操作记录（打开过哪些界面、点击了哪些功能、合成结果与耗时）</string>
+    <string name="about_privacy_item_tts">语音合成时使用的供应商和模型 ID（包含合成内容字数，不含文本内容）</string>
+    <string name="about_privacy_item_crash">崩溃诊断信息（异常类型与线程名称，不含异常消息）</string>
+    <string name="about_privacy_disclaimer">以上信息均无法识别个人身份，不涉及任何隐私内容。我们不收集姓名、手机号、通讯录、相册、定位及任何设备标识符；API Key 仅保存在你的设备本地；使用本地离线模型时，朗读文本不会离开你的设备。</string>
     <string name="about_privacy_confirm">我知道了</string>
+    <string name="about_privacy_view_full">查看完整隐私政策</string>
+    <string name="about_privacy_policy_url">https://lonepheasantwarrior.github.io/TalkifyTTS/doc/privacy-policy.html</string>
 
     <!-- 检查更新 -->
     <string name="check_for_updates">检查更新</string>

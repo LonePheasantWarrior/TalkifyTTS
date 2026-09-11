@@ -505,6 +505,7 @@ object AppActionTracker {
 
     // external_link_open.target
     const val TARGET_GITHUB = "github"
+    const val TARGET_PRIVACY_POLICY = "privacy_policy"
 
     // settings_jump.source
     const val SOURCE_DEFAULT_BANNER = "default_banner"

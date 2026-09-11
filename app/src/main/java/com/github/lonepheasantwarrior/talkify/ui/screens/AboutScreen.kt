@@ -11,8 +11,6 @@ import android.os.Environment
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -25,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -104,10 +103,10 @@ fun AboutScreen(
 
     var showDonateSheet by remember { mutableStateOf(false) }
     var showDonateInstruction by remember { mutableStateOf<DonateChannel?>(null) }
-    var pendingDonateChannel by remember { mutableStateOf<DonateChannel?>(null) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
 
     val githubUrl = stringResource(R.string.about_github_url)
+    val privacyPolicyUrl = stringResource(R.string.about_privacy_policy_url)
 
     val updateChecker = remember { UpdateChecker() }
     var isCheckingUpdate by remember { mutableStateOf(false) }
@@ -135,19 +134,6 @@ fun AboutScreen(
     fun requestSaveQrCode(channel: DonateChannel) {
         AppActionTracker.donateChannelClick(donateChannelKey(channel), AppActionTracker.URL_ABOUT)
         saveAndReportQr(channel)
-    }
-
-    rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val allGranted = permissions.values.all { it }
-        if (allGranted && pendingDonateChannel != null) {
-            val channel = pendingDonateChannel!!
-            pendingDonateChannel = null
-            saveAndReportQr(channel)
-        } else {
-            pendingDonateChannel = null
-        }
     }
 
     Scaffold(
@@ -655,10 +641,11 @@ fun AboutScreen(
     // 匿名信息收集声明弹窗
     if (showPrivacyDialog) {
         val privacyItems = listOf(
-            stringResource(R.string.about_privacy_item_hardware),
-            stringResource(R.string.about_privacy_item_country),
+            stringResource(R.string.about_privacy_item_device),
             stringResource(R.string.about_privacy_item_network),
-            stringResource(R.string.about_privacy_item_tts)
+            stringResource(R.string.about_privacy_item_usage),
+            stringResource(R.string.about_privacy_item_tts),
+            stringResource(R.string.about_privacy_item_crash)
         )
 
         AlertDialog(
@@ -688,7 +675,10 @@ fun AboutScreen(
             },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     privacyItems.forEachIndexed { index, item ->
@@ -718,27 +708,29 @@ fun AboutScreen(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = "\uD83D\uDD12",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(R.string.about_privacy_disclaimer),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
+                        Text(
+                            text = stringResource(R.string.about_privacy_disclaimer),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(12.dp)
+                        )
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { showPrivacyDialog = false }) {
                     Text(stringResource(R.string.about_privacy_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    AppActionTracker.externalLinkOpen(
+                        AppActionTracker.TARGET_PRIVACY_POLICY,
+                        AppActionTracker.URL_ABOUT
+                    )
+                    uriHandler.openUri(privacyPolicyUrl)
+                }) {
+                    Text(stringResource(R.string.about_privacy_view_full))
                 }
             },
             shape = RoundedCornerShape(24.dp)
