@@ -1,16 +1,16 @@
 [versions]
 agp = "9.4.1"
-kotlin = "2.4.10"
-coreKtx = "1.19.0"
+kotlin = "2.4.20"
+coreKtx = "1.19.1"
 junit = "4.13.2"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
-composeBom = "2026.08.00"
-dashscope = "2.22.32"
+composeBom = "2026.09.00"
+dashscope = "2.23.1"
 jlayer = "1.0.1"
-navigationCompose = "2.10.0"
+navigationCompose = "2.10.2"
 #为兼容dashscope，okhttp停留在4.12.0版本
 #noinspection NewerVersionAvailable
 okhttp = "4.12.0"
