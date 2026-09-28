@@ -66,6 +66,15 @@ sealed class ProviderIds {
     }
 
     /**
+     * Google - Gemini TTS 语音合成供应商
+     */
+    data object Google : ProviderIds() {
+        override val providerId: String = "google"
+        override val defaultModelId: String = "gemini-3.8-flash-lite-tts"
+        override val provider: String = "Google"
+    }
+
+    /**
      * 本地模型 - 离线 AI 语音合成
      */
     data object LocalModel : ProviderIds() {
@@ -94,7 +103,7 @@ sealed class ProviderIds {
          * 获取所有定义的供应商 ID 列表
          */
         val entries: List<ProviderIds> by lazy {
-            listOf(Azure, Volcengine, TencentCloud, AliyunBailian, Xiaomi, MiniMax, LocalModel)
+            listOf(Azure, Volcengine, TencentCloud, AliyunBailian, Xiaomi, MiniMax, Google, LocalModel)
         }
     }
 }

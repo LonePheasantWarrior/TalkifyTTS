@@ -75,6 +75,45 @@ internal object MiniMaxErrorParser {
     }
 }
 
+internal object GoogleErrorParser {
+
+    /**
+     * 解析 Gemini API 错误响应体
+     *
+     * 标准结构：`{"error": {"code": 429, "message": "...", "status": "RESOURCE_EXHAUSTED"}}`。
+     * 优先透出服务端 message，并按 status/code 附加中文指引。
+     */
+    fun parse(errorBody: String): String {
+        return try {
+            val json = JSONObject(errorBody)
+            val error = json.optJSONObject("error")
+                ?: return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED)
+
+            val serverMessage = error.optString("message", "")
+            val status = error.optString("status", "")
+            val code = error.optInt("code", 0)
+            val hint = when {
+                status == "UNAUTHENTICATED" || code == 401 -> "认证失败：请检查 API Key 是否正确"
+                status == "PERMISSION_DENIED" || code == 403 -> "访问被拒绝：请确认 API Key 已开通 Gemini TTS 权限"
+                status == "NOT_FOUND" || code == 404 -> "接口或模型不存在：请检查 API 地址与模型 ID"
+                status == "RESOURCE_EXHAUSTED" || code == 429 -> "配额已用尽或请求过于频繁，请稍后重试"
+                status == "FAILED_PRECONDITION" -> "前置条件不满足：请确认已在 Google AI Studio 开通相应服务"
+                status == "INVALID_ARGUMENT" || code == 400 -> "请求参数错误：请检查模型 ID、音色 ID 或文本内容"
+                status == "UNAVAILABLE" || status == "INTERNAL" -> "Google 服务暂时不可用，请稍后重试"
+                else -> ""
+            }
+            when {
+                serverMessage.isNotBlank() && hint.isNotBlank() -> "$serverMessage（$hint）"
+                serverMessage.isNotBlank() -> serverMessage
+                hint.isNotBlank() -> "语音合成失败：$hint"
+                else -> "语音合成失败 (code: $code)"
+            }
+        } catch (_: Exception) {
+            TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED)
+        }
+    }
+}
+
 internal object TencentErrorParser {
 
     private val ERROR_CODE_MAP = mapOf(

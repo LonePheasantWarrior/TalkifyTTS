@@ -39,6 +39,36 @@ class ProviderErrorParsersTest {
         assertEquals("boom", VolcengineErrorParser.parse(body))
     }
 
+    // ---- Google ----
+
+    @Test
+    fun `google parses message with status hint`() {
+        val body = """{"error":{"code":429,"message":"quota exceeded","status":"RESOURCE_EXHAUSTED"}}"""
+        assertEquals("quota exceeded（配额已用尽或请求过于频繁，请稍后重试）", GoogleErrorParser.parse(body))
+    }
+
+    @Test
+    fun `google maps auth error without message`() {
+        val body = """{"error":{"code":401,"status":"UNAUTHENTICATED"}}"""
+        assertEquals("语音合成失败：认证失败：请检查 API Key 是否正确", GoogleErrorParser.parse(body))
+    }
+
+    @Test
+    fun `google not found error includes address hint`() {
+        val body = """{"error":{"code":404,"status":"NOT_FOUND"}}"""
+        assertEquals("语音合成失败：接口或模型不存在：请检查 API 地址与模型 ID", GoogleErrorParser.parse(body))
+    }
+
+    @Test
+    fun `google falls back to generic message for invalid json`() {
+        assertEquals("语音合成失败", GoogleErrorParser.parse("not-a-json"))
+    }
+
+    @Test
+    fun `google falls back to generic message without error object`() {
+        assertEquals("语音合成失败", GoogleErrorParser.parse("""{"foo":1}"""))
+    }
+
     // ---- MiniMax ----
 
     @Test

@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.service.provider
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ParamMappersTest {
@@ -85,5 +86,22 @@ class ParamMappersTest {
         assertEquals(2.0f, MiniMaxParamMapper.convertVolume(1.0f))
         assertEquals(1.0f, MiniMaxParamMapper.convertVolume(0f))
         assertEquals(1.5f, MiniMaxParamMapper.convertVolume(0.5f))
+    }
+
+    // ---- Google ----
+
+    @Test
+    fun `google speech rate hint silent in dead zone`() {
+        assertNull(GoogleParamMapper.speechRateStyleHint(100f))
+        assertNull(GoogleParamMapper.speechRateStyleHint(75f))
+        assertNull(GoogleParamMapper.speechRateStyleHint(150f))
+    }
+
+    @Test
+    fun `google speech rate hint outside dead zone`() {
+        assertEquals("speaking slowly", GoogleParamMapper.speechRateStyleHint(74.9f))
+        assertEquals("speaking slowly", GoogleParamMapper.speechRateStyleHint(50f))
+        assertEquals("speaking rapidly", GoogleParamMapper.speechRateStyleHint(150.1f))
+        assertEquals("speaking rapidly", GoogleParamMapper.speechRateStyleHint(200f))
     }
 }

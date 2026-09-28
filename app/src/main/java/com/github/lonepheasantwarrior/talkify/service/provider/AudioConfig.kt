@@ -73,6 +73,16 @@ data class AudioConfig(
         )
 
         /**
+         * Google Gemini TTS 默认配置
+         * 参考 Gemini API 文档，流式合成默认输出 headerless raw PCM 16bit 24kHz
+         */
+        val GEMINI_TTS = AudioConfig(
+            sampleRate = 24000,
+            audioFormat = AudioFormat.ENCODING_PCM_16BIT,
+            channelCount = 1
+        )
+
+        /**
          * MiniMax 语音合成默认配置
          * 参考 MiniMax API 文档，音频输出格式为 PCM 16bit 32kHz
          * MiniMax 返回的是 hex 编码的 PCM 数据

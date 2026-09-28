@@ -67,6 +67,38 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
     /** HTTP 非 2xx 时将错误响应体解析为用户可读消息 */
     protected abstract fun mapHttpError(errorBody: String): String
 
+    /**
+     * 返回发起 HTTP 请求使用的 OkHttpClient。
+     * 默认为全局共享客户端；需要自定义网络行为（如经代理访问）的供应商可覆写。
+     * 每个分块请求都会调用，实现应保持轻量（可通过 [OkHttpClient.newBuilder]
+     * 复用共享连接池，或自行缓存构建结果）。
+     */
+    protected open fun httpClientFor(config: BaseProviderConfig): OkHttpClient = sharedOkHttpClient
+
+    @Volatile
+    private var cachedProxiedClient: OkHttpClient? = null
+
+    @Volatile
+    private var cachedProxiedKey: String? = null
+
+    /**
+     * 基于全局共享客户端派生一个走指定代理的客户端。
+     * newBuilder() 复用共享连接池与调度线程池，构建开销可忽略；
+     * 结果按代理参数缓存，代理设置未变化时不重复构建。
+     */
+    protected fun proxiedHttpClient(setting: ProxySetting): OkHttpClient {
+        val key = "${setting.isSocks}|${setting.host}|${setting.port}"
+        cachedProxiedClient?.let { cached ->
+            if (cachedProxiedKey == key) return cached
+        }
+        val built = sharedOkHttpClient.newBuilder()
+            .proxy(setting.toJavaProxy())
+            .build()
+        cachedProxiedKey = key
+        cachedProxiedClient = built
+        return built
+    }
+
     // ==================== 共享设施 ====================
 
     protected val providerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -236,7 +268,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
         try {
             val request = buildHttpRequest(text, config, params)
 
-            val call = sharedOkHttpClient.newCall(request)
+            val call = httpClientFor(config).newCall(request)
             inFlightCalls.add(call)
 
             try {

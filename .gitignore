@@ -21,3 +21,4 @@ local.properties
 /.idea/
 /.vscode/
 /doc/local/
+/.zcodeignore

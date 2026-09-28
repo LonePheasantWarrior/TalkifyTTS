@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -98,6 +100,7 @@ fun ConfigEditor(
 
     val regularItems = localConfigItems.filter { it.key !in advancedItemKeys }
     val advancedItems = localConfigItems.filter { it.key in advancedItemKeys }
+    val hasVisibleAdvancedItems = advancedItems.any { it.isVisibleIn(localConfigItems) }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -121,49 +124,51 @@ fun ConfigEditor(
 
             // 基础配置项
             regularItems.forEach { item ->
-                ConfigItemEditor(
-                    item = item,
-                    availableVoices = availableVoices,
-                    onValueChange = { newValue ->
-                        localConfigItems = localConfigItems.map {
-                            if (it.key == item.key) it.copy(value = newValue) else it
-                        }
-                        isModified = true
-                        onItemValueChange(item, newValue)
-                    },
-                    onVoiceSelected = onVoiceSelected
-                )
-                val downloadState = downloadingModelProgress
-                if (item.key == "model_id" && downloadState != null && !downloadState.isCompleted) {
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = downloadState.progress / 100f,
-                        animationSpec = TalkifyMotion.effectsDefault,
-                        label = "model_download_progress"
+                AnimatedConfigItem(item = item, allItems = localConfigItems) {
+                    ConfigItemEditor(
+                        item = item,
+                        availableVoices = availableVoices,
+                        onValueChange = { newValue ->
+                            localConfigItems = localConfigItems.map {
+                                if (it.key == item.key) it.copy(value = newValue) else it
+                            }
+                            isModified = true
+                            onItemValueChange(item, newValue)
+                        },
+                        onVoiceSelected = onVoiceSelected
                     )
-                    LinearProgressIndicator(
-                        progress = { animatedProgress },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(
-                            R.string.model_download_progress,
-                            downloadState.displayName,
-                            downloadState.progress
-                        ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    val downloadState = downloadingModelProgress
+                    if (item.key == "model_id" && downloadState != null && !downloadState.isCompleted) {
+                        val animatedProgress by animateFloatAsState(
+                            targetValue = downloadState.progress / 100f,
+                            animationSpec = TalkifyMotion.effectsDefault,
+                            label = "model_download_progress"
+                        )
+                        LinearProgressIndicator(
+                            progress = { animatedProgress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.model_download_progress,
+                                downloadState.displayName,
+                                downloadState.progress
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
             }
-            if (advancedItems.isNotEmpty()) {
+            if (hasVisibleAdvancedItems) {
                 Spacer(modifier = Modifier.height(4.dp))
 
                 AdvancedSettingsSection(
                     expanded = advancedExpanded,
                     onToggle = { advancedExpanded = !advancedExpanded },
                     advancedItems = advancedItems,
+                    allItems = localConfigItems,
                     availableVoices = availableVoices,
                     onValueChange = { item, newValue ->
                         localConfigItems = localConfigItems.map {
@@ -192,16 +197,55 @@ fun ConfigEditor(
 }
 
 /**
+ * 配置项在给定列表语境下是否展示（[ConfigItem.visibleWhen] 为 null 时始终展示）
+ */
+private fun ConfigItem.isVisibleIn(items: List<ConfigItem>): Boolean =
+    visibleWhen?.invoke(items) ?: true
+
+/**
+ * 配置项条目的出现/消失过渡容器。
+ *
+ * 依据 [ConfigItem.visibleWhen] 以「展开/收起 + 淡入/淡出」过渡条目的展示与隐藏
+ * （动画语言与"高级设置"折叠面板一致），避免配置项联动显隐时的突兀跳变。
+ * 隐藏仅影响渲染，条目值仍保留在配置列表中随保存持久化。
+ */
+@Composable
+private fun AnimatedConfigItem(
+    item: ConfigItem,
+    allItems: List<ConfigItem>,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = item.isVisibleIn(allItems),
+        enter = expandVertically(
+            animationSpec = TalkifyMotion.spatialDefaultOf(IntSize.VisibilityThreshold)
+        ) + fadeIn(animationSpec = TalkifyMotion.effectsDefaultOf()),
+        exit = shrinkVertically(
+            animationSpec = TalkifyMotion.spatialDefaultOf(IntSize.VisibilityThreshold)
+        ) + fadeOut(animationSpec = TalkifyMotion.effectsDefaultOf())
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            content()
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+/**
  * 高级设置折叠面板
  *
  * 遵循 Material 3 Expressive 设计规范，将 API 地址、模型 ID 等非核心配置项
  * 折叠为一个可展开的"高级设置"区域，保持配置界面的清爽整洁。
+ *
+ * @param advancedItems 待渲染的高级配置项（不含条件隐藏过滤，显隐由条目过渡动画承接）
+ * @param allItems 全部配置项，作为 [ConfigItem.visibleWhen] 的联动判断语境
  */
 @Composable
 private fun AdvancedSettingsSection(
     expanded: Boolean,
     onToggle: () -> Unit,
     advancedItems: List<ConfigItem>,
+    allItems: List<ConfigItem>,
     availableVoices: List<VoiceInfo>,
     onValueChange: (ConfigItem, String) -> Unit,
     onVoiceSelected: (VoiceInfo) -> Unit
@@ -285,15 +329,16 @@ private fun AdvancedSettingsSection(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     advancedItems.forEach { item ->
-                        ConfigItemEditor(
-                            item = item,
-                            availableVoices = availableVoices,
-                            onValueChange = { newValue ->
-                                onValueChange(item, newValue)
-                            },
-                            onVoiceSelected = onVoiceSelected
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        AnimatedConfigItem(item = item, allItems = allItems) {
+                            ConfigItemEditor(
+                                item = item,
+                                availableVoices = availableVoices,
+                                onValueChange = { newValue ->
+                                    onValueChange(item, newValue)
+                                },
+                                onVoiceSelected = onVoiceSelected
+                            )
+                        }
                     }
                 }
             }
@@ -395,6 +440,9 @@ private fun ConfigItemEditor(
             onValueChange = onValueChange,
             label = { Text(item.label) },
             placeholder = item.placeholder?.let { { Text(it) } },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (item.isNumericKeyboard) KeyboardType.Number else KeyboardType.Text
+            ),
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
             singleLine = true,

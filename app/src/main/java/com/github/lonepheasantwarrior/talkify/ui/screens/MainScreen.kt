@@ -74,6 +74,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.AliyunBailianConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.AzureConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.GoogleConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
@@ -533,6 +534,10 @@ fun MainScreen(
                                         val mmConfig = savedConfig as? MiniMaxConfig ?: MiniMaxConfig()
                                         mmConfig.copy(voiceId = selectedVoice?.voiceId ?: mmConfig.voiceId)
                                     }
+                                    is GoogleConfig -> {
+                                        val googleConfig = savedConfig as? GoogleConfig ?: GoogleConfig()
+                                        googleConfig.copy(voiceId = selectedVoice?.voiceId ?: googleConfig.voiceId)
+                                    }
                                     is LocalModelConfig -> {
                                         val lmConfig = savedConfig as? LocalModelConfig ?: LocalModelConfig()
                                         lmConfig.copy(voiceId = selectedVoice?.voiceId ?: lmConfig.voiceId)
@@ -549,6 +554,7 @@ fun MainScreen(
                                     is AzureConfig -> true
                                     is XiaomiConfig -> config.apiKey.isNotBlank()
                                     is MiniMaxConfig -> config.apiKey.isNotBlank()
+                                    is GoogleConfig -> config.apiKey.isNotBlank()
                                     is LocalModelConfig -> config.modelId.isNotBlank() && LocalModelManager.isModelDownloaded(config.modelId)
                                     else -> false
                                 }

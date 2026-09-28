@@ -96,3 +96,23 @@ internal object MiniMaxParamMapper {
         return (1.0f + volume * 1.0f).coerceIn(0.1f, 10f)
     }
 }
+
+internal object GoogleParamMapper {
+
+    /**
+     * Android 语速 [0,200] → Gemini speech_metadata.style 语气提示。
+     *
+     * Gemini TTS 没有数值化的语速参数，仅支持通过 style 自然语言控制语速
+     * （如 "speaking slowly" / "speaking rapidly"）。为避免轻微偏离默认语速
+     * 时产生不必要的风格干预，仅在明显偏离（<0.75x 或 >1.5x）时给出提示。
+     *
+     * @return 风格提示短语，默认语速区间返回 null（不干预）
+     */
+    fun speechRateStyleHint(androidRate: Float): String? {
+        return when {
+            androidRate < 75f -> "speaking slowly"
+            androidRate > 150f -> "speaking rapidly"
+            else -> null
+        }
+    }
+}

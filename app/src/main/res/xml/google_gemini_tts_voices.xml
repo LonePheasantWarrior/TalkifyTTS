@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voices>
+    <voice id="Zephyr"        displayName="Zephyr（明亮）"   description="Bright" language="多语言" />
+    <voice id="Puck"          displayName="Puck（活力）"     description="Upbeat" language="多语言" />
+    <voice id="Charon"        displayName="Charon（资讯）"   description="Informative" language="多语言" />
+    <voice id="Kore"          displayName="Kore（坚定）"     description="Firm" language="多语言" />
+    <voice id="Fenrir"        displayName="Fenrir（激昂）"   description="Excitable" language="多语言" />
+    <voice id="Leda"          displayName="Leda（青春）"     description="Youthful" language="多语言" />
+    <voice id="Orus"          displayName="Orus（坚定）"     description="Firm" language="多语言" />
+    <voice id="Aoede"         displayName="Aoede（轻快）"    description="Breezy" language="多语言" />
+    <voice id="Callirrhoe"    displayName="Callirrhoe（随和）" description="Easy-going" language="多语言" />
+    <voice id="Autonoe"       displayName="Autonoe（明亮）"  description="Bright" language="多语言" />
+    <voice id="Enceladus"     displayName="Enceladus（气声）" description="Breathy" language="多语言" />
+    <voice id="Iapetus"       displayName="Iapetus（清澈）"  description="Clear" language="多语言" />
+    <voice id="Umbriel"       displayName="Umbriel（随和）"  description="Easy-going" language="多语言" />
+    <voice id="Algieba"       displayName="Algieba（圆润）"  description="Smooth" language="多语言" />
+    <voice id="Despina"       displayName="Despina（圆润）"  description="Smooth" language="多语言" />
+    <voice id="Erinome"       displayName="Erinome（清澈）"  description="Clear" language="多语言" />
+    <voice id="Algenib"       displayName="Algenib（沙哑）"  description="Gravelly" language="多语言" />
+    <voice id="Rasalgethi"    displayName="Rasalgethi（资讯）" description="Informative" language="多语言" />
+    <voice id="Laomedeia"     displayName="Laomedeia（活力）" description="Upbeat" language="多语言" />
+    <voice id="Achernar"      displayName="Achernar（柔和）" description="Soft" language="多语言" />
+    <voice id="Alnilam"       displayName="Alnilam（坚定）"  description="Firm" language="多语言" />
+    <voice id="Schedar"       displayName="Schedar（平稳）"  description="Even" language="多语言" />
+    <voice id="Gacrux"        displayName="Gacrux（成熟）"   description="Mature" language="多语言" />
+    <voice id="Pulcherrima"   displayName="Pulcherrima（直率）" description="Forward" language="多语言" />
+    <voice id="Achird"        displayName="Achird（友好）"   description="Friendly" language="多语言" />
+    <voice id="Zubenelgenubi" displayName="Zubenelgenubi（轻松）" description="Casual" language="多语言" />
+    <voice id="Vindemiatrix"  displayName="Vindemiatrix（温和）" description="Gentle" language="多语言" />
+    <voice id="Sadachbia"     displayName="Sadachbia（活泼）" description="Lively" language="多语言" />
+    <voice id="Sadaltager"    displayName="Sadaltager（知性）" description="Knowledgeable" language="多语言" />
+    <voice id="Sulafat"       displayName="Sulafat（温暖）"  description="Warm" language="多语言" />
+</voices>

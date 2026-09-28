@@ -8,6 +8,8 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.Aliyu
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AliyunBailianVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AzureConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AzureVoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.GoogleConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.GoogleVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.MiniMaxConfigRepository
@@ -21,6 +23,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.Xiaom
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.AliyunBailianProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.AzureProvider
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.GoogleProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.MiniMaxProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.TencentCloudProvider
@@ -136,6 +139,11 @@ object TtsProviderFactory {
                 providerFactory = { MiniMaxProvider() },
                 createConfigRepo = { ctx -> MiniMaxConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> MiniMaxVoiceRepository(ctx) }
+            ),
+            ProviderIds.Google.providerId to ComponentFactories(
+                providerFactory = { GoogleProvider() },
+                createConfigRepo = { ctx -> GoogleConfigRepository(ctx) },
+                createVoiceRepo = { ctx -> GoogleVoiceRepository(ctx) }
             ),
             ProviderIds.LocalModel.providerId to ComponentFactories(
                 providerFactory = { LocalModelProvider() },

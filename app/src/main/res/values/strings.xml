@@ -46,6 +46,18 @@
     <string name="tencent_app_id_label">App ID</string>
     <string name="tencent_secret_id_label">Secret ID</string>
     <string name="tencent_secret_key_label">Secret Key</string>
+
+    <!-- 网络代理（Google 供应商） -->
+    <string name="label_proxy_protocol">代理协议</string>
+    <string name="label_proxy_host">代理主机</string>
+    <string name="label_proxy_port">代理端口</string>
+    <string name="proxy_protocol_none">无</string>
+    <string name="proxy_protocol_http">HTTP</string>
+    <string name="proxy_protocol_socks">SOCKS</string>
+    <string name="proxy_host_placeholder">如 127.0.0.1</string>
+    <string name="proxy_port_placeholder">如 7890</string>
+    <string name="gemini_style_instruction_edit_title">风格指令编辑</string>
+    <string name="gemini_style_instruction_guide_content">### 自然语言风格控制\n\nGemini TTS 将输入文本严格视为**逐字稿**，朗读风格通过风格指令（speech_metadata.style）单独控制，适合描述贯穿整段的情感、语体、语速与音量。\n\n**示例：**\n\n&gt; 用温柔的语气朗读\n\n&gt; 用新闻播报的风格朗读，吐字清晰，语速平稳\n\n&gt; 压低声音，缓慢地朗读，营造深夜电台的氛围\n\n**使用建议：**\n\n- 先留空风格指令试听，多数文本无需额外描述即可获得自然的朗读效果\n- 需要微调时使用简短的风格描述（如 “casual, friendly”），同一场景保持描述一致可稳定音色\n- 系统语速明显调快或调慢时，应用会自动附加语速提示，无需在指令中重复描述\n\n**行内标签：**\n\n可在朗读文本中使用英文尖括号标签控制瞬时的发声与停顿，例如：\n\n&gt; Hold on, let me think… &lt;short pause&gt; Alright, I\'ve got it.\n\n常用标签：`&lt;laugh&gt;`、`&lt;sigh&gt;`、`&lt;cough&gt;`、`&lt;breath&gt;`、`&lt;short pause&gt;`、`&lt;long pause&gt;`。标签属于逐字稿的一部分，不要写入风格指令。</string>
     <string name="voice_select_placeholder">请选择声音</string>
     <string name="save_config">保存配置</string>
     <string name="advanced_settings">高级设置</string>
@@ -206,7 +218,7 @@
     <string name="model_download_confirm_message">该模型大小约 %1$s，需要下载后方可使用，是否立即下载？</string>
     <string name="model_downloading_title">正在下载 %1$s</string>
     <string name="model_downloading_verifying_title">正在校验 %1$s</string>
-    <string name="model_downloading_verifying_hint">正在校验模型文件...</string>
+    <string name="model_downloading_verifying_hint">正在校验模型文件…</string>
     <string name="model_download_complete">%1$s 下载完成</string>
     <string name="model_download_complete_hint">模型下载完成，可以开始使用</string>
     <string name="model_download_failed_title">下载失败</string>
@@ -215,7 +227,7 @@
     <string name="model_another_downloading">另一模型正在下载中，请等待完成后再试</string>
     <string name="model_download_progress">正在下载 %1$s · %2$d%%</string>
     <string name="model_status_downloaded">✓</string>
-    <string name="model_status_downloading">[下载中...]</string>
+    <string name="model_status_downloading">[下载中…]</string>
     <string name="model_status_error">[错误]</string>
     <string name="model_not_downloaded">[未下载]</string>
 </resources>
