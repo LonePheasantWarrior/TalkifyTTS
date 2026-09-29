@@ -116,3 +116,23 @@ internal object GoogleParamMapper {
         }
     }
 }
+
+internal object OpenAIParamMapper {
+
+    /**
+     * Android 语速 [0,200] → OpenAI instructions 语气提示。
+     *
+     * gpt-4o-mini-tts 不支持数值化的 speed 参数，语速经 instructions
+     * 自然语言控制（如 "speaking slowly" / "speaking rapidly"）。
+     * 与 [GoogleParamMapper] 同一策略：仅在明显偏离（<0.75x 或 >1.5x）时提示。
+     *
+     * @return 风格提示短语，默认语速区间返回 null（不干预）
+     */
+    fun speechRateStyleHint(androidRate: Float): String? {
+        return when {
+            androidRate < 75f -> "speaking slowly"
+            androidRate > 150f -> "speaking rapidly"
+            else -> null
+        }
+    }
+}

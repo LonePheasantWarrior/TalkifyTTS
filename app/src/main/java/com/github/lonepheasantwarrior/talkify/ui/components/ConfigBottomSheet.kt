@@ -36,6 +36,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
+import com.github.lonepheasantwarrior.talkify.domain.model.OpenAIConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentCloudConfig
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
@@ -148,6 +149,10 @@ fun ConfigBottomSheet(
                 val googleSaved = savedConfig as? GoogleConfig
                 googleSaved ?: defaultConfig
             }
+            is OpenAIConfig -> {
+                val openaiSaved = savedConfig as? OpenAIConfig
+                openaiSaved ?: defaultConfig
+            }
             is LocalModelConfig -> {
                 val localSaved = savedConfig as? LocalModelConfig
                 localSaved ?: defaultConfig
@@ -174,6 +179,7 @@ fun ConfigBottomSheet(
         when {
             isLocalModel -> setOf("api_url")
             configForEdit is GoogleConfig -> GoogleConfig.ADVANCED_ITEM_KEYS
+            configForEdit is OpenAIConfig -> OpenAIConfig.ADVANCED_ITEM_KEYS
             else -> setOf("api_url", "model_id")
         }
     }
@@ -586,6 +592,80 @@ private fun buildConfigItems(
                 )
             }
         }
+        is OpenAIConfig -> {
+            val label = getLabel("api_key")
+            if (label != null) {
+                items.add(
+                    ConfigItem(
+                        key = "api_key",
+                        label = label,
+                        value = config.apiKey,
+                        isPassword = true
+                    )
+                )
+            }
+            val styleLabel = getLabel("style_instruction")
+            if (styleLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "style_instruction",
+                        label = styleLabel,
+                        value = config.styleInstruction,
+                        placeholder = context.getString(R.string.style_instruction_placeholder),
+                        supportingText = context.getString(R.string.style_instruction_hint),
+                        isDialogEditor = true,
+                        editorTitle = context.getString(R.string.style_instruction_edit_title),
+                        guideContent = context.getString(R.string.openai_style_instruction_guide_content)
+                    )
+                )
+            }
+            // 代理设置：OpenAI 官方服务与第三方转接平台可能存在网络可达性问题（高级设置面板展示）。
+            // 代理协议为总开关："无"= 直连并隐藏主机/端口输入框，选中 HTTP/SOCKS 时需完整配置
+            val protocolLabel = getLabel("proxy_protocol")
+            if (protocolLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "proxy_protocol",
+                        label = protocolLabel,
+                        value = config.proxyProtocol.ifBlank { OpenAIConfig.PROTOCOL_NONE },
+                        dropdownOptions = listOf(
+                            OpenAIConfig.PROTOCOL_NONE to context.getString(R.string.proxy_protocol_none),
+                            OpenAIConfig.PROTOCOL_HTTP to context.getString(R.string.proxy_protocol_http),
+                            OpenAIConfig.PROTOCOL_SOCKS to context.getString(R.string.proxy_protocol_socks)
+                        )
+                    )
+                )
+            }
+            // 主机/端口仅在选择具体协议时展示；项与值始终保留，切回协议后原配置自动恢复
+            val proxyAddressVisible: (List<ConfigItem>) -> Boolean = { items ->
+                items.find { it.key == "proxy_protocol" }?.value?.let { it != OpenAIConfig.PROTOCOL_NONE } ?: false
+            }
+            val hostLabel = getLabel("proxy_host")
+            if (hostLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "proxy_host",
+                        label = hostLabel,
+                        value = config.proxyHost,
+                        placeholder = context.getString(R.string.proxy_host_placeholder),
+                        visibleWhen = proxyAddressVisible
+                    )
+                )
+            }
+            val portLabel = getLabel("proxy_port")
+            if (portLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "proxy_port",
+                        label = portLabel,
+                        value = config.proxyPort,
+                        placeholder = context.getString(R.string.proxy_port_placeholder),
+                        isNumericKeyboard = true,
+                        visibleWhen = proxyAddressVisible
+                    )
+                )
+            }
+        }
         is LocalModelConfig -> {
             // 模型选择：从 LocalModelRegistry 构建下拉选项（含下载状态标记）
             val modelLabel = getLabel("model_id") ?: context.getString(R.string.model_select_label)
@@ -766,6 +846,23 @@ private fun buildConfigFromItems(
                 ?.ifBlank { GoogleConfig.PROTOCOL_NONE }
                 ?: GoogleConfig.PROTOCOL_NONE
             GoogleConfig(
+                apiKey = apiKey,
+                voiceId = voiceId,
+                apiUrl = apiUrl,
+                modelId = modelId,
+                styleInstruction = styleInstruction,
+                proxyProtocol = proxyProtocol,
+                proxyHost = items.find { it.key == "proxy_host" }?.value ?: "",
+                proxyPort = items.find { it.key == "proxy_port" }?.value ?: ""
+            )
+        }
+        is OpenAIConfig -> {
+            val apiKey = items.find { it.key == "api_key" }?.value ?: ""
+            val styleInstruction = items.find { it.key == "style_instruction" }?.value ?: ""
+            val proxyProtocol = items.find { it.key == "proxy_protocol" }?.value
+                ?.ifBlank { OpenAIConfig.PROTOCOL_NONE }
+                ?: OpenAIConfig.PROTOCOL_NONE
+            OpenAIConfig(
                 apiKey = apiKey,
                 voiceId = voiceId,
                 apiUrl = apiUrl,

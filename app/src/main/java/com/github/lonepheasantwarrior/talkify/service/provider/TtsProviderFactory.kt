@@ -14,6 +14,8 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.Local
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.LocalModelVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.MiniMaxConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.MiniMaxVoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.OpenAIConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.OpenAIVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.TencentCloudConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.TencentCloudVoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.VolcengineConfigRepository
@@ -26,6 +28,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.impl.AzureProvide
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.GoogleProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.MiniMaxProvider
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.OpenAIProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.TencentCloudProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.VolcengineProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.XiaomiProvider
@@ -144,6 +147,11 @@ object TtsProviderFactory {
                 providerFactory = { GoogleProvider() },
                 createConfigRepo = { ctx -> GoogleConfigRepository(ctx) },
                 createVoiceRepo = { ctx -> GoogleVoiceRepository(ctx) }
+            ),
+            ProviderIds.OpenAI.providerId to ComponentFactories(
+                providerFactory = { OpenAIProvider() },
+                createConfigRepo = { ctx -> OpenAIConfigRepository(ctx) },
+                createVoiceRepo = { ctx -> OpenAIVoiceRepository(ctx) }
             ),
             ProviderIds.LocalModel.providerId to ComponentFactories(
                 providerFactory = { LocalModelProvider() },

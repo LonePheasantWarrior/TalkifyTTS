@@ -75,6 +75,18 @@ sealed class ProviderIds {
     }
 
     /**
+     * OpenAI - 语音合成供应商
+     *
+     * 兼容 OpenAI /v1/audio/speech 规范的云端 TTS 服务，
+     * 大量第三方转接平台亦遵循该规范
+     */
+    data object OpenAI : ProviderIds() {
+        override val providerId: String = "openAI"
+        override val defaultModelId: String = "gpt-4o-mini-tts"
+        override val provider: String = "OpenAI"
+    }
+
+    /**
      * 本地模型 - 离线 AI 语音合成
      */
     data object LocalModel : ProviderIds() {
@@ -103,7 +115,7 @@ sealed class ProviderIds {
          * 获取所有定义的供应商 ID 列表
          */
         val entries: List<ProviderIds> by lazy {
-            listOf(Azure, Volcengine, TencentCloud, AliyunBailian, Xiaomi, MiniMax, Google, LocalModel)
+            listOf(Azure, Volcengine, TencentCloud, AliyunBailian, Xiaomi, MiniMax, Google, OpenAI, LocalModel)
         }
     }
 }

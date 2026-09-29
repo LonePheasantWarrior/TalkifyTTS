@@ -9,6 +9,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPref
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.AliyunBailianProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.GoogleProvider
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.OpenAIProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.VolcengineProvider
 
 /**
@@ -71,6 +72,9 @@ class TalkifyCheckDataActivity : Activity() {
             }
             ProviderIds.Google.providerId -> {
                 ArrayList(GoogleProvider.SUPPORTED_LANGUAGES.toList())
+            }
+            ProviderIds.OpenAI.providerId -> {
+                ArrayList(OpenAIProvider.SUPPORTED_LANGUAGES.toList())
             }
             else -> {
                 ArrayList(AliyunBailianProvider.SUPPORTED_LANGUAGES.toList())

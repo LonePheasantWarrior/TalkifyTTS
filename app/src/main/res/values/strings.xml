@@ -47,7 +47,7 @@
     <string name="tencent_secret_id_label">Secret ID</string>
     <string name="tencent_secret_key_label">Secret Key</string>
 
-    <!-- 网络代理（Google 供应商） -->
+    <!-- 网络代理（Google / OpenAI 供应商） -->
     <string name="label_proxy_protocol">代理协议</string>
     <string name="label_proxy_host">代理主机</string>
     <string name="label_proxy_port">代理端口</string>
@@ -58,6 +58,7 @@
     <string name="proxy_port_placeholder">如 7890</string>
     <string name="gemini_style_instruction_edit_title">风格指令编辑</string>
     <string name="gemini_style_instruction_guide_content">### 自然语言风格控制\n\nGemini TTS 将输入文本严格视为**逐字稿**，朗读风格通过风格指令（speech_metadata.style）单独控制，适合描述贯穿整段的情感、语体、语速与音量。\n\n**示例：**\n\n&gt; 用温柔的语气朗读\n\n&gt; 用新闻播报的风格朗读，吐字清晰，语速平稳\n\n&gt; 压低声音，缓慢地朗读，营造深夜电台的氛围\n\n**使用建议：**\n\n- 先留空风格指令试听，多数文本无需额外描述即可获得自然的朗读效果\n- 需要微调时使用简短的风格描述（如 “casual, friendly”），同一场景保持描述一致可稳定音色\n- 系统语速明显调快或调慢时，应用会自动附加语速提示，无需在指令中重复描述\n\n**行内标签：**\n\n可在朗读文本中使用英文尖括号标签控制瞬时的发声与停顿，例如：\n\n&gt; Hold on, let me think… &lt;short pause&gt; Alright, I\'ve got it.\n\n常用标签：`&lt;laugh&gt;`、`&lt;sigh&gt;`、`&lt;cough&gt;`、`&lt;breath&gt;`、`&lt;short pause&gt;`、`&lt;long pause&gt;`。标签属于逐字稿的一部分，不要写入风格指令。</string>
+    <string name="openai_style_instruction_guide_content">### 自然语言风格控制\n\nOpenAI 语音合成（gpt-4o-mini-tts）通过风格指令（instructions）控制朗读风格，可描述口音、情感、语调、语气、语速、耳语等维度，适合描述贯穿整段的持续演绎方式。\n\n**示例：**\n\n&gt; 用专业新闻主播的口吻朗读，字正腔圆，语速适中\n\n&gt; 用一位耐心的导师口吻讲解，语气亲切、鼓励\n\n&gt; 压低声音，像在讲述一个秘密，营造戏剧张力\n\n**使用建议：**\n\n- 先留空风格指令试听，默认风格已足够自然\n- 指令描述的是贯穿整段的风格，而非某个词的瞬时效果\n- 系统语速明显调快或调慢时，应用会自动附加语速提示，无需在指令中重复描述\n- 声音（voice）与风格（指令）相互独立：声音决定音质与声线，指令决定演绎方式\n- 官方声音为英文优化，朗读中文等其他语言同样可用，但情感细腻度可能有所差异</string>
     <string name="voice_select_placeholder">请选择声音</string>
     <string name="save_config">保存配置</string>
     <string name="advanced_settings">高级设置</string>

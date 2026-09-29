@@ -114,6 +114,53 @@ internal object GoogleErrorParser {
     }
 }
 
+internal object OpenAIErrorParser {
+
+    /**
+     * 解析 OpenAI /v1/audio/speech 错误响应体
+     *
+     * 标准结构：`{"error": {"message": "...", "type": "invalid_request_error", "code": "invalid_api_key"}}`。
+     * 第三方转接平台形态可能退化为 `{"error": "..."}` 或 `{"message": "..."}`，均做兼容。
+     */
+    fun parse(errorBody: String): String {
+        return try {
+            val json = JSONObject(errorBody)
+
+            val error = json.opt("error")
+            // 兼容退化形态：error 为纯字符串
+            if (error is String) {
+                return error.ifBlank { TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED) }
+            }
+
+            val errorObject = error as? JSONObject
+                // 兼容退化形态：错误信息直接在根节点 message 字段
+                ?: return json.optString("message", "")
+                    .ifBlank { TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED) }
+
+            val serverMessage = errorObject.optString("message", "")
+            val type = errorObject.optString("type", "")
+            val code = errorObject.optString("code", "")
+            val hint = when {
+                code == "invalid_api_key" -> "认证失败：请检查 API Key 是否正确"
+                code == "insufficient_quota" -> "配额已用尽或余额不足，请检查账户额度"
+                code == "model_not_found" -> "接口或模型不存在：请检查 API 地址与模型 ID"
+                code == "rate_limit_exceeded" -> "请求过于频繁，请稍后重试"
+                type == "invalid_request_error" -> "请求参数错误：请检查模型 ID、音色 ID 或文本内容"
+                type == "server_error" -> "服务暂时不可用，请稍后重试"
+                else -> ""
+            }
+            when {
+                serverMessage.isNotBlank() && hint.isNotBlank() -> "$serverMessage（$hint）"
+                serverMessage.isNotBlank() -> serverMessage
+                hint.isNotBlank() -> "语音合成失败：$hint"
+                else -> "语音合成失败"
+            }
+        } catch (_: Exception) {
+            TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED)
+        }
+    }
+}
+
 internal object TencentErrorParser {
 
     private val ERROR_CODE_MAP = mapOf(

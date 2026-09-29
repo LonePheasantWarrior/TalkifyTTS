@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voices>
+    <voice id="alloy"   displayName="alloy（均衡）"  description="Neutral" language="多语言" />
+    <voice id="ash"     displayName="ash（沉稳）"    description="Steady" language="多语言" />
+    <voice id="ballad"  displayName="ballad（抒情）" description="Emotional" language="多语言" />
+    <voice id="coral"   displayName="coral（温暖）"  description="Warm" language="多语言" />
+    <voice id="echo"    displayName="echo（圆滑）"   description="Smooth" language="多语言" />
+    <voice id="fable"   displayName="fable（叙事）"  description="Expressive" language="多语言" />
+    <voice id="nova"    displayName="nova（活力）"   description="Energetic" language="多语言" />
+    <voice id="onyx"    displayName="onyx（浑厚）"   description="Deep" language="多语言" />
+    <voice id="sage"    displayName="sage（睿智）"   description="Wise" language="多语言" />
+    <voice id="shimmer" displayName="shimmer（空灵）" description="Bright" language="多语言" />
+    <voice id="verse"   displayName="verse（多变）"  description="Dynamic" language="多语言" />
+    <voice id="marin"   displayName="marin（自然）"  description="Natural" language="多语言" />
+    <voice id="cedar"   displayName="cedar（醇厚）"  description="Rich" language="多语言" />
+</voices>

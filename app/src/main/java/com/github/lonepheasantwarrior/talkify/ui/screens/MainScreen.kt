@@ -77,6 +77,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.GoogleConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.OpenAIConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentCloudConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProviderRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.VolcengineConfig
@@ -534,6 +535,10 @@ fun MainScreen(
                                         val googleConfig = savedConfig as? GoogleConfig ?: GoogleConfig()
                                         googleConfig.copy(voiceId = selectedVoice?.voiceId ?: googleConfig.voiceId)
                                     }
+                                    is OpenAIConfig -> {
+                                        val openaiConfig = savedConfig as? OpenAIConfig ?: OpenAIConfig()
+                                        openaiConfig.copy(voiceId = selectedVoice?.voiceId ?: openaiConfig.voiceId)
+                                    }
                                     is LocalModelConfig -> {
                                         val lmConfig = savedConfig as? LocalModelConfig ?: LocalModelConfig()
                                         lmConfig.copy(voiceId = selectedVoice?.voiceId ?: lmConfig.voiceId)
@@ -551,6 +556,7 @@ fun MainScreen(
                                     is XiaomiConfig -> config.apiKey.isNotBlank()
                                     is MiniMaxConfig -> config.apiKey.isNotBlank()
                                     is GoogleConfig -> config.apiKey.isNotBlank()
+                                    is OpenAIConfig -> config.apiKey.isNotBlank()
                                     is LocalModelConfig -> config.modelId.isNotBlank() && LocalModelManager.isModelDownloaded(config.modelId)
                                     else -> false
                                 }

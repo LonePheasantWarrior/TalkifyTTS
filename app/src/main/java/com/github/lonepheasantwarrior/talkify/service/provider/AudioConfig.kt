@@ -83,6 +83,17 @@ data class AudioConfig(
         )
 
         /**
+         * OpenAI 语音合成默认配置
+         * 参考 OpenAI Audio API 文档，response_format=pcm 输出
+         * headerless raw PCM 16bit 24kHz（16-bit signed, low-endian）
+         */
+        val OPENAI_TTS = AudioConfig(
+            sampleRate = 24000,
+            audioFormat = AudioFormat.ENCODING_PCM_16BIT,
+            channelCount = 1
+        )
+
+        /**
          * MiniMax 语音合成默认配置
          * 参考 MiniMax API 文档，音频输出格式为 PCM 16bit 32kHz
          * MiniMax 返回的是 hex 编码的 PCM 数据

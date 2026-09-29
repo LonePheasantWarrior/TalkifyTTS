@@ -115,4 +115,58 @@ class ProviderErrorParsersTest {
             TencentErrorParser.friendlyErrorMessage(12345, "boom")
         )
     }
+
+    // ---- OpenAI ----
+
+    @Test
+    fun `openai combines message with hint for known code`() {
+        val body = """
+            {"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}
+        """.trimIndent()
+        assertEquals(
+            "Incorrect API key provided（认证失败：请检查 API Key 是否正确）",
+            OpenAIErrorParser.parse(body)
+        )
+    }
+
+    @Test
+    fun `openai maps quota and model errors`() {
+        val quota = """{"error":{"message":"quota exceeded","code":"insufficient_quota"}}"""
+        assertEquals("quota exceeded（配额已用尽或余额不足，请检查账户额度）", OpenAIErrorParser.parse(quota))
+
+        val model = """{"error":{"message":"no such model","code":"model_not_found"}}"""
+        assertEquals("no such model（接口或模型不存在：请检查 API 地址与模型 ID）", OpenAIErrorParser.parse(model))
+    }
+
+    @Test
+    fun `openai maps error types without code`() {
+        val invalidRequest = """{"error":{"message":"bad voice","type":"invalid_request_error"}}"""
+        assertEquals("bad voice（请求参数错误：请检查模型 ID、音色 ID 或文本内容）", OpenAIErrorParser.parse(invalidRequest))
+
+        val serverError = """{"error":{"type":"server_error","message":"boom"}}"""
+        assertEquals("boom（服务暂时不可用，请稍后重试）", OpenAIErrorParser.parse(serverError))
+    }
+
+    @Test
+    fun `openai message passes through without hint`() {
+        val body = """{"error":{"message":"custom upstream failure"}}"""
+        assertEquals("custom upstream failure", OpenAIErrorParser.parse(body))
+    }
+
+    @Test
+    fun `openai tolerates degraded gateway shapes`() {
+        assertEquals("plain error", OpenAIErrorParser.parse("""{"error":"plain error"}"""))
+        assertEquals("root message", OpenAIErrorParser.parse("""{"message":"root message"}"""))
+    }
+
+    @Test
+    fun `openai falls back to generic message`() {
+        assertEquals("语音合成失败", OpenAIErrorParser.parse("not-a-json"))
+        assertEquals("语音合成失败", OpenAIErrorParser.parse("""{"foo":1}"""))
+        // 无 message 时仍透出 code 对应的中文指引
+        assertEquals(
+            "语音合成失败：认证失败：请检查 API Key 是否正确",
+            OpenAIErrorParser.parse("""{"error":{"code":"invalid_api_key"}}""")
+        )
+    }
 }

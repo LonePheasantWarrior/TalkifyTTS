@@ -104,4 +104,21 @@ class ParamMappersTest {
         assertEquals("speaking rapidly", GoogleParamMapper.speechRateStyleHint(150.1f))
         assertEquals("speaking rapidly", GoogleParamMapper.speechRateStyleHint(200f))
     }
+
+    // ---- OpenAI ----
+
+    @Test
+    fun `openai speech rate hint silent in dead zone`() {
+        assertNull(OpenAIParamMapper.speechRateStyleHint(100f))
+        assertNull(OpenAIParamMapper.speechRateStyleHint(75f))
+        assertNull(OpenAIParamMapper.speechRateStyleHint(150f))
+    }
+
+    @Test
+    fun `openai speech rate hint outside dead zone`() {
+        assertEquals("speaking slowly", OpenAIParamMapper.speechRateStyleHint(74.9f))
+        assertEquals("speaking slowly", OpenAIParamMapper.speechRateStyleHint(50f))
+        assertEquals("speaking rapidly", OpenAIParamMapper.speechRateStyleHint(150.1f))
+        assertEquals("speaking rapidly", OpenAIParamMapper.speechRateStyleHint(200f))
+    }
 }
