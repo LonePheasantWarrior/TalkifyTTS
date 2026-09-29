@@ -7,9 +7,11 @@ import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 class TalkifyAudioPlayer(
@@ -31,6 +33,8 @@ class TalkifyAudioPlayer(
         private const val ATTRIBUTION_TAG = "TalkifyTtsService"
     }
 
+    // 音频写入线程与进度上报协程并发访问，须保证可见性
+    @Volatile
     private var audioTrack: AudioTrack? = null
 
     private var isPlaying = AtomicBoolean(false)
@@ -39,11 +43,13 @@ class TalkifyAudioPlayer(
 
     private val playerScope = CoroutineScope(Dispatchers.IO + Job())
 
+    @Volatile
     private var totalAudioBytes: Int = 0
 
     private var playbackProgressJob: Job? = null
 
-    private var progressListeners = mutableListOf<(Float, Long) -> Unit>()
+    // 上报协程遍历期间调用方可能增删监听器，使用写时复制容器避免并发修改异常
+    private val progressListeners = CopyOnWriteArrayList<(Float, Long) -> Unit>()
 
     private var errorListener: ((String) -> Unit)? = null
 
@@ -81,7 +87,7 @@ class TalkifyAudioPlayer(
             }
         )
     ): Boolean {
-        release()
+        releaseTrack()
 
         val bufferSize = AudioTrack.getMinBufferSize(
             audioFormat.sampleRate,
@@ -228,7 +234,11 @@ class TalkifyAudioPlayer(
         }
     }
 
-    fun release() {
+    /**
+     * 复位播放状态并释放当前 AudioTrack（保留作用域与监听器，
+     * 供 [createPlayer] 在重建播放器前调用）
+     */
+    private fun releaseTrack() {
         playbackProgressJob?.cancel()
         playbackProgressJob = null
         isPlaying.set(false)
@@ -236,14 +246,20 @@ class TalkifyAudioPlayer(
 
         try {
             audioTrack?.release()
-            TtsLogger.d("AudioTrack released")
+            TtsLogger.d("AudioTrack released", tag = TAG)
         } catch (e: Exception) {
             val errorMsg = "Error releasing AudioTrack: ${e.message}"
-            TtsLogger.e(errorMsg, e)
+            TtsLogger.e(errorMsg, e, TAG)
         }
         audioTrack = null
         totalAudioBytes = 0
+    }
+
+    fun release() {
+        releaseTrack()
         progressListeners.clear()
+        // 终止常驻作用域（进度上报等协程），防止播放器实例释放后线程仍存活
+        playerScope.cancel()
     }
 
     fun isCurrentlyPlaying(): Boolean {

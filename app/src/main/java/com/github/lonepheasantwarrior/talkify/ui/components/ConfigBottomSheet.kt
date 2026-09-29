@@ -38,6 +38,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentCloudConfig
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProvider
 import com.github.lonepheasantwarrior.talkify.domain.model.VolcengineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.XiaomiConfig
@@ -108,7 +109,13 @@ fun ConfigBottomSheet(
     }
 
     val defaultConfig = remember(currentProvider.id) {
-        provider?.createDefaultConfig() ?: throw IllegalStateException("Provider not found: ${currentProvider.id}")
+        // 工厂返回 null 属异常数据（注册表与展示列表失同步），
+        // 组合期抛异常会直接崩溃整个界面，降级为可恢复的空配置
+        provider?.createDefaultConfig()
+            ?: run {
+                TtsLogger.e("ConfigBottomSheet: provider not found: ${currentProvider.id}")
+                LocalModelConfig()
+            }
     }
 
     val configForEdit: BaseProviderConfig = remember(savedConfig, defaultConfig) {

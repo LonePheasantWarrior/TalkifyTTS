@@ -25,10 +25,11 @@ class UpdateChecker(
     fun checkForUpdates(currentVersion: String): UpdateCheckResult {
         TtsLogger.i(TAG) { "开始检查更新，当前版本: $currentVersion" }
 
+        var connection: HttpURLConnection? = null
         return try {
             val apiUrl = String.format(API_URL, owner, repo)
             val url = URL(apiUrl)
-            val connection = url.openConnection() as HttpURLConnection
+            connection = url.openConnection() as HttpURLConnection
 
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
@@ -42,11 +43,8 @@ class UpdateChecker(
 
             when (responseCode) {
                 HttpURLConnection.HTTP_OK -> {
-                    val inputStream = connection.inputStream
-                    val reader = inputStream.bufferedReader()
-                    val response = reader.readText()
-                    reader.close()
-                    inputStream.close()
+                    // 流经 use 关闭：readText 抛出 IOException 也不泄漏流与底层连接
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
 
                     val updateInfo = parseReleaseResponse(response, currentVersion)
 
@@ -88,6 +86,8 @@ class UpdateChecker(
             val errorMessage = e.message ?: "未知错误"
             TtsLogger.e(TAG) { "检查更新时发生异常: $errorMessage" }
             UpdateCheckResult.NetworkError(errorMessage)
+        } finally {
+            connection?.disconnect()
         }
     }
 

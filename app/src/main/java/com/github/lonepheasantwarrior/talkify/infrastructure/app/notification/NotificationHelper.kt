@@ -49,17 +49,15 @@ object NotificationHelper {
         channelName: String,
         channelDescription: String
     ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notificationChannel = android.app.NotificationChannel(
-                channel.channelId,
-                channelName,
-                channel.importance
-            )
-            notificationChannel.description = channelDescription
-            notificationChannel.setShowBadge(false)
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(notificationChannel)
-        }
+        val notificationChannel = android.app.NotificationChannel(
+            channel.channelId,
+            channelName,
+            channel.importance
+        )
+        notificationChannel.description = channelDescription
+        notificationChannel.setShowBadge(false)
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(notificationChannel)
     }
 
     /**

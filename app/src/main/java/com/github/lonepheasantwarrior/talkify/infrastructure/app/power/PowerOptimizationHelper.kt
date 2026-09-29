@@ -3,9 +3,9 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.power
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.net.toUri
 
 /**
  * 电源优化辅助工具类
@@ -36,7 +36,7 @@ object PowerOptimizationHelper {
     @SuppressLint("BatteryLife") // 我们是 TTS 工具应用，需要在后台长时间运行，符合白名单例外场景
     fun createRequestIgnoreBatteryOptimizationsIntent(context: Context): Intent {
         return Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-            data = Uri.parse("package:${context.packageName}")
+            data = "package:${context.packageName}".toUri()
         }
     }
 }

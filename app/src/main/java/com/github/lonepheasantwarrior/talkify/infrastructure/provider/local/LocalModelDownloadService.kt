@@ -8,7 +8,6 @@ import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import com.github.lonepheasantwarrior.talkify.MainActivity
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
@@ -55,6 +54,9 @@ class LocalModelDownloadService : Service() {
 
         /** Intent Extra: 要下载的模型 ID */
         const val EXTRA_MODEL_ID = "model_id"
+
+        /** Intent Extra: 失败原因（随 ACTION_DOWNLOAD_FAILED 广播携带） */
+        const val EXTRA_ERROR = "error"
 
         /** 取消下载的广播 Action */
         const val ACTION_CANCEL = "com.github.lonepheasantwarrior.talkify.CANCEL_DOWNLOAD"
@@ -127,6 +129,11 @@ class LocalModelDownloadService : Service() {
         // 丢弃发往 RECEIVER_NOT_EXPORTED 接收器的自定义广播，导致取消按钮失效。
         if (intent?.action == ACTION_CANCEL) {
             TtsLogger.i("Download cancelled by user", tag = TAG)
+            // getForegroundService 语义等同 startForegroundService：targetSdk 31+ 要求
+            // 服务启动后必须调用 startForeground，否则抛 ForegroundServiceDidNotStartInTimeException。
+            // 进程被杀后残留的取消 PendingIntent 重建服务实例时，此分支可能是唯一入口
+            runCatching { startForeground(NOTIFICATION_ID, buildIdleForegroundNotification()) }
+                .onFailure { TtsLogger.w("startForeground on cancel failed: ${it.message}", tag = TAG) }
             isCancelled.set(true)
             // 不在此处 stopSelf：让下载循环命中取消分支，统一走
             // onDownloadCancelled（清理文件/移除通知/停止服务）
@@ -144,6 +151,13 @@ class LocalModelDownloadService : Service() {
         if (modelInfo == null) {
             TtsLogger.e("Unknown model ID: $modelId", tag = TAG)
             stopSelf()
+            return START_NOT_STICKY
+        }
+
+        // 防重入：已有下载进行中时忽略新的启动请求（避免并发写同一目录/临时归档）
+        if (downloadJob?.isActive == true) {
+            TtsLogger.w("Download already in progress, ignoring start request: $modelId", tag = TAG)
+            runCatching { startForeground(NOTIFICATION_ID, buildProgressNotification(modelInfo.displayName, lastProgress)) }
             return START_NOT_STICKY
         }
 
@@ -385,45 +399,45 @@ class LocalModelDownloadService : Service() {
                 .header("User-Agent", "TalkifyTTS/1.0")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                TtsLogger.e("HTTP ${response.code} for: $url", tag = TAG)
-                response.close()
-                return false
-            }
+            // response 经 use 关闭：写盘过程中抛出 IOException 也不泄漏底层连接
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    TtsLogger.e("HTTP ${response.code} for: $url", tag = TAG)
+                    return false
+                }
 
-            response.body?.source()?.use { source ->
-                targetFile.sink().buffer().use { sink ->
-                    var downloaded = 0L
-                    val contentLength = response.body?.contentLength() ?: -1L
-                    // 通知节流：系统对通知更新有约 5 次/秒的限流，逐块回调会被整批丢弃并刷爆日志
-                    var lastNotifyAt = 0L
+                response.body?.source()?.use { source ->
+                    targetFile.sink().buffer().use { sink ->
+                        var downloaded = 0L
+                        val contentLength = response.body?.contentLength() ?: -1L
+                        // 通知节流：系统对通知更新有约 5 次/秒的限流，逐块回调会被整批丢弃并刷爆日志
+                        var lastNotifyAt = 0L
 
-                    while (!source.exhausted() && !isCancelled.get()) {
-                        val bytesRead = source.read(sink.buffer, 8192)
-                        if (bytesRead == -1L) break
-                        sink.emit()
-                        downloaded += bytesRead
+                        while (!source.exhausted() && !isCancelled.get()) {
+                            val bytesRead = source.read(sink.buffer, 8192)
+                            if (bytesRead == -1L) break
+                            sink.emit()
+                            downloaded += bytesRead
 
-                        // 更新进度（最多约 1 秒一次）
-                        val now = android.os.SystemClock.elapsedRealtime()
-                        if (now - lastNotifyAt >= 1000) {
-                            lastNotifyAt = now
-                            val currentTotal = baseDownloaded + downloaded
-                            val progress = if (totalSize > 0) {
-                                ((currentTotal * 100) / totalSize).toInt().coerceIn(0, 100)
-                            } else {
-                                0
+                            // 更新进度（最多约 1 秒一次）
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            if (now - lastNotifyAt >= 1000) {
+                                lastNotifyAt = now
+                                val currentTotal = baseDownloaded + downloaded
+                                val progress = if (totalSize > 0) {
+                                    ((currentTotal * 100) / totalSize).toInt().coerceIn(0, 100)
+                                } else {
+                                    0
+                                }
+                                updateProgressNotification(displayName, progress)
                             }
-                            updateProgressNotification(displayName, progress)
                         }
-                    }
 
-                    sink.flush()
+                        sink.flush()
+                    }
                 }
             }
 
-            response.close()
             // 取消时半截文件不能算成功，否则取消会被误判为下载完成
             if (isCancelled.get()) {
                 TtsLogger.i("Download interrupted by user cancel", tag = TAG)
@@ -609,21 +623,63 @@ class LocalModelDownloadService : Service() {
     // ==================== 通知管理 ====================
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = android.app.NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                android.app.NotificationManager.IMPORTANCE_DEFAULT
-            )
-            channel.description = CHANNEL_DESC
-            channel.setShowBadge(false)
-            // 静音通知通道，避免下载进度更新时反复响铃
-            channel.setSound(null, null)
-            val manager = getSystemService(android.app.NotificationManager::class.java)
-            // 删除旧通道以应用新的 importance 等级（通道创建后不可修改）
-            manager.deleteNotificationChannel(CHANNEL_ID)
-            manager.createNotificationChannel(channel)
+        val channel = android.app.NotificationChannel(
+            CHANNEL_ID,
+            CHANNEL_NAME,
+            android.app.NotificationManager.IMPORTANCE_DEFAULT
+        )
+        channel.description = CHANNEL_DESC
+        channel.setShowBadge(false)
+        // 静音通知通道，避免下载进度更新时反复响铃
+        channel.setSound(null, null)
+        val manager = getSystemService(android.app.NotificationManager::class.java)
+        // 删除旧通道以应用新的 importance 等级（通道创建后不可修改）
+        manager.deleteNotificationChannel(CHANNEL_ID)
+        manager.createNotificationChannel(channel)
+    }
+
+    /**
+     * 权限守卫的通知发送
+     *
+     * API 33+ 通知需要运行时 POST_NOTIFICATIONS 权限（启动流程会引导授权）；
+     * 未授权时静默跳过——下载进度不依赖通知展示，不能因此中断下载
+     */
+    private fun postNotification(notification: android.app.Notification) {
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        } else {
+            TtsLogger.d("POST_NOTIFICATIONS not granted, skip download notification", tag = TAG)
         }
+    }
+
+    /**
+     * 构建"取消动作合规占位"前台通知
+     *
+     * 取消 PendingIntent 直达时系统要求必须 startForeground；此通知仅作合规占位，
+     * 随后取消流程会将其移除
+     */
+    private fun buildIdleForegroundNotification(): android.app.Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(getString(R.string.app_name))
+            .setSmallIcon(R.drawable.ic_tts_notification)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+
+    /** 打开应用主界面的 content PendingIntent（经包管理器解析，避免反向依赖 UI 层 Activity 类） */
+    private fun buildContentIntent(): PendingIntent {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+        return PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
     }
 
     private fun buildProgressNotification(displayName: String, progress: Int): android.app.Notification {
@@ -631,13 +687,6 @@ class LocalModelDownloadService : Service() {
             this,
             0,
             Intent(this, LocalModelDownloadService::class.java).setAction(ACTION_CANCEL),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -651,7 +700,7 @@ class LocalModelDownloadService : Service() {
             .setOnlyAlertOnce(true)
             .setProgress(100, progress, false)
             .addAction(0, getString(android.R.string.cancel), cancelIntent)
-            .setContentIntent(contentIntent)
+            .setContentIntent(buildContentIntent())
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -671,12 +720,12 @@ class LocalModelDownloadService : Service() {
     private fun updateProgressNotification(displayName: String, progress: Int) {
         lastProgress = progress
         val notification = buildProgressNotification(displayName, progress)
-        NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        postNotification(notification)
     }
 
     private fun updateVerifyingNotification(displayName: String) {
         val notification = buildVerifyingNotification(displayName)
-        NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        postNotification(notification)
     }
 
     // ==================== 结果处理 ====================
@@ -699,16 +748,10 @@ class LocalModelDownloadService : Service() {
             .setAutoCancel(true)
             .setOngoing(false)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentIntent(
-                PendingIntent.getActivity(
-                    this, 0,
-                    Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-            )
+            .setContentIntent(buildContentIntent())
             .build()
 
-        NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        postNotification(notification)
 
         // 发送完成广播
         sendBroadcast(Intent(ACTION_DOWNLOAD_COMPLETED).apply {
@@ -746,11 +789,11 @@ class LocalModelDownloadService : Service() {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build()
 
-        NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        postNotification(notification)
 
         sendBroadcast(Intent(ACTION_DOWNLOAD_FAILED).apply {
             putExtra(EXTRA_MODEL_ID, modelInfo.id)
-            putExtra("error", reason)
+            putExtra(EXTRA_ERROR, reason)
             setPackage(packageName)
         })
 

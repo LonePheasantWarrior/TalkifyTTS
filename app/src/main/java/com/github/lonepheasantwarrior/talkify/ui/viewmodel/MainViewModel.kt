@@ -159,7 +159,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        super.onCleared()
         TtsLogger.d(logTag) { "ViewModel cleared, releasing resources" }
         modelDownload.unregister()
         previewPlayback.release()

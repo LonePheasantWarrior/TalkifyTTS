@@ -33,7 +33,7 @@ class HeatmapSessionTest {
         val session = newSession()
         session.onScrollPosition(scrollTopPx = 500, maxScrollPx = 1900)
         val event = session.click(100, 200)
-        assertEquals(600, event.getInt("pageX"))
+        assertEquals(100, event.getInt("pageX"))
         assertEquals(700, event.getInt("pageY"))
         // pageH = maxScroll + viewportH = 1900 + 2400
         assertEquals(4300, event.getInt("pageH"))

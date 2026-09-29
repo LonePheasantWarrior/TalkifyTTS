@@ -65,10 +65,10 @@ fun VoicePreview(
     selectedVoice: VoiceInfo?,
     onVoiceSelected: (VoiceInfo) -> Unit,
     isPlaying: Boolean,
+    modifier: Modifier = Modifier,
     waveform: FloatArray = FloatArray(0),
     onPlayClick: () -> Unit,
-    onStopClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onStopClick: () -> Unit
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),

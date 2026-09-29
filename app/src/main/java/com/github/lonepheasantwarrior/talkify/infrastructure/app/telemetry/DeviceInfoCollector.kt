@@ -66,12 +66,12 @@ object DeviceInfoCollector {
     private fun collectScreenDensity(context: Context, info: MutableMap<String, Any>) {
         val dpi = context.resources.displayMetrics.densityDpi
         val bucket = when (dpi) {
-            in 0..Resources_LDPI_MAX -> ResourcesBucket_LDPI
-            in (Resources_LDPI_MAX + 1)..Resources_MDPI_MAX -> ResourcesBucket_MDPI
-            in (Resources_MDPI_MAX + 1)..Resources_HDPI_MAX -> ResourcesBucket_HDPI
-            in (Resources_HDPI_MAX + 1)..Resources_XHDPI_MAX -> ResourcesBucket_XHDPI
-            in (Resources_XHDPI_MAX + 1)..Resources_XXHDPI_MAX -> ResourcesBucket_XXHDPI
-            else -> ResourcesBucket_XXXHDPI
+            in 0..LDPI_MAX_DP -> BUCKET_LDPI
+            in (LDPI_MAX_DP + 1)..MDPI_MAX_DP -> BUCKET_MDPI
+            in (MDPI_MAX_DP + 1)..HDPI_MAX_DP -> BUCKET_HDPI
+            in (HDPI_MAX_DP + 1)..XHDPI_MAX_DP -> BUCKET_XHDPI
+            in (XHDPI_MAX_DP + 1)..XXHDPI_MAX_DP -> BUCKET_XXHDPI
+            else -> BUCKET_XXXHDPI
         }
         info["screen_density"] = bucket
     }
@@ -145,11 +145,13 @@ object DeviceInfoCollector {
             val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             val capabilities = cm?.getNetworkCapabilities(cm.activeNetwork) ?: return
 
+            // VPN 判定须前置：VPN-over-WiFi 时 capabilities 同时含两种 transport，
+            // WiFi 若先命中会永远遮蔽 "vpn" 分支
             val networkType = when {
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "vpn"
                 else -> null
             }
             if (networkType != null) {
@@ -164,18 +166,18 @@ object DeviceInfoCollector {
 
     private const val ONE_MB = 1024L * 1024L
 
-    // Screen density bucket thresholds
-    private const val Resources_LDPI_MAX = 120
-    private const val Resources_MDPI_MAX = 160
-    private const val Resources_HDPI_MAX = 240
-    private const val Resources_XHDPI_MAX = 320
-    private const val Resources_XXHDPI_MAX = 480
+    // Screen density bucket thresholds (dpi)
+    private const val LDPI_MAX_DP = 120
+    private const val MDPI_MAX_DP = 160
+    private const val HDPI_MAX_DP = 240
+    private const val XHDPI_MAX_DP = 320
+    private const val XXHDPI_MAX_DP = 480
 
     // Screen density bucket labels
-    private const val ResourcesBucket_LDPI = "ldpi"
-    private const val ResourcesBucket_MDPI = "mdpi"
-    private const val ResourcesBucket_HDPI = "hdpi"
-    private const val ResourcesBucket_XHDPI = "xhdpi"
-    private const val ResourcesBucket_XXHDPI = "xxhdpi"
-    private const val ResourcesBucket_XXXHDPI = "xxxhdpi"
+    private const val BUCKET_LDPI = "ldpi"
+    private const val BUCKET_MDPI = "mdpi"
+    private const val BUCKET_HDPI = "hdpi"
+    private const val BUCKET_XHDPI = "xhdpi"
+    private const val BUCKET_XXHDPI = "xxhdpi"
+    private const val BUCKET_XXXHDPI = "xxxhdpi"
 }

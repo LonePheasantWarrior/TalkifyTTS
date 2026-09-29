@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
 @Composable
 fun MarkdownText(
@@ -50,7 +51,7 @@ fun MarkdownText(
                 uriHandler.openUri(url)
             } catch (e: Exception) {
                 // 防止非标准 URI 导致崩溃
-                e.printStackTrace()
+                TtsLogger.e("Failed to open markdown link: $url", e)
             }
         }
     }

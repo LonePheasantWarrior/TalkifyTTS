@@ -1,14 +1,11 @@
 package com.github.lonepheasantwarrior.talkify.ui.screens
 
-import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -53,12 +50,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +67,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.AliyunBailianConfig
@@ -86,6 +85,7 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigReposit
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.PermissionChecker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOptimizationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
@@ -103,7 +103,7 @@ import com.github.lonepheasantwarrior.talkify.ui.components.NotificationPermissi
 import com.github.lonepheasantwarrior.talkify.ui.components.ProviderSelector
 import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
-import com.github.lonepheasantwarrior.talkify.ui.components.rememberTelemetryScrollObserver
+import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryScrollObserver
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandMark
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandTitle
 import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyMotion
@@ -112,7 +112,6 @@ import com.github.lonepheasantwarrior.talkify.ui.viewmodel.MainViewModel
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup.StartupState
 import kotlinx.coroutines.launch
 
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun MainScreen(
@@ -129,10 +128,10 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     // --- 启动流程状态管理 ---
-    val startupState by viewModel.startupState.collectAsState()
-    val isDefaultProvider by viewModel.isDefaultProvider.collectAsState()
+    val startupState by viewModel.startupState.collectAsStateWithLifecycle()
+    val isDefaultProvider by viewModel.isDefaultProvider.collectAsStateWithLifecycle()
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         // 从系统设置返回时，若仍停留在网络阻断态则重查网络，避免用户开网后仍被困在弹窗
@@ -200,9 +199,9 @@ fun MainScreen(
     }
 
     // 语音预览状态观察
-    val isPreviewPlaying by viewModel.isPreviewPlaying.collectAsState()
-    val previewError by viewModel.previewErrorMessage.collectAsState()
-    val previewWaveform by viewModel.previewWaveform.collectAsState()
+    val isPreviewPlaying by viewModel.isPreviewPlaying.collectAsStateWithLifecycle()
+    val previewError by viewModel.previewErrorMessage.collectAsStateWithLifecycle()
+    val previewWaveform by viewModel.previewWaveform.collectAsStateWithLifecycle()
     // 提示文案提升到 Composable 顶层获取（回调 lambda 内不可调用 stringResource）
     val emptyInputHint = stringResource(R.string.input_empty_hint)
     val providerNotConfiguredHint = stringResource(R.string.provider_not_configured_hint)
@@ -218,7 +217,7 @@ fun MainScreen(
     }
 
     // 下载完成状态反馈
-    val downloadProgress by viewModel.downloadProgress.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
     @Suppress("LocalContextGetResourceValueCall")
     LaunchedEffect(downloadProgress) {
         val progress = downloadProgress
@@ -240,8 +239,8 @@ fun MainScreen(
     val defaultInputText = remember(sampleTexts) {
         sampleTexts.random()
     }
-    var inputText by remember { mutableStateOf(defaultInputText) }
-    val isConfigSheetOpen by viewModel.isConfigSheetOpen.collectAsState()
+    var inputText by rememberSaveable { mutableStateOf(defaultInputText) }
+    val isConfigSheetOpen by viewModel.isConfigSheetOpen.collectAsStateWithLifecycle()
 
     // 预览"播放"按钮点击埋点（含被拦截的分支，构成完整漏斗）
     val trackPlayClick: (String) -> Unit = { outcome ->
@@ -375,11 +374,8 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            val context = LocalContext.current
-            val aboutPageOpenedBefore = remember {
-                context.getSharedPreferences("talkify_app_config", Context.MODE_PRIVATE)
-                    .getBoolean("has_opened_about_page", false)
-            }
+            // 经领域仓储读取，键名收敛在仓储实现内（与 MainActivity 的写入对称）
+            val aboutPageOpenedBefore = remember { appConfigRepository.hasOpenedAboutPage() }
             var aboutHintDismissed by remember { mutableStateOf(false) }
 
             AnimatedVisibility(
@@ -468,7 +464,7 @@ fun MainScreen(
                 else -> {
                     // 网络检查通过，显示主界面内容
                     val scrollState = rememberScrollState()
-                    rememberTelemetryScrollObserver(scrollState)
+                    TelemetryScrollObserver(scrollState)
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -698,7 +694,7 @@ fun MainScreen(
             NotificationPermissionDialog(
                 onConfirm = {
                     AppActionTracker.notificationPermission(AppActionTracker.ACTION_REQUESTED)
-                    val permission = Manifest.permission.POST_NOTIFICATIONS
+                    val permission = PermissionChecker.NOTIFICATION_PERMISSION
                     if (activity != null) {
                         val shouldShowRationale = activity.shouldShowRequestPermissionRationale(permission)
                         val hasRequestedBefore = viewModel.hasRequestedNotificationPermission()

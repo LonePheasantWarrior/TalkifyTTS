@@ -80,6 +80,7 @@ dependencies {
     // 应用级前后台监听（ProcessLifecycleOwner），供遥测在每次回到前台时上报启动信号
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

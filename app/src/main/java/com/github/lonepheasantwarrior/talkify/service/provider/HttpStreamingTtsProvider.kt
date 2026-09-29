@@ -2,6 +2,7 @@ package com.github.lonepheasantwarrior.talkify.service.provider
 
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,7 +16,7 @@ import okhttp3.Request
 import okhttp3.Response
 import java.io.IOException
 import java.net.SocketTimeoutException
-import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -110,7 +111,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
     protected var hasCompleted = false
 
     /** in-flight HTTP 请求集合：流水线下多块并发，stop() 需全部取消 */
-    private val inFlightCalls: MutableSet<Call> = Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
+    private val inFlightCalls: MutableSet<Call> = ConcurrentHashMap.newKeySet()
 
     @Volatile
     private var isFirstChunk = true
@@ -306,6 +307,9 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
                 }
             }
             return false
+        } catch (e: CancellationException) {
+            // 协程取消（stop/release）不是合成错误，必须原样重抛由取消机制处理
+            throw e
         } catch (e: Exception) {
             logError("Unexpected error during synthesis", e)
             withContext(Dispatchers.Main) {

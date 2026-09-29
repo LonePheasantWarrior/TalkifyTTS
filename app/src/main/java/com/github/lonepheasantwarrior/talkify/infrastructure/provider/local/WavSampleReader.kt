@@ -69,7 +69,7 @@ object WavSampleReader {
         var offset = 12
         while (offset + 8 <= bytes.size) {
             val chunkId = String(bytes, offset, 4, Charsets.US_ASCII)
-            val chunkSize = buffer.getInt(offset + 4).toInt() and 0xFFFFFFFF.toInt()
+            val chunkSize = buffer.getInt(offset + 4) and 0xFFFFFFFF.toInt()
             val payloadStart = offset + 8
             when (chunkId) {
                 "fmt " -> {

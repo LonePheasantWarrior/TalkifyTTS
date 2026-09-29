@@ -71,7 +71,10 @@ internal class HeatmapSession(
 
     /** 构造一次点击的热图事件 */
     fun click(x: Int, y: Int): JSONObject = synchronized(lock) {
-        val pageX = (x + scrollTop).roundToInt()
+        // rrweb 协议：pageX/pageY = 视口坐标 + 对应轴向滚动量。
+        // 本类只跟踪纵向滚动（scrollPct 语义即纵向），横向偏移恒为 0，
+        // pageX 必须等于 x——把纵向 scrollTop 加到 x 会使滚动后点击点横向漂移
+        val pageX = x
         val pageY = (y + scrollTop).roundToInt()
         JSONObject()
             .put("type", "click")

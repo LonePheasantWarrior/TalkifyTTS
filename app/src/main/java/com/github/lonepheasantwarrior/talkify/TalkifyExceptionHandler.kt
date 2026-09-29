@@ -1,10 +1,6 @@
 package com.github.lonepheasantwarrior.talkify
 
-import android.app.AlertDialog
-import android.content.Context
 import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import android.os.Process
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
@@ -15,7 +11,11 @@ import java.util.concurrent.TimeUnit
 /**
  * 全局未捕获异常处理器
  *
- * 捕获崩溃后发送系统通知提示用户，并弹出崩溃对话框（支持"重启应用"）。
+ * 捕获崩溃后发送系统通知提示用户，随后交还系统默认处理器终止进程。
+ *
+ * 不实现崩溃对话框：应用上下文无法挂载 Dialog（BadTokenException）；
+ * 崩溃发生在主线程时主 looper 已阻塞、发生在后台线程时进程随默认处理器
+ * 立即终止——对话框在两种场景下均不可达。崩溃告知经由系统通知完成。
  */
 object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
 
@@ -40,7 +40,6 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
                 context,
                 context.getString(R.string.crash_notification_message)
             )
-            showCrashDialog(context, throwable)
         }
 
         previousHandler?.uncaughtException(thread, throwable)
@@ -66,62 +65,6 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
             }, "talkify-crash-telemetry").start()
             latch.await(2, TimeUnit.SECONDS)
         } catch (_: Throwable) {
-        }
-    }
-
-    private fun showCrashDialog(context: Context, throwable: Throwable) {
-        val errorMessage = buildErrorMessage(throwable)
-
-        val title = context.getString(R.string.crash_dialog_title)
-        val message = context.getString(R.string.crash_dialog_message, errorMessage)
-        val positiveButton = context.getString(R.string.crash_dialog_restart)
-        val negativeButton = context.getString(R.string.crash_dialog_report)
-
-        try {
-            Handler(Looper.getMainLooper()).post {
-                AlertDialog.Builder(context)
-                    .setTitle(title)
-                    .setMessage(message)
-                    .setPositiveButton(positiveButton) { _, _ ->
-                        restartApp(context)
-                    }
-                    .setNegativeButton(negativeButton) { _, _ ->
-                        TtsLogger.d("User chose to report crash", tag = TAG)
-                    }
-                    .setCancelable(false)
-                    .show()
-            }
-        } catch (e: Exception) {
-            TtsLogger.e("Failed to show crash dialog", throwable = e, tag = TAG)
-        }
-    }
-
-    private fun buildErrorMessage(throwable: Throwable): String {
-        val sb = StringBuilder()
-        sb.appendLine(throwable.javaClass.simpleName)
-        sb.appendLine(throwable.message ?: "Unknown error")
-
-        var cause = throwable.cause
-        var depth = 0
-        while (cause != null && depth < 3) {
-            sb.appendLine("Caused by: ${cause.javaClass.simpleName}")
-            sb.appendLine(cause.message ?: "Unknown error")
-            cause = cause.cause
-            depth++
-        }
-
-        return sb.toString().take(500)
-    }
-
-    private fun restartApp(context: Context) {
-        try {
-            val packageManager = context.packageManager
-            val intent = packageManager.getLaunchIntentForPackage(context.packageName)
-            intent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            Process.killProcess(Process.myPid())
-        } catch (e: Exception) {
-            TtsLogger.e("Failed to restart app", throwable = e, tag = TAG)
         }
     }
 }

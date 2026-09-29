@@ -1,5 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.service.provider
 
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -87,9 +89,10 @@ internal class ChunkPipelineExecutor(
                 }
             }
             true
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            TtsLogger.e("ChunkPipelineExecutor: pipeline aborted by unexpected error: ${e.message}", e)
             false
         } finally {
             // 停止所有仍在飞的 fetch（失败/取消路径）

@@ -7,6 +7,8 @@ import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.xml.VoiceXmlEntry
 import com.github.lonepheasantwarrior.talkify.infrastructure.xml.VoiceXmlParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * XML 音色仓储基类
@@ -32,6 +34,10 @@ abstract class BaseXmlVoiceRepository(
 
     final override suspend fun getVoicesForProvider(provider: TtsProvider): List<VoiceInfo> {
         if (provider.id != expectedProviderId) return emptyList()
-        return voices.map { it.toVoiceInfo() }
+        // 首次访问触发 XML 解析（资源 IO），切到 IO 调度器：
+        // UI 层的调用方（音色列表/配置面板）多在主线程组合期发起
+        return withContext(Dispatchers.IO) {
+            voices.map { it.toVoiceInfo() }
+        }
     }
 }

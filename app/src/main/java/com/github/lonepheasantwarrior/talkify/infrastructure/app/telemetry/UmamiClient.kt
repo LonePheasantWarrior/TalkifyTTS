@@ -3,7 +3,6 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 import android.content.Context
 import android.os.Build
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient.trackPage
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import okhttp3.Call
 import okhttp3.Callback
@@ -49,7 +48,8 @@ object UmamiClient {
 
     private const val TAG = "TalkifyTelemetry"
 
-    const val BASE_URL = "https://photon.private-cloud.site:3000/"
+    /** 不带尾斜杠：所有端点经 "$BASE_URL/api/..." 拼接，避免产生 //api/... 双斜杠路径 */
+    const val BASE_URL = "https://photon.private-cloud.site:3000"
 
     private const val ENDPOINT = "$BASE_URL/api/send"
 

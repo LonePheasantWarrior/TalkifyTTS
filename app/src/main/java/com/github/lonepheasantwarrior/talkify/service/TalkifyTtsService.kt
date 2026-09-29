@@ -4,6 +4,8 @@ import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
+import android.speech.tts.SynthesisCallback
+import android.speech.tts.SynthesisRequest
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
@@ -71,14 +73,21 @@ class TalkifyTtsService : TextToSpeechService() {
         wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "Talkify:WifiLock")
     }
 
+    // 以下生命周期字段在主线程（onCreate/onDestroy）、SynthThread（onSynthesizeText）
+    // 与 binder 线程（onIsLanguageAvailable/onGetLanguage 等）间共享，须保证可见性
+    @Volatile
     private var isForegroundServiceRunning = false
 
+    @Volatile
     private var appConfigRepository: AppConfigRepository? = null
 
+    @Volatile
     private var currentProvider: TtsProviderApi? = null
 
+    @Volatile
     private var currentProviderId: String? = null
 
+    @Volatile
     private var currentConfig: BaseProviderConfig? = null
 
     override fun onCreate() {
@@ -252,8 +261,11 @@ class TalkifyTtsService : TextToSpeechService() {
     /**
      * 供应商配置仓储映射表
      * 根据供应商 ID 获取对应的配置仓储
+     *
+     * 读写来自多个 binder/Synth 线程，使用 ConcurrentHashMap 保证线程安全
      */
-    private val providerConfigRepositoryMap: MutableMap<String, ProviderConfigRepository> = mutableMapOf()
+    private val providerConfigRepositoryMap: MutableMap<String, ProviderConfigRepository> =
+        java.util.concurrent.ConcurrentHashMap()
 
     /**
      * 获取指定供应商的配置仓储
@@ -345,27 +357,10 @@ class TalkifyTtsService : TextToSpeechService() {
         country: String?,
         variant: String?
     ): Int {
-        val locale = when {
-            lang != null && country != null && variant != null -> Locale.Builder()
-                .setLanguage(lang)
-                .setRegion(convertToValidRegionCode(country))
-                .setVariant(variant)
-                .build()
-
-            lang != null && country != null -> Locale.Builder()
-                .setLanguage(lang)
-                .setRegion(convertToValidRegionCode(country))
-                .build()
-
-            lang != null -> Locale.Builder()
-                .setLanguage(lang)
-                .build()
-
-            else -> {
-                TtsLogger.w("onIsLanguageAvailable: lang: $lang, country: $country, variant: $variant")
-                TtsLogger.w("onIsLanguageAvailable: null language, returning NOT_SUPPORTED")
-                return TextToSpeech.LANG_NOT_SUPPORTED
-            }
+        val locale = buildLocaleSafely(lang, country, variant)
+        if (locale == null) {
+            TtsLogger.w("onIsLanguageAvailable: invalid locale tags [lang: $lang, country: $country, variant: $variant]")
+            return TextToSpeech.LANG_NOT_SUPPORTED
         }
 
         if (isLanguageSupported(locale.language)) {
@@ -387,7 +382,6 @@ class TalkifyTtsService : TextToSpeechService() {
             initializeProvider()
         }
 
-        // 3. 最终检查
         return currentProvider?.getSupportedLanguages()?.contains(lang) ?: false
     }
 
@@ -396,40 +390,55 @@ class TalkifyTtsService : TextToSpeechService() {
         country: String?,
         variant: String?
     ): Int {
-        val locale = when {
-            lang != null && country != null && variant != null -> Locale.Builder()
-                .setLanguage(lang)
-                .setRegion(convertToValidRegionCode(country))
-                .setVariant(variant)
-                .build()
-
-            lang != null && country != null -> Locale.Builder()
-                .setLanguage(lang)
-                .setRegion(convertToValidRegionCode(country))
-                .build()
-
-            lang != null -> Locale.Builder()
-                .setLanguage(lang)
-                .build()
-
-            else -> {
-                TtsLogger.w("onLoadLanguage: lang: $lang, country: $country, variant: $variant")
-                TtsLogger.w("onLoadLanguage: null language, returning NOT_SUPPORTED")
-                return TextToSpeech.LANG_NOT_SUPPORTED
-            }
+        val locale = buildLocaleSafely(lang, country, variant)
+        if (locale == null) {
+            TtsLogger.w("onLoadLanguage: invalid locale tags [lang: $lang, country: $country, variant: $variant]")
+            return TextToSpeech.LANG_NOT_SUPPORTED
         }
 
         if (isLanguageSupported(locale.language)) {
             return if (!country.isNullOrBlank()) {
                 TtsLogger.d("onLoadLanguage: LANG_COUNTRY_AVAILABLE. lang: $lang, country: $country, variant: $variant")
                 TextToSpeech.LANG_COUNTRY_AVAILABLE
-            }else{
-                TtsLogger.w("onIsLanguageAvailable: not support country [${country}]")
+            } else {
+                TtsLogger.d("onLoadLanguage: LANG_AVAILABLE (no country). lang: $lang")
                 TextToSpeech.LANG_AVAILABLE
             }
         }
-        TtsLogger.w("onIsLanguageAvailable: not support language [${locale.language}]")
+        TtsLogger.w("onLoadLanguage: not support language [${locale.language}]")
         return TextToSpeech.LANG_NOT_SUPPORTED
+    }
+
+    /**
+     * 由客户端传入的语言/国家/变体标签构建 Locale。
+     *
+     * 参数来自任意第三方 TTS 客户端，格式不受信任：[Locale.Builder] 的
+     * setLanguage/setRegion/setVariant 遇到非法输入会抛 IllformedLocaleException
+     * （RuntimeException），在 binder 线程上未捕获将导致整个引擎被系统禁用。
+     * 因此全程捕获并返回 null（调用方按不支持处理）。
+     */
+    private fun buildLocaleSafely(lang: String?, country: String?, variant: String?): Locale? {
+        if (lang == null) return null
+        return try {
+            when {
+                country != null && variant != null -> Locale.Builder()
+                    .setLanguage(lang)
+                    .setRegion(convertToValidRegionCode(country))
+                    .setVariant(variant)
+                    .build()
+
+                country != null -> Locale.Builder()
+                    .setLanguage(lang)
+                    .setRegion(convertToValidRegionCode(country))
+                    .build()
+
+                else -> Locale.Builder()
+                    .setLanguage(lang)
+                    .build()
+            }
+        } catch (_: RuntimeException) {
+            null
+        }
     }
 
     /**
@@ -454,16 +463,16 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
-    override fun onGetLanguage(): Array<String>? {
+    override fun onGetLanguage(): Array<String> {
         val provider = currentProvider
         if (provider == null) {
             TtsLogger.w("onGetLanguage: no provider available")
-            return null
+            return emptyArray()
         }
 
         if (!provider.isConfigured(currentConfig)) {
             TtsLogger.w("onGetLanguage: provider not configured")
-            return null
+            return emptyArray()
         }
 
         val defaultLanguage = provider.getDefaultLanguage()
@@ -471,9 +480,10 @@ class TalkifyTtsService : TextToSpeechService() {
         return defaultLanguage
     }
 
-    override fun onGetVoices(): List<Voice?>? {
-        TtsLogger.d("onGetVoices: it is")
-        return currentProvider?.getSupportedVoices()
+    override fun onGetVoices(): List<Voice> {
+        TtsLogger.d("onGetVoices: requested")
+        // 框架契约要求非空返回：provider 未就绪时回退空列表，避免 binder 序列化 NPE
+        return currentProvider?.getSupportedVoices().orEmpty()
     }
 
     override fun onGetDefaultVoiceNameFor(
@@ -527,8 +537,8 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     override fun onSynthesizeText(
-        request: android.speech.tts.SynthesisRequest?,
-        callback: android.speech.tts.SynthesisCallback?
+        request: SynthesisRequest?,
+        callback: SynthesisCallback?
     ) {
         if (request == null || callback == null) {
             TtsLogger.e("onSynthesizeText: null request or callback")
@@ -546,8 +556,8 @@ class TalkifyTtsService : TextToSpeechService() {
      * 修复了死锁隐患，并增加了 WifiLock 以保证网络流式传输的稳定性。
      */
     private fun processRequestSynchronously(
-        request: android.speech.tts.SynthesisRequest,
-        callback: android.speech.tts.SynthesisCallback
+        request: SynthesisRequest,
+        callback: SynthesisCallback
     ) = runBlocking {
         // 1. 基础校验
         if (isStopped.get()) {

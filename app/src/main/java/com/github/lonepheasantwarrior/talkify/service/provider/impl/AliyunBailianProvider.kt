@@ -20,6 +20,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VOICE_NAME_SEPARATOR
 import com.github.lonepheasantwarrior.talkify.service.provider.WavHeaderSanitizer
 import io.reactivex.Flowable
 import io.reactivex.disposables.Disposable
@@ -46,11 +47,7 @@ class AliyunBailianProvider : AbstractTtsProvider() {
 
         private const val MAX_TEXT_LENGTH = 500
 
-        private const val VOICE_NAME_SEPARATOR = "::"
-
-        /**
-         * 支持的语言列表（ISO 639-2 三字母代码）
-         */
+        /** 支持的语言列表（ISO 639-2 三字母代码） */
         val SUPPORTED_LANGUAGES = arrayOf("zho", "eng", "deu", "ita", "por", "spa", "jpn", "kor", "fra", "rus")
     }
 
@@ -269,7 +266,8 @@ class AliyunBailianProvider : AbstractTtsProvider() {
 
             override fun onError(throwable: Throwable) {
                 logError("Stream error for chunk $index", throwable)
-                val (errorCode, errorMessage) = mapExceptionToErrorCode(throwable as Exception)
+                // throwable 可能是非 Exception 的 Throwable（如 Error），避免强转抛 ClassCastException
+                val (errorCode, errorMessage) = mapExceptionToErrorCode(throwable as? Exception ?: Exception(throwable))
                 listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
             }
 

@@ -105,6 +105,10 @@ class SherpaTtsEngine(
      * 将输入文本转换为 PCM 16bit 单声道音频数据。
      * 首次调用会自动触发初始化（惰性加载）。
      *
+     * 与 [release]/[initialize] 共用同一对象锁：合成期间另一线程（模型切换、
+     * 空闲释放）触发 release 时须等待合成结束，否则可能对已释放的 native
+     * ONNX 对象发起推理调用导致 SIGSEGV。
+     *
      * @param text 输入文本
      * @param referenceAudio 参考音频浮点样本（决定合成音色）
      * @param referenceSampleRate 参考音频采样率
@@ -113,6 +117,7 @@ class SherpaTtsEngine(
      * @return [SynthesisResult] 包含 PCM 音频数据及实际采样率
      * @throws IllegalStateException 引擎未初始化或已释放
      */
+    @Synchronized
     fun synthesize(
         text: String,
         referenceAudio: FloatArray,
@@ -159,6 +164,7 @@ class SherpaTtsEngine(
      * @param onAudioChunk 音频回调：(pcm16Data: ByteArray, sampleRate: Int) → Boolean
      * @return `true` 正常完成，`false` 被回调中断
      */
+    @Synchronized
     fun synthesizeStream(
         text: String,
         referenceAudio: FloatArray,

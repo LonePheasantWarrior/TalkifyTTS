@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import com.github.lonepheasantwarrior.talkify.MainActivity
 import com.github.lonepheasantwarrior.talkify.R
 
 /**
@@ -39,12 +38,15 @@ object TalkifyNotificationHelper {
 
     /**
      * 创建点击通知时触发的默认 PendingIntent
-     * 打开 MainActivity
+     * 经包管理器解析应用的启动 Intent，避免基础设施层反向依赖 UI 层的 Activity 类
      */
     private fun createDefaultPendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?: Intent(Intent.ACTION_MAIN).apply {
+                setPackage(context.packageName)
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+        intent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         // Android 12+ (SDK 31+) 强制要求指定 FLAG_IMMUTABLE 或 FLAG_MUTABLE
         return PendingIntent.getActivity(
             context,

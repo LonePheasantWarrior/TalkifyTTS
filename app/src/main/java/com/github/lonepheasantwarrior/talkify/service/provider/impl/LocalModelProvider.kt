@@ -121,6 +121,14 @@ class LocalModelProvider : AbstractTtsProvider() {
 
         // ---- 引擎空闲释放 ----
 
+        /**
+         * 代际自增。须与 [scheduleEngineIdleRelease] 内的比较同锁：
+         * 自增发生在锁外时，空闲释放协程可能读到未自增的旧值而误释放刚启用的引擎
+         */
+        private fun bumpEngineGeneration() {
+            synchronized(engineLock) { engineGeneration++ }
+        }
+
         private fun scheduleEngineIdleRelease() {
             engineIdleJob?.cancel()
             val generation = engineGeneration
@@ -226,7 +234,7 @@ class LocalModelProvider : AbstractTtsProvider() {
 
         isCancelled = false
         cancelEngineIdleRelease()
-        engineGeneration++
+        bumpEngineGeneration()
 
         synthesisJob = providerScope.launch {
             try {
@@ -336,7 +344,7 @@ class LocalModelProvider : AbstractTtsProvider() {
                 val modelInfo = resolveModelInfo(modelId)
                 if (!LocalModelManager.isModelDownloaded(modelInfo.id)) return@launch
                 cancelEngineIdleRelease()
-                engineGeneration++
+                bumpEngineGeneration()
                 ensureEngine(modelInfo.id, modelInfo)
                 scheduleEngineIdleRelease()
             } catch (e: Exception) {

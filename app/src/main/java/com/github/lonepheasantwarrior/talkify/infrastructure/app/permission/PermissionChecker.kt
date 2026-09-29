@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.annotation.SuppressLint
 import androidx.core.content.ContextCompat
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
@@ -16,6 +17,10 @@ import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 object PermissionChecker {
 
     private const val TAG = "TalkifyPermission"
+
+    /** 通知运行时权限常量（API 33+ 生效，编译期内联字符串，低版本引用无副作用） */
+    @SuppressLint("InlinedApi")
+    const val NOTIFICATION_PERMISSION = Manifest.permission.POST_NOTIFICATIONS
 
     /**
      * 检查是否具有联网权限
@@ -45,7 +50,7 @@ object PermissionChecker {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val hasPermission = ContextCompat.checkSelfPermission(
                 context,
-                Manifest.permission.POST_NOTIFICATIONS
+                NOTIFICATION_PERMISSION
             ) == PackageManager.PERMISSION_GRANTED
             TtsLogger.d(TAG) { "hasNotificationPermission: $hasPermission" }
             hasPermission
@@ -71,7 +76,7 @@ object PermissionChecker {
         }
 
         if (!hasNotificationPermission(context)) {
-            missingPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            missingPermissions.add(NOTIFICATION_PERMISSION)
             TtsLogger.w(TAG) { "getMissingPermissions: 缺失权限 - POST_NOTIFICATIONS" }
         }
 

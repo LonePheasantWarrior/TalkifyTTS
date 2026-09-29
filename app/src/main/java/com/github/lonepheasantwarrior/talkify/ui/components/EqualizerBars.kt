@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,18 +42,24 @@ fun EqualizerBars(
     maxHeight: Dp = 28.dp,
     animated: Boolean = true
 ) {
-    val transition = rememberInfiniteTransition(label = "equalizer")
-    val progress by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "equalizer_progress"
-    )
+    // 静态品牌态不创建 infinite transition：
+    // 动画时钟每帧驱动失效，静态标识常驻界面时是纯粹的耗电
+    val progress = if (animated) {
+        val transition = rememberInfiniteTransition(label = "equalizer")
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 900, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "equalizer_progress"
+        ).value
+    } else {
+        0f
+    }
 
-    val phaseStep = (Math.PI / barCount).toFloat()
+    val phaseStep = (kotlin.math.PI / barCount).toFloat()
     val range = maxHeight - minHeight
 
     Row(

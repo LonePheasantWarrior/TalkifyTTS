@@ -21,6 +21,7 @@ import com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerRequest
 import com.tencent.cloud.stream.tts.SpeechSynthesizerResponse
 import com.tencent.cloud.stream.tts.core.ws.Credential
 import com.tencent.cloud.stream.tts.core.ws.SpeechClient
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -103,16 +104,13 @@ class TencentCloudProvider : AbstractTtsProvider() {
     }
 
     private fun parseSampleRate(sampleRateStr: String): Int {
+        // 以整段 "数字+k" 精确匹配（如 8k/16k/24k/48k）；
+        // 旧实现 contains("8k") 会把 "48k" 误判为 8000
         return try {
             val rates = sampleRateStr.split("/")
-                .map { it.trim().lowercase() }
                 .mapNotNull { rateStr ->
-                    when {
-                        rateStr.contains("24k") -> 24000
-                        rateStr.contains("16k") -> 16000
-                        rateStr.contains("8k") -> 8000
-                        else -> null
-                    }
+                    Regex("(\\d+)k").find(rateStr.trim().lowercase())
+                        ?.groupValues?.get(1)?.toIntOrNull()?.times(1000)
                 }
             rates.maxOrNull() ?: 16000
         } catch (_: Exception) {
@@ -228,14 +226,18 @@ class TencentCloudProvider : AbstractTtsProvider() {
             val credential = Credential(config.appId, config.secretId, config.secretKey, "")
             val request = buildTtsRequest(params, voiceId, sampleRate)
 
-            val chunkStarted = false
-            val chunkCompleted = kotlinx.coroutines.CompletableDeferred<Boolean>()
-            val hasError = false
+            // 须为可变标志：SDK 回调线程会写入（onSynthesisFail 置 hasError，
+            // onSynthesisEnd 据此判定块成败；CompletableDeferred 仅首次 complete 生效，
+            // fail 先于 end 时靠 hasError 保证结果不被误判为成功）
+            var chunkStarted = false
+            var hasError = false
+            val chunkCompleted = CompletableDeferred<Boolean>()
 
             val ttsListener = object : FlowingSpeechSynthesizerListener() {
                 override fun onSynthesisStart(response: SpeechSynthesizerResponse?) {
                     logDebug("onSynthesisStart: sessionId=${response?.sessionId}")
                     if (!chunkStarted && isFirstChunk) {
+                        chunkStarted = true
                         isFirstChunk = false
                         listener.onSynthesisStarted()
                     }
@@ -273,11 +275,14 @@ class TencentCloudProvider : AbstractTtsProvider() {
                     val errorMsg = response?.message ?: "Unknown error"
                     val errorCode = response?.code
                     logError("onSynthesisFail: $errorMsg, code=$errorCode")
-                    
+                    hasError = true
+
+                    val friendlyError = TencentErrorParser.friendlyErrorMessage(errorCode, errorMsg)
                     if (firstErrorMessage == null) {
-                        firstErrorMessage = TencentErrorParser.friendlyErrorMessage(errorCode, errorMsg)
+                        firstErrorMessage = friendlyError
+                        val message = friendlyError
                         providerScope.launch(Dispatchers.Main) {
-                            listener.onError(firstErrorMessage!!)
+                            listener.onError(message)
                         }
                     }
                     chunkCompleted.complete(false)
@@ -309,10 +314,11 @@ class TencentCloudProvider : AbstractTtsProvider() {
             success
         } catch (e: Exception) {
             logError("Unexpected error during synthesis", e)
+            val message = "语音合成失败: ${e.message ?: "未知错误"}"
             if (firstErrorMessage == null) {
-                firstErrorMessage = "语音合成失败: ${e.message ?: "未知错误"}"
+                firstErrorMessage = message
                 withContext(Dispatchers.Main) {
-                    listener.onError(firstErrorMessage!!)
+                    listener.onError(message)
                 }
             }
             false

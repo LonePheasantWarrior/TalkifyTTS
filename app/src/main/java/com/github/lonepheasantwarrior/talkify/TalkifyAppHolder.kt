@@ -1,5 +1,6 @@
 package com.github.lonepheasantwarrior.talkify
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.view.View
@@ -16,7 +17,11 @@ import android.view.View
  *   AndroidComposeView 在新版 Compose 中为 internal 类型，
  *   通过组合内 LocalView 拿到实例、经 AccessibilityNodeProvider 公开 API 读取）
  */
+@SuppressLint("StaticFieldLeak")
+// appContext 持 application context（进程级单例，无泄漏）；activity/semanticsHostView
+// 为瞬态引用，由 onResume/onPause 与组合 onDispose 配对清理（见类注释）
 object TalkifyAppHolder {
+    @Volatile
     private var appContext: Context? = null
 
     @Volatile

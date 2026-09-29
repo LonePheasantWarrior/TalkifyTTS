@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  * - **触摸移动**：按住期间持续采样，由 [UmamiRecorder] 内部节流
  * - **视口尺寸**：根容器尺寸变化（旋转/分屏），去重后通知 recorder 重拍快照
  *
- * 页面滚动深度由 [rememberTelemetryScrollObserver] 在各滚动容器上精确观测，
+ * 页面滚动深度由 [TelemetryScrollObserver] 在各滚动容器上精确观测，
  * 不经根级嵌套滚动推断。捕获失败对业务零影响，所有回调在 recorder 内部异常吞没。
  */
 @Composable
@@ -88,7 +88,7 @@ fun TelemetryCaptureHost(
  * 与网页端 recorder 的 scrollPct 语义一致
  */
 @Composable
-fun rememberTelemetryScrollObserver(state: ScrollState) {
+fun TelemetryScrollObserver(state: ScrollState) {
     LaunchedEffect(state) {
         snapshotFlow { state.value to state.maxValue }
             .distinctUntilChanged()

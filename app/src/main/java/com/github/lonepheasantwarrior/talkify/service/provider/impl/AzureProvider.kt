@@ -19,9 +19,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -31,11 +31,11 @@ import okio.ByteString
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
 import java.security.MessageDigest
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.Random
-import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -123,10 +123,15 @@ class AzureProvider : AbstractTtsProvider() {
             )
         }
 
+        /** UTC 时间格式化器（线程安全，可跨线程复用）；OkHttp 回调线程与合成协程共用 */
+        private val utcDateTimeFormatter: DateTimeFormatter =
+            DateTimeFormatter.ofPattern(
+                "EEE MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'",
+                Locale.US
+            ).withZone(ZoneOffset.UTC)
+
         private fun dateToString(): String {
-            val sdf = SimpleDateFormat("EEE MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'", Locale.US)
-            sdf.timeZone = TimeZone.getTimeZone("UTC")
-            return sdf.format(Date())
+            return utcDateTimeFormatter.format(Instant.now())
         }
 
         private fun connectId(): String {
@@ -191,30 +196,48 @@ class AzureProvider : AbstractTtsProvider() {
             return chunks
         }
 
+        /**
+         * 找到不会切断多字节 UTF-8 字符的安全切分点。
+         *
+         * [String] 构造器对非法 UTF-8 序列采用替换（U+FFFD）而非抛异常语义，
+         * 无法用 try/catch 检测边界；改为直接检查 [end] 前最后一个字节：
+         * 若落在多字节序列的中间，则回退到该序列的首字节处切分。
+         */
         private fun findSafeUtf8SplitPoint(bytes: ByteArray, end: Int): Int {
-            var splitAt = end
-            while (splitAt > 0) {
-                try {
-                    String(bytes, 0, splitAt, Charsets.UTF_8)
-                    return splitAt
-                } catch (_: Exception) {
-                    splitAt--
-                }
+            if (end <= 0) return 0
+            // 从 end-1 向前回退，跳过 UTF-8 续字节（10xxxxxx），定位当前序列首字节
+            var lead = end - 1
+            while (lead >= 0 && (bytes[lead].toInt() and 0xC0) == 0x80) lead--
+            if (lead < 0) return end
+            val firstByte = bytes[lead].toInt() and 0xFF
+            val charLength = when {
+                firstByte and 0x80 == 0 -> 1
+                firstByte and 0xE0 == 0xC0 -> 2
+                firstByte and 0xF0 == 0xE0 -> 3
+                firstByte and 0xF8 == 0xF0 -> 4
+                else -> return end
             }
-            return splitAt
+            return if (lead + charLength <= end) end else lead
         }
 
         private fun findBestSplitPoint(bytes: ByteArray, start: Int, end: Int): Int {
-            val subBytes = if (end <= bytes.size) bytes.copyOfRange(0, end) else bytes
-            var splitAt = subBytes.lastIndexOf('\n'.code.toByte())
+            var splitAt = lastIndexOfByte(bytes, '\n'.code.toByte(), start, end)
             if (splitAt >= start) {
                 return splitAt + 1
             }
-            splitAt = subBytes.lastIndexOf(' '.code.toByte())
+            splitAt = lastIndexOfByte(bytes, ' '.code.toByte(), start, end)
             if (splitAt >= start) {
                 return splitAt + 1
             }
             return end
+        }
+
+        /** 在 [start, end) 范围内从后向前查找指定字节，未找到返回 -1 */
+        private fun lastIndexOfByte(bytes: ByteArray, needle: Byte, start: Int, end: Int): Int {
+            for (i in end - 1 downTo start) {
+                if (bytes[i] == needle) return i
+            }
+            return -1
         }
     }
 
@@ -252,7 +275,6 @@ class AzureProvider : AbstractTtsProvider() {
 
     @Volatile
     private var isCancelled = false
-    private var hasCompleted = false
 
     private val providerJob = SupervisorJob()
     private val providerScope = CoroutineScope(Dispatchers.IO + providerJob)
@@ -288,13 +310,9 @@ class AzureProvider : AbstractTtsProvider() {
             return
         }
 
-        // 更新当前 API 地址（用户自定义优先，为空时使用默认值）
+        // 更新当前 API 地址（用户自定义优先，为空时使用默认值）；关闭旧连接在合成协程内
+        // 经 connectionMutex 执行，避免与连接复用/空闲超时路径互斥失效
         val newApiUrl = msConfig.apiUrl.ifBlank { DEFAULT_WSS_URL }
-        if (newApiUrl != currentApiUrl) {
-            logInfo("API URL changed, closing old connection and will create new: $newApiUrl")
-            currentApiUrl = newApiUrl
-            closeConnection()
-        }
 
         val cleanedText = removeIncompatibleCharacters(text)
         val textChunks = splitTextByByteLength(cleanedText)
@@ -308,10 +326,14 @@ class AzureProvider : AbstractTtsProvider() {
         logInfo("Starting Microsoft TTS synthesis: textLength=${text.length}, chunks=${textChunks.size}")
 
         isCancelled = false
-        hasCompleted = false
 
         synthesisJob = providerScope.launch {
             try {
+                if (newApiUrl != currentApiUrl) {
+                    logInfo("API URL changed, closing old connection and will create new: $newApiUrl")
+                    currentApiUrl = newApiUrl
+                    closeConnection()
+                }
                 listener.onSynthesisStarted()
                 processChunks(textChunks, params, msConfig, listener)
                 if (!isCancelled) {
@@ -347,9 +369,7 @@ class AzureProvider : AbstractTtsProvider() {
     ) {
         val pipeClosed = AtomicBoolean(false)
         val pipedOutputStream = PipedOutputStream()
-        val pipedInputStream = withContext(Dispatchers.IO) {
-            PipedInputStream(pipedOutputStream, PIPE_BUFFER_SIZE)
-        }
+        val pipedInputStream = PipedInputStream(pipedOutputStream, PIPE_BUFFER_SIZE)
 
         // 解码是 CPU 密集型操作，调度至 Default
         val decodeJob = providerScope.launch(Dispatchers.Default) {
@@ -484,11 +504,19 @@ class AzureProvider : AbstractTtsProvider() {
         }
     }
 
-    @Synchronized
-    private fun closeConnection() {
-        closeConnectionInternal()
+    /**
+     * 关闭当前持久化连接。
+     *
+     * 统一经 [connectionMutex] 互斥：连接复用（getOrCreateConnection）、空闲超时关闭
+     * 与合成失败清理共享同一把锁，避免「复用判活 → 另一线程关闭」的检查后失效竞态。
+     */
+    private suspend fun closeConnection() {
+        connectionMutex.withLock {
+            closeConnectionInternal()
+        }
     }
 
+    /** 仅在已持有 [connectionMutex] 时调用 */
     private fun closeConnectionInternal() {
         idleTimeoutJob?.cancel()
         idleTimeoutJob = null
@@ -900,10 +928,15 @@ class AzureProvider : AbstractTtsProvider() {
     override fun release() {
         logInfo("Releasing provider")
         isCancelled = true
-        closeConnection()
+        // 先取消在飞作业再抢锁关闭：合成协程可能挂起在 connectionMutex 上等待握手，
+        // 取消使其立即释放锁，避免释放路径被阻塞到连接超时
         synthesisJob?.cancel()
         synthesisJob = null
         providerJob.cancel()
+        runBlocking { closeConnection() }
+        // 释放独立持有的 OkHttp 连接池与调度线程池（本类未复用全局共享客户端）
+        client.connectionPool.evictAll()
+        client.dispatcher.executorService.shutdown()
         super.release()
     }
 

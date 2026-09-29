@@ -65,6 +65,14 @@ class TtsPreviewPlayer(
     @Volatile
     private var playbackAttempt: PreviewAttempt? = null
 
+    /**
+     * 场次代数：每次 speak() 递增。
+     * 异步收尾协程只允许影响自己发起时的场次，防止快速 stop→speak 后
+     * 旧收尾协程覆盖新场次的状态。
+     */
+    @Volatile
+    private var sessionGeneration = 0L
+
     private var stateListener: ((Int, String?) -> Unit)? = null
 
     private var amplitudeListener: ((FloatArray) -> Unit)? = null
@@ -72,11 +80,20 @@ class TtsPreviewPlayer(
     // 波形包络：环形缓冲按绝对窗口序号寻址；写入=音频到达线程，读取=轮询协程
     private val waveLock = Any()
     private val waveRing = FloatArray(WAVE_RING_CAPACITY)
+
+    // 波形窗口参数由音频到达线程写、轮询协程读，须保证可见性
+    @Volatile
     private var waveWindowFrames = 0
+    @Volatile
     private var waveBytesPerFrame = 0
+    @Volatile
     private var waveAudioFormat = 0
+    @Volatile
     private var waveCarry: ByteArray? = null
+
+    /** 环形缓冲写入位号，仅在 [waveLock] 内读写 */
     private var waveMaxWindowIndex = -1L
+    @Volatile
     private var lastWaveAmp = 0f
     private var wavePollJob: Job? = null
 
@@ -98,6 +115,8 @@ class TtsPreviewPlayer(
             stop()
         }
 
+        // 新场次代数：此后旧场次的异步收尾协程不再影响共享状态
+        sessionGeneration++
         isStopped.set(false)
         currentState = STATE_IDLE
         lastErrorMessage = null
@@ -134,6 +153,9 @@ class TtsPreviewPlayer(
     }
 
     private fun createListener(): TtsSynthesisListener {
+        // 捕获创建时的场次代数：上一场次的滞后回调（取消前已在飞）一律丢弃，
+        // 防止旧场次向新场次的播放器写入音频或触发状态收尾
+        val generation = sessionGeneration
         return object : TtsSynthesisListener {
             override fun onSynthesisStarted() {
                 TtsLogger.d("Synthesis started")
@@ -145,7 +167,7 @@ class TtsPreviewPlayer(
                 audioFormat: Int,
                 channelCount: Int
             ) {
-                if (isStopped.get()) {
+                if (generation != sessionGeneration || isStopped.get()) {
                     TtsLogger.d("Audio skipped due to stop")
                     return
                 }
@@ -182,6 +204,7 @@ class TtsPreviewPlayer(
             }
 
             override fun onSynthesisCompleted() {
+                if (generation != sessionGeneration) return
                 TtsLogger.d("Synthesis completed")
                 // 合成完成 ≠ 播放完成：AudioTrack 缓冲中还有尾段未播的音频，
                 // 直接 stop/release 会把结尾截掉（表现为"戛然而止"），
@@ -189,6 +212,7 @@ class TtsPreviewPlayer(
                 // 捕获本场 attempt 局部引用，避免异步排空期间串到下一场次
                 val attempt = playbackAttempt
                 serviceScope.launch {
+                    if (generation != sessionGeneration) return@launch
                     val player = audioPlayer
                     if (player != null) {
                         try {
@@ -207,6 +231,7 @@ class TtsPreviewPlayer(
             }
 
             override fun onError(error: String) {
+                if (generation != sessionGeneration) return
                 TtsLogger.e("Synthesis error: $error")
                 val errorCode = TtsErrorCode.inferErrorCodeFromMessage(error)
                 lastErrorMessage = TtsErrorCode.getErrorMessage(errorCode, error)
@@ -250,8 +275,11 @@ class TtsPreviewPlayer(
             val amp = mapAmp(computeRmsWindow(full, i * windowBytes, windowBytes))
             // 快起缓落的时域平滑，抑制窗口间的毛刺
             prev = if (amp > prev) amp * 0.65f + prev * 0.35f else amp * 0.45f + prev * 0.55f
-            val idx = ++waveMaxWindowIndex
-            synchronized(waveLock) { waveRing[(idx % WAVE_RING_CAPACITY).toInt()] = prev }
+            // 位号自增与写入须同锁：读取方（轮询协程）在 waveLock 内寻址
+            synchronized(waveLock) {
+                val idx = ++waveMaxWindowIndex
+                waveRing[(idx % WAVE_RING_CAPACITY).toInt()] = prev
+            }
         }
         lastWaveAmp = prev
         val remainder = full.size - windows * windowBytes
@@ -335,17 +363,23 @@ class TtsPreviewPlayer(
         playbackAttempt = null
         wavePollJob?.cancel()
         wavePollJob = null
+        // 捕获本场播放器/供应商的局部引用：清理只作用于本场对象，
+        // 快速 stop→speak 后新场次创建的播放器不会被旧协程误杀
+        val player = audioPlayer
+        val provider = currentProvider
+        val generation = sessionGeneration
+        // 同步清空共享引用：新场次据此创建全新播放器，旧实例由下方协程释放
+        audioPlayer = null
         serviceScope.launch(Dispatchers.IO) {
             try {
-                audioPlayer?.stop()
-                audioPlayer?.release()
-                audioPlayer = null
+                player?.stop()
+                player?.release()
             } catch (e: Exception) {
                 TtsLogger.e("Error stopping audio player: ${e.message}", e)
             }
 
             try {
-                currentProvider?.stop()
+                provider?.stop()
             } catch (e: Exception) {
                 TtsLogger.e("Error stopping provider: ${e.message}", e)
             }
@@ -359,7 +393,7 @@ class TtsPreviewPlayer(
                 it.report()
             }
 
-            if (currentState != STATE_STOPPED) {
+            if (generation == sessionGeneration && currentState != STATE_STOPPED) {
                 currentState = if (lastErrorMessage != null) {
                     STATE_ERROR
                 } else {
@@ -383,6 +417,15 @@ class TtsPreviewPlayer(
     fun release() {
         TtsLogger.d("Releasing preview player")
         stop()
+        // stop() 的清理协程是异步派发的，随后 serviceScope.cancel() 可能使其永不执行；
+        // 播放器必须在取消作用域前同步释放，否则 AudioTrack native 资源泄漏
+        try {
+            audioPlayer?.stop()
+            audioPlayer?.release()
+        } catch (e: Exception) {
+            TtsLogger.e("Error releasing audio player: ${e.message}", e)
+        }
+        audioPlayer = null
         try {
             currentProvider?.release()
         } catch (e: Exception) {

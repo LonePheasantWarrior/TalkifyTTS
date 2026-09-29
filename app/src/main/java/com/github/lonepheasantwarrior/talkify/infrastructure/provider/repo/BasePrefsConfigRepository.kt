@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import androidx.core.content.edit
 
 /**
  * 供应商配置仓储基类（SharedPreferences 实现）
@@ -65,16 +66,17 @@ abstract class BasePrefsConfigRepository<T : BaseProviderConfig>(
 
         val prefix = prefsKey(providerId)
         val serialized = serialize(typed)
-        val editor = sharedPreferences.edit()
-        for ((key, value) in serialized) {
-            editor.putString("$prefix$key", value)
-        }
-        for (key in sharedPreferences.all.keys) {
-            if (key.startsWith(prefix) && serialized.containsKey(key.removePrefix(prefix)).not()) {
-                editor.remove(key)
+        // KTX edit{}：批量写同一 editor 并提交，替代手动 editor 管理
+        sharedPreferences.edit {
+            for ((key, value) in serialized) {
+                putString("$prefix$key", value)
+            }
+            for (key in sharedPreferences.all.keys) {
+                if (key.startsWith(prefix) && !serialized.containsKey(key.removePrefix(prefix))) {
+                    remove(key)
+                }
             }
         }
-        editor.apply()
     }
 
     final override fun hasConfig(providerId: String): Boolean {

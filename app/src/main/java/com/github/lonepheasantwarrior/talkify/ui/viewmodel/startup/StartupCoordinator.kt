@@ -1,6 +1,10 @@
 package com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup
 
 import android.app.Application
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.SystemClock
+import android.provider.Settings
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateInfo
@@ -14,7 +18,9 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPa
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,10 +52,14 @@ sealed class StartupState {
  */
 class StartupCoordinator(
     private val application: Application,
-    private val scope: kotlinx.coroutines.CoroutineScope
+    private val scope: CoroutineScope
 ) {
 
-    private val logTag = "StartupCoordinator"
+    companion object {
+        private const val LOG_TAG = "StartupCoordinator"
+    }
+
+    private val logTag = LOG_TAG
 
     private val appConfigRepository: AppConfigRepository by lazy {
         SharedPreferencesAppConfigRepository(application)
@@ -59,6 +69,15 @@ class StartupCoordinator(
     private val _startupState = MutableStateFlow<StartupState>(StartupState.CheckingNetwork)
     val startupState: StateFlow<StartupState> = _startupState.asStateFlow()
 
+    private val _isDefaultProvider = MutableStateFlow(true)
+    val isDefaultProvider: StateFlow<Boolean> = _isDefaultProvider.asStateFlow()
+
+    /** 当前启动序列 Job：重复触发（如从系统设置返回）时先取消旧序列，防止状态机交错 */
+    private var sequenceJob: Job? = null
+
+    /** 默认供应商检测 Job：防重复并发 */
+    private var defaultProviderJob: Job? = null
+
     init {
         startStartupSequence()
     }
@@ -67,7 +86,10 @@ class StartupCoordinator(
      * 开始启动检查序列
      */
     fun startStartupSequence() {
-        scope.launch {
+        // 取消在飞序列：反复开关网络面板返回会触发多次重查，
+        // 旧序列的滞后状态写入会把状态机拉回过期阶段
+        sequenceJob?.cancel()
+        sequenceJob = scope.launch {
             checkNetworkStep()
         }
     }
@@ -147,7 +169,7 @@ class StartupCoordinator(
         TtsLogger.d(logTag) { "Step 4: Checking Updates..." }
 
         scope.launch {
-            val startedAt = android.os.SystemClock.elapsedRealtime()
+            val startedAt = SystemClock.elapsedRealtime()
             try {
                 val currentVersion = getCurrentAppVersion()
                 val result = withContext(Dispatchers.IO) {
@@ -156,7 +178,7 @@ class StartupCoordinator(
                 AppActionTracker.updateCheck(
                     AppActionTracker.TRIGGER_STARTUP,
                     result,
-                    (android.os.SystemClock.elapsedRealtime() - startedAt).toInt()
+                    (SystemClock.elapsedRealtime() - startedAt).toInt()
                 )
 
                 if (result is UpdateCheckResult.UpdateAvailable) {
@@ -187,12 +209,17 @@ class StartupCoordinator(
     }
 
     private fun checkDefaultProvider() {
-        scope.launch {
+        // 防重复并发：快速进出前台可能连续触发
+        defaultProviderJob?.cancel()
+        defaultProviderJob = scope.launch {
             val isDefault = withContext(Dispatchers.IO) {
                 try {
-                    val tts = android.speech.tts.TextToSpeech(application, null)
-                    val systemDefaultEngine = tts.defaultEngine
-                    tts.shutdown()
+                    // 直接读系统默认 TTS 引擎设置项：与 TextToSpeech.getDefaultEngine()
+                    // 同源（后者内部即读该值），但无需绑定并初始化目标 TTS 引擎服务
+                    val systemDefaultEngine = Settings.Secure.getString(
+                        application.contentResolver,
+                        Settings.Secure.TTS_DEFAULT_SYNTH
+                    )
 
                     TtsLogger.d(logTag) { "Default TTS engine: $systemDefaultEngine" }
 
@@ -207,9 +234,6 @@ class StartupCoordinator(
             TtsLogger.i(logTag) { "Talkify is default provider: $isDefault" }
         }
     }
-
-    private val _isDefaultProvider = MutableStateFlow(true)
-    val isDefaultProvider: StateFlow<Boolean> = _isDefaultProvider.asStateFlow()
 
     // --- 用户交互回调 ---
 
@@ -250,7 +274,16 @@ class StartupCoordinator(
     // --- 辅助方法 ---
     private fun getCurrentAppVersion(): String {
         return try {
-            val packageInfo = application.packageManager.getPackageInfo(application.packageName, 0)
+            // minSdk 30：PackageInfoFlags 重载仅 API 33+ 存在，低版本走旧 int 重载
+            @Suppress("DEPRECATION")
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                application.packageManager.getPackageInfo(
+                    application.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                application.packageManager.getPackageInfo(application.packageName, 0)
+            }
             packageInfo.versionName ?: "1.0.0"
         } catch (_: Exception) {
             "1.0.0"

@@ -25,18 +25,15 @@ class TencentCloudVoiceRepository(
     private fun parseSampleRate(sampleRateStr: String): Int? {
         if (sampleRateStr.isBlank()) return null
         return try {
+            // 以整段 "数字+k" 精确匹配（如 8k/16k/24k/48k）；
+            // 旧实现 contains("8k") 会把 "48k" 误判为 8000
             val rates = sampleRateStr.split("/")
-                .map { it.trim().lowercase() }
                 .mapNotNull { rateStr ->
-                    when {
-                        rateStr.contains("8k") -> 8000
-                        rateStr.contains("16k") -> 16000
-                        rateStr.contains("24k") -> 24000
-                        else -> null
-                    }
+                    Regex("(\\d+)k").find(rateStr.trim().lowercase())
+                        ?.groupValues?.get(1)?.toIntOrNull()?.times(1000)
                 }
             rates.maxOrNull()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

@@ -1,12 +1,12 @@
 package com.github.lonepheasantwarrior.talkify
 
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.tween
@@ -25,6 +25,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
@@ -42,7 +43,6 @@ class MainActivity : ComponentActivity() {
         private const val ROUTE_ABOUT = "about"
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,7 +53,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             TalkifyTheme {
-                val versionName = remember { packageManager.getPackageInfo(packageName, 0).versionName ?: "1.0.0" }
+                val versionName = remember {
+                    // minSdk 30：PackageInfoFlags 重载仅 API 33+ 存在，低版本走旧 int 重载
+                    @Suppress("DEPRECATION")
+                    val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+                    } else {
+                        packageManager.getPackageInfo(packageName, 0)
+                    }
+                    info.versionName ?: "1.0.0"
+                }
                 val navController = rememberNavController()
 
                 ObserveRouteForTelemetry(navController)
@@ -94,10 +103,9 @@ class MainActivity : ComponentActivity() {
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this,
                                         onAboutClick = {
-                                            getSharedPreferences("talkify_app_config", MODE_PRIVATE)
-                                                .edit()
-                                                .putBoolean("has_opened_about_page", true)
-                                                .apply()
+                                            // 经领域仓储持久化"关于页已打开"，键名收敛在仓储实现内
+                                            SharedPreferencesAppConfigRepository(this@MainActivity)
+                                                .setAboutPageOpened(true)
                                             navController.navigate(ROUTE_ABOUT)
                                         }
                                     )

@@ -5,7 +5,12 @@ import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
+import androidx.core.content.edit
 
 /**
  * 本地模型生命周期管理器（单例）
@@ -81,7 +86,7 @@ object LocalModelManager {
      * @return 模型下载状态
      */
     fun getModelStatus(modelId: String): ModelDownloadStatus {
-        cleanupUnregisteredModels()
+        scheduleUnregisteredModelsCleanup()
         // 优先检查下载中状态（跨进程共享）
         if (getDownloadingModelId() == modelId) {
             return ModelDownloadStatus.DOWNLOADING
@@ -117,36 +122,43 @@ object LocalModelManager {
 
     // ---- 旧模型目录清理 ----
 
+    private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     @Volatile
-    private var cleanupDone = false
+    private var cleanupScheduled = false
 
     /**
-     * 清理注册表中已移除模型在磁盘上的残留目录
+     * 调度清理注册表中已移除模型在磁盘上的残留目录
      *
      * 模型清单变更（如 v1 三个模型替换为 ZipVoice）后，旧模型文件
      * （Kokoro 约 440MB）会永久占用用户存储，此方法在首次状态查询时
      * 触发一次（幂等），静默删除不在当前注册表中的模型目录。
+     *
+     * 磁盘遍历/删除可达数百 MB 量级，实际清理在后台线程执行——
+     * 本方法会在 UI 组合期被 [getModelStatus] 间接调用，内联执行将阻塞主线程。
      */
-    private fun cleanupUnregisteredModels() {
-        if (cleanupDone) return
+    private fun scheduleUnregisteredModelsCleanup() {
+        if (cleanupScheduled) return
         synchronized(this) {
-            if (cleanupDone) return
+            if (cleanupScheduled) return
 
             val root = getModelsRootDir() ?: return
             if (!root.isDirectory) return
             // 有下载任务进行时不清理，避免误删正在写入的目录；保持未置位，下次查询重试
             if (isAnyModelDownloading()) return
-            cleanupDone = true
+            cleanupScheduled = true
 
-            val registeredIds = LocalModelRegistry.ALL_MODELS.map { it.id }.toSet()
-            root.listFiles()?.filter { it.isDirectory && it.name !in registeredIds }?.forEach { dir ->
-                try {
-                    val deleted = dir.walkBottomUp().fold(0L) { acc, f -> acc + (f.length()) }
-                    dir.deleteRecursively()
-                    TtsLogger.i("Removed unregistered model dir: ${dir.name} (~${deleted / 1024 / 1024}MB)", tag = TAG)
-                } catch (e: Exception) {
-                    // 清理失败不影响功能，下次进程启动可重试（cleanupDone 已置位则跳过）
-                    TtsLogger.w("Failed to cleanup model dir ${dir.name}: ${e.message}", tag = TAG)
+            cleanupScope.launch {
+                val registeredIds = LocalModelRegistry.ALL_MODELS.map { it.id }.toSet()
+                root.listFiles()?.filter { it.isDirectory && it.name !in registeredIds }?.forEach { dir ->
+                    try {
+                        val deleted = dir.walkBottomUp().fold(0L) { acc, f -> acc + (f.length()) }
+                        dir.deleteRecursively()
+                        TtsLogger.i("Removed unregistered model dir: ${dir.name} (~${deleted / 1024 / 1024}MB)", tag = TAG)
+                    } catch (e: Exception) {
+                        // 清理失败不影响功能，本次进程内不再重试
+                        TtsLogger.w("Failed to cleanup model dir ${dir.name}: ${e.message}", tag = TAG)
+                    }
                 }
             }
         }
@@ -161,10 +173,8 @@ object LocalModelManager {
     fun setDownloadingModelId(modelId: String?) {
         val context = TalkifyAppHolder.getContext() ?: return
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (modelId != null) {
-            prefs.edit().putString(KEY_DOWNLOADING_MODEL, modelId).apply()
-        } else {
-            prefs.edit().remove(KEY_DOWNLOADING_MODEL).apply()
+        prefs.edit {
+            if (modelId != null) putString(KEY_DOWNLOADING_MODEL, modelId) else remove(KEY_DOWNLOADING_MODEL)
         }
     }
 
@@ -184,7 +194,7 @@ object LocalModelManager {
         // （进程被杀重启后标志复位，与 getRunningServices 的判定语义一致）
         if (!LocalModelDownloadService.isServiceRunning) {
             TtsLogger.w("Download service not running, clearing stale state: $value", tag = TAG)
-            prefs.edit().remove(KEY_DOWNLOADING_MODEL).apply()
+            prefs.edit { remove(KEY_DOWNLOADING_MODEL) }
             return null
         }
 

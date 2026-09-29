@@ -1,5 +1,3 @@
-@file:Suppress("AssignedValueIsNeverRead")
-
 package com.github.lonepheasantwarrior.talkify.ui.screens
 
 import android.content.ClipData
@@ -69,14 +67,16 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
-import com.github.lonepheasantwarrior.talkify.ui.components.rememberTelemetryScrollObserver
+import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryScrollObserver
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandMark
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandTitle
 import com.github.lonepheasantwarrior.talkify.ui.theme.sharedBrandBounds
@@ -160,7 +160,7 @@ fun AboutScreen(
         }
     ) { innerPadding ->
         val scrollState = rememberScrollState()
-        rememberTelemetryScrollObserver(scrollState)
+        TelemetryScrollObserver(scrollState)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -746,7 +746,7 @@ private suspend fun saveQrCodeToGallery(context: Context, channel: DonateChannel
                 DonateChannel.ALIPAY -> R.drawable.alipay_qr
             }
 
-            val drawable = context.getDrawable(drawableId)
+            val drawable = ContextCompat.getDrawable(context, drawableId)
             val bitmap = drawable?.toBitmap() ?: return@withContext false
 
             val filename = when (channel) {
@@ -771,7 +771,7 @@ private suspend fun saveQrCodeToGallery(context: Context, channel: DonateChannel
 
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            TtsLogger.e("Failed to save QR code to gallery", e)
             false
         }
     }

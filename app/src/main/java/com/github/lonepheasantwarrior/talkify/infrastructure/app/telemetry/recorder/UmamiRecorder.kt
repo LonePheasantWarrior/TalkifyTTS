@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -70,6 +71,9 @@ object UmamiRecorder {
     @Volatile
     private var session: RecorderSession? = null
 
+    /** start/stop 代数：使探测协程的会话装配与最新一次生命周期动作对齐 */
+    private var startGeneration = 0L
+
     /** 当前页面路径（UI 路由映射，未通知前默认 "/"） */
     @Volatile
     private var currentUrl: String = "/"
@@ -86,11 +90,14 @@ object UmamiRecorder {
 
     /** 应用回到前台时启动一场录制（已有进行中的会话则跳过） */
     fun start() {
-        synchronized(sessionMutex) {
+        val generation = synchronized(sessionMutex) {
             if (session != null) return
+            // 代数递增：stop() 会使在途探测装配失效，防止"探测期间退到后台"产生僵尸录制
+            ++startGeneration
         }
         scope.launch {
-            val config = UmamiRecorderConfig.fetch() ?: return@launch
+            // 同步网络探测须在 IO 调度器执行：Default 池按 CPU 核数定容，长阻塞会挤占计算任务
+            val config = withContext(Dispatchers.IO) { UmamiRecorderConfig.fetch() } ?: return@launch
             val doReplay = config.replayEnabled && sample(config.sampleRate)
             val doHeatmap = config.heatmapEnabled && sample(config.heatmapSampleRate)
             if (!doReplay && !doHeatmap) {
@@ -104,6 +111,7 @@ object UmamiRecorder {
             }
             synchronized(sessionMutex) {
                 if (session != null) return@launch
+                if (generation != startGeneration) return@launch
                 session = RecorderSession(config, currentUrl, currentTitle, doReplay, doHeatmap, ::post)
             }
             TtsLogger.i(TAG) {
@@ -114,7 +122,11 @@ object UmamiRecorder {
 
     /** 应用退到后台：冲刷并结束本场录制 */
     fun stop() {
-        val closing = synchronized(sessionMutex) { session.also { session = null } } ?: return
+        val closing = synchronized(sessionMutex) {
+            // 使任何在途 start 装配失效（见 start 中的代数校验）
+            ++startGeneration
+            session.also { session = null }
+        } ?: return
         closing.close()
     }
 

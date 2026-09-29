@@ -600,6 +600,9 @@ class MiniMaxProvider : AbstractTtsProvider() {
         synthesisJob?.cancel()
         synthesisJob = null
         providerJob.cancel()
+        // 释放独立持有的 OkHttp 连接池与调度线程池（本类未复用全局共享客户端）
+        client.connectionPool.evictAll()
+        client.dispatcher.executorService.shutdown()
         super.release()
     }
 
@@ -617,15 +620,5 @@ class MiniMaxProvider : AbstractTtsProvider() {
      */
     override fun createDefaultConfig(): BaseProviderConfig {
         return MiniMaxConfig()
-    }
-
-    /**
-     * 获取配置项的中文标签
-     */
-    override fun getConfigLabel(configKey: String, context: android.content.Context): String? {
-        return when (configKey) {
-            "continuous_sound" -> "合成配置"
-            else -> super.getConfigLabel(configKey, context)
-        }
     }
 }

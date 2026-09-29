@@ -1,6 +1,5 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder
 
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RrwebSnapshotBuilder.MAX_TEXT_LENGTH
 import org.json.JSONArray
 import org.json.JSONObject
 

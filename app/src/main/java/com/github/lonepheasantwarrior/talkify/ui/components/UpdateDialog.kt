@@ -1,7 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.ui.components
 
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateInfo
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import androidx.core.net.toUri
 
 /**
  * 更新弹窗
@@ -41,7 +42,7 @@ fun UpdateDialog(
     source: String = AppActionTracker.TRIGGER_STARTUP
 ) {
     val context = LocalContext.current
-    val hasReleaseNotes = updateInfo.releaseNotes.length > 0
+    val hasReleaseNotes = updateInfo.releaseNotes.isNotEmpty()
     val scrollState = rememberScrollState()
 
     AlertDialog(
@@ -157,9 +158,9 @@ private fun openDownloadUrl(context: android.content.Context, updateInfo: Update
             else -> return
         }
         
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        val intent = Intent(Intent.ACTION_VIEW, url.toUri())
         context.startActivity(intent)
     } catch (e: Exception) {
-        e.printStackTrace()
+        TtsLogger.e("Failed to open download page", e)
     }
 }
