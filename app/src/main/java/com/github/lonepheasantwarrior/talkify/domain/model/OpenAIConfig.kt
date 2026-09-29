@@ -17,6 +17,9 @@ package com.github.lonepheasantwarrior.talkify.domain.model
  * @property styleInstruction 可选的风格指令（自然语言描述朗读风格、语气等）。
  *                             对应 API 的 instructions 字段，例如 "用温柔的语气朗读"。
  *                             为空时不携带 instructions，由模型按默认风格朗读
+ * @property customVoiceId 可选的自定义声音 ID（第三方转接平台的音色标识五花八门，
+ *                             可能不在预置音色列表内）。非空时优先于 [voiceId] 生效，
+ *                             配置界面中"声音选择"随之展示为"自定义"
  * @property proxyProtocol 代理协议总开关："none" 直连（默认）、"http"、"socks"。
  *                             仅在 "http"/"socks" 时主机与端口生效
  * @property proxyHost 代理主机地址，仅协议为 "http"/"socks" 时必填
@@ -28,6 +31,7 @@ data class OpenAIConfig(
     override val modelId: String = "",
     val apiKey: String = "",
     val styleInstruction: String = "",
+    val customVoiceId: String = "",
     val proxyProtocol: String = PROTOCOL_NONE,
     val proxyHost: String = "",
     val proxyPort: String = ""

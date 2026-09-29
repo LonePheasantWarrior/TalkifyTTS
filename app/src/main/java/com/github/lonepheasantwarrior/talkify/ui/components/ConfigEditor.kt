@@ -365,7 +365,9 @@ private fun ConfigItemEditor(
             modifier = modifier
         ) {
             OutlinedTextField(
-                value = selectedVoice?.displayName ?: stringResource(R.string.voice_select_placeholder),
+                value = item.displayValue
+                    ?: selectedVoice?.displayName
+                    ?: stringResource(R.string.voice_select_placeholder),
                 onValueChange = {},
                 readOnly = true,
                 label = { Text(item.label) },
@@ -395,7 +397,7 @@ private fun ConfigItemEditor(
     } else if (item.dropdownOptions != null) {
         var expanded by remember { mutableStateOf(false) }
         val selectedOption = item.dropdownOptions.find { it.first == item.value }
-        val displayText = selectedOption?.second ?: item.value
+        val displayText = item.displayValue ?: selectedOption?.second ?: item.value
 
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -436,7 +438,7 @@ private fun ConfigItemEditor(
         )
     } else {
         OutlinedTextField(
-            value = item.value,
+            value = item.displayValue ?: item.value,
             onValueChange = onValueChange,
             label = { Text(item.label) },
             placeholder = item.placeholder?.let { { Text(it) } },

@@ -244,8 +244,14 @@ fun ConfigBottomSheet(
                     configItems = configItems,
                     availableVoices = availableVoices,
                     onItemValueChange = { changedItem, newValue ->
-                        configItems = configItems.map {
-                            if (it.key == changedItem.key) it.copy(value = newValue) else it
+                        configItems = configItems.map { item ->
+                            when {
+                                item.key == changedItem.key -> item.copy(value = newValue)
+                                // 自定义声音 ID 输入联动：声音选择即时切换为"自定义"展示
+                                changedItem.key == "custom_voice_id" && item.key == "voice_id" ->
+                                    item.copy(displayValue = customVoiceDisplayValue(newValue, context))
+                                else -> item
+                            }
                         }
                     },
                     onSaveClick = {
@@ -277,10 +283,12 @@ fun ConfigBottomSheet(
                     advancedItemKeys = advancedItemKeys,
                     downloadingModelProgress = downloadProgress,
                     onVoiceSelected = { voice ->
-                        val voiceItem = configItems.find { it.key == "voice_id" }
-                        if (voiceItem != null) {
-                            configItems = configItems.map {
-                                if (it.key == "voice_id") it.copy(value = voice.voiceId) else it
+                        configItems = configItems.map { item ->
+                            when (item.key) {
+                                // 选中内置音色即退出"自定义声音"模式，恢复常规展示
+                                "voice_id" -> item.copy(value = voice.voiceId, displayValue = null)
+                                "custom_voice_id" -> item.copy(value = "")
+                                else -> item
                             }
                         }
                     },
@@ -372,6 +380,13 @@ fun ConfigBottomSheet(
         )
     }
 }
+
+/**
+ * 自定义声音 ID 生效时"声音选择"项的展示文本。
+ * 仅覆盖展示（[ConfigItem.displayValue]），真实选中值保留，清空自定义 ID 后恢复常规展示
+ */
+private fun customVoiceDisplayValue(customVoiceId: String, context: Context): String? =
+    context.getString(R.string.voice_custom_display).takeIf { customVoiceId.isNotBlank() }
 
 private fun buildConfigItems(
     config: BaseProviderConfig,
@@ -619,6 +634,19 @@ private fun buildConfigItems(
                     )
                 )
             }
+            // 自定义声音 ID：面向遵循 OpenAI 规范但音色标识自定的第三方转接平台。
+            // 基础项，紧邻"声音选择"便于理解联动关系；非空时优先于预置音色生效
+            val customVoiceLabel = getLabel("custom_voice_id")
+            if (customVoiceLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "custom_voice_id",
+                        label = customVoiceLabel,
+                        value = config.customVoiceId,
+                        placeholder = context.getString(R.string.custom_voice_id_placeholder)
+                    )
+                )
+            }
             // 代理设置：OpenAI 官方服务与第三方转接平台可能存在网络可达性问题（高级设置面板展示）。
             // 代理协议为总开关："无"= 直连并隐藏主机/端口输入框，选中 HTTP/SOCKS 时需完整配置
             val protocolLabel = getLabel("proxy_protocol")
@@ -692,11 +720,15 @@ private fun buildConfigItems(
 
     val voiceLabel = getLabel("voice_id")
     if (voiceLabel != null) {
+        // 自定义声音 ID 生效时，声音选择仅展示"自定义"（真实选中值保留，清空自定义后恢复）
+        val customVoiceDisplay = (config as? OpenAIConfig)
+            ?.let { customVoiceDisplayValue(it.customVoiceId, context) }
         items.add(
             ConfigItem(
                 key = "voice_id",
                 label = voiceLabel,
                 value = config.voiceId,
+                displayValue = customVoiceDisplay,
                 isVoiceSelector = true
             )
         )
@@ -859,6 +891,7 @@ private fun buildConfigFromItems(
         is OpenAIConfig -> {
             val apiKey = items.find { it.key == "api_key" }?.value ?: ""
             val styleInstruction = items.find { it.key == "style_instruction" }?.value ?: ""
+            val customVoiceId = items.find { it.key == "custom_voice_id" }?.value ?: ""
             val proxyProtocol = items.find { it.key == "proxy_protocol" }?.value
                 ?.ifBlank { OpenAIConfig.PROTOCOL_NONE }
                 ?: OpenAIConfig.PROTOCOL_NONE
@@ -868,6 +901,7 @@ private fun buildConfigFromItems(
                 apiUrl = apiUrl,
                 modelId = modelId,
                 styleInstruction = styleInstruction,
+                customVoiceId = customVoiceId,
                 proxyProtocol = proxyProtocol,
                 proxyHost = items.find { it.key == "proxy_host" }?.value ?: "",
                 proxyPort = items.find { it.key == "proxy_port" }?.value ?: ""

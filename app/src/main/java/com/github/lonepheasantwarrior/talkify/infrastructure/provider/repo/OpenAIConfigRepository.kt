@@ -21,6 +21,7 @@ class OpenAIConfigRepository(
         KEY_API_URL to config.apiUrl,
         KEY_MODEL_ID to config.modelId,
         KEY_STYLE_INSTRUCTION to config.styleInstruction,
+        KEY_CUSTOM_VOICE_ID to config.customVoiceId,
         KEY_PROXY_PROTOCOL to config.proxyProtocol,
         KEY_PROXY_HOST to config.proxyHost,
         KEY_PROXY_PORT to config.proxyPort
@@ -32,6 +33,7 @@ class OpenAIConfigRepository(
         apiUrl = values[KEY_API_URL] ?: "",
         modelId = values[KEY_MODEL_ID] ?: "",
         styleInstruction = values[KEY_STYLE_INSTRUCTION] ?: "",
+        customVoiceId = values[KEY_CUSTOM_VOICE_ID] ?: "",
         proxyProtocol = values[KEY_PROXY_PROTOCOL]?.ifBlank { OpenAIConfig.PROTOCOL_NONE }
             ?: OpenAIConfig.PROTOCOL_NONE,
         proxyHost = values[KEY_PROXY_HOST] ?: "",
@@ -44,6 +46,7 @@ class OpenAIConfigRepository(
         const val KEY_API_URL = "api_url"
         const val KEY_MODEL_ID = "model_id"
         const val KEY_STYLE_INSTRUCTION = "style_instruction"
+        const val KEY_CUSTOM_VOICE_ID = "custom_voice_id"
         const val KEY_PROXY_PROTOCOL = "proxy_protocol"
         const val KEY_PROXY_HOST = "proxy_host"
         const val KEY_PROXY_PORT = "proxy_port"

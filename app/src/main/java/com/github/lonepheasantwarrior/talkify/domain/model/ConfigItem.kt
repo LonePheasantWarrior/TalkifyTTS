@@ -7,6 +7,12 @@ data class ConfigItem(
     val isPassword: Boolean = false,
     val isVoiceSelector: Boolean = false,
     /**
+     * 只读展示项（声音选择/下拉选择）的显示文本覆盖。
+     * 用于"值保持不变、仅展示切换"的联动场景（如自定义声音 ID 生效时，
+     * 声音选择展示为"自定义"，真实选中值仍随保存持久化）。为 null 时按默认规则展示。
+     */
+    val displayValue: String? = null,
+    /**
      * 是否使用数字键盘。
      * 适用于纯数字输入项（如代理端口），避免用户误输入非数字字符。
      */

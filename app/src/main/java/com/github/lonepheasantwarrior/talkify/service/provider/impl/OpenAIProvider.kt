@@ -83,6 +83,7 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
     override val configLabels: Map<String, Int> = mapOf(
         "api_key" to R.string.api_key_label,
         "style_instruction" to R.string.label_style_instruction,
+        "custom_voice_id" to R.string.custom_voice_id_label,
         "proxy_protocol" to R.string.label_proxy_protocol,
         "proxy_host" to R.string.label_proxy_host,
         "proxy_port" to R.string.label_proxy_port
@@ -136,11 +137,17 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
         params: SynthesisParams
     ): Request {
         val openaiConfig = config as OpenAIConfig
-        val voiceId = if (openaiConfig.voiceId.isNotEmpty()) {
+        val selectedVoice = if (openaiConfig.voiceId.isNotEmpty()) {
             extractRealVoiceName(openaiConfig.voiceId) ?: openaiConfig.voiceId
         } else {
-            voiceIds.firstOrNull() ?: fallbackVoiceId
+            ""
         }
+        val voiceId = OpenAIVoiceResolver.resolve(
+            customVoiceId = openaiConfig.customVoiceId,
+            selectedVoiceId = selectedVoice,
+            presetVoiceIds = voiceIds,
+            fallbackVoiceId = fallbackVoiceId
+        )
 
         val effectiveApiUrl = openaiConfig.apiUrl.ifBlank { DEFAULT_API_URL }
         val effectiveModel = openaiConfig.modelId.ifBlank { getDefaultModelId() }
@@ -272,5 +279,27 @@ internal object OpenAIRequestBuilder {
                 put("instructions", instructions)
             }
         }
+    }
+}
+
+/**
+ * OpenAI 生效音色解析（纯函数，便于单元测试）
+ *
+ * 优先级：自定义声音 ID > 用户选择的音色 > 预置音色列表首个 > 兜底音色。
+ * 自定义声音 ID 面向遵循 OpenAI 规范但音色标识自定的第三方转接平台，
+ * 不受预置音色列表约束；两侧互斥生效，配置界面据此联动展示
+ */
+internal object OpenAIVoiceResolver {
+
+    fun resolve(
+        customVoiceId: String,
+        selectedVoiceId: String,
+        presetVoiceIds: List<String>,
+        fallbackVoiceId: String
+    ): String {
+        val custom = customVoiceId.trim()
+        if (custom.isNotBlank()) return custom
+        if (selectedVoiceId.isNotBlank()) return selectedVoiceId
+        return presetVoiceIds.firstOrNull() ?: fallbackVoiceId
     }
 }
