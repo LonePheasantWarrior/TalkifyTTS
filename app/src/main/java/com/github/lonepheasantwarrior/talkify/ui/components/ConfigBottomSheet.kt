@@ -619,6 +619,19 @@ private fun buildConfigItems(
                     )
                 )
             }
+            // 自定义声音 ID：面向遵循 OpenAI 规范但音色标识自定的第三方转接平台。
+            // 紧随"声音选择"之后排列，便于理解联动关系；非空时优先于预置音色生效
+            val customVoiceLabel = getLabel("custom_voice_id")
+            if (customVoiceLabel != null) {
+                items.add(
+                    ConfigItem(
+                        key = "custom_voice_id",
+                        label = customVoiceLabel,
+                        value = config.customVoiceId,
+                        placeholder = context.getString(R.string.custom_voice_id_placeholder)
+                    )
+                )
+            }
             val styleLabel = getLabel("style_instruction")
             if (styleLabel != null) {
                 items.add(
@@ -631,19 +644,6 @@ private fun buildConfigItems(
                         isDialogEditor = true,
                         editorTitle = context.getString(R.string.style_instruction_edit_title),
                         guideContent = context.getString(R.string.openai_style_instruction_guide_content)
-                    )
-                )
-            }
-            // 自定义声音 ID：面向遵循 OpenAI 规范但音色标识自定的第三方转接平台。
-            // 基础项，紧邻"声音选择"便于理解联动关系；非空时优先于预置音色生效
-            val customVoiceLabel = getLabel("custom_voice_id")
-            if (customVoiceLabel != null) {
-                items.add(
-                    ConfigItem(
-                        key = "custom_voice_id",
-                        label = customVoiceLabel,
-                        value = config.customVoiceId,
-                        placeholder = context.getString(R.string.custom_voice_id_placeholder)
                     )
                 )
             }
@@ -723,15 +723,17 @@ private fun buildConfigItems(
         // 自定义声音 ID 生效时，声音选择仅展示"自定义"（真实选中值保留，清空自定义后恢复）
         val customVoiceDisplay = (config as? OpenAIConfig)
             ?.let { customVoiceDisplayValue(it.customVoiceId, context) }
-        items.add(
-            ConfigItem(
-                key = "voice_id",
-                label = voiceLabel,
-                value = config.voiceId,
-                displayValue = customVoiceDisplay,
-                isVoiceSelector = true
-            )
+        val voiceItem = ConfigItem(
+            key = "voice_id",
+            label = voiceLabel,
+            value = config.voiceId,
+            displayValue = customVoiceDisplay,
+            isVoiceSelector = true
         )
+        // 排列约定：声音选择紧跟认证项（API Key）之后，风格指令、自定义声音 ID 等
+        // 供应商附加输入项统一靠后，紧邻"高级设置"折叠按钮；无认证项的供应商保持追加到末尾
+        val anchorIndex = items.indexOfFirst { it.key == "api_key" }
+        if (anchorIndex >= 0) items.add(anchorIndex + 1, voiceItem) else items.add(voiceItem)
     }
 
     if (config is MiniMaxConfig) {
