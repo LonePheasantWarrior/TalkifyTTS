@@ -96,7 +96,9 @@ class ProxySettingTest {
         val proxy = ProxySetting(isSocks = false, host = "127.0.0.1", port = 7890).toJavaProxy()
         assertEquals(java.net.Proxy.Type.HTTP, proxy.type())
         val address = proxy.address() as java.net.InetSocketAddress
-        assertEquals("127.0.0.1", address.hostName)
+        // hostAddress 为字面量地址，无反向 DNS 依赖（hostName 在 Docker Desktop
+        // 等环境会把 127.0.0.1 反解为 kubernetes.docker.internal，结果环境相关）
+        assertEquals("127.0.0.1", address.address.hostAddress)
         assertEquals(7890, address.port)
     }
 

@@ -15,8 +15,8 @@ android {
         applicationId = "com.github.lonepheasantwarrior.talkify"
         minSdk = 30
         targetSdk = 37
-        versionCode = 36
-        versionName = "1.0.34"
+        versionCode = 37
+        versionName = "1.0.35"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -54,6 +54,14 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    testOptions {
+        unitTests {
+            // 全局异常处理器单测会触达 android.jar 桩（如 TtsLogger 内的 Log 调用）：
+            // 桩方法返回默认值而非抛 "Stub!" 异常，使 JVM 单测无需 Robolectric
+            // 即可运行触碰 Android API 的代码路径（既有纯函数单测不受影响）
+            isReturnDefaultValues = true
+        }
     }
 }
 

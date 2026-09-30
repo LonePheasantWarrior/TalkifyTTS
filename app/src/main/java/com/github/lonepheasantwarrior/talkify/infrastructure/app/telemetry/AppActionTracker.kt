@@ -88,6 +88,9 @@ object AppActionTracker {
     /** 全局未捕获异常（崩溃） */
     const val EVENT_APP_CRASH = "app_crash"
 
+    /** RxJava 全局错误策略吞掉的孤儿错误（流已取消/终止，无消费者） */
+    const val EVENT_RX_SUPPRESSED = "rx_suppressed"
+
     // ==================== 词表 ====================
 
     /** preview_play_click.outcome：已开始播放 */
@@ -459,6 +462,25 @@ object AppActionTracker {
      */
     fun appCrash(exceptionClassName: String, threadName: String) {
         TalkifyTelemetry.trackEventBlocking(EVENT_APP_CRASH, linkedMapOf(
+            "exception_class" to exceptionClassName,
+            "thread_name" to threadName,
+        ))
+    }
+
+    // ==================== RxJava 全局错误 ====================
+
+    /**
+     * RxJava 全局错误策略吞掉的孤儿错误（RxJava UndeliverableException）
+     *
+     * 停止/暂停朗读 dispose 订阅后，在途流错误成为"无消费者的孤儿错误"到达
+     * RxJavaPlugins 全局处理器，策略记日志后吞掉（防杀进程）；本事件用于线上
+     * 观测拦截效果与量级（应与阿里云供应商使用量正相关，app_crash 相应归零）。
+     *
+     * 与 [appCrash] 同一隐私红线：只带异常类名与线程名，绝不携带异常消息。
+     * 进程此时健康，走异步上报即可（非 [appCrash] 的阻塞式）。
+     */
+    fun rxSuppressed(exceptionClassName: String, threadName: String) {
+        track(EVENT_RX_SUPPRESSED, linkedMapOf(
             "exception_class" to exceptionClassName,
             "thread_name" to threadName,
         ))
