@@ -5,7 +5,7 @@
 
 #### 云端大模型 + 本地 AI 驱动的 Android TTS 引擎
 
-Talkify 是一款基于 Android 的现代化 TTS 连接器。它将云端顶尖大模型（微软、通义千问、豆包、腾讯云、MiniMax、小米 MiMo）的高质量拟人语音合成能力，以及**完全离线运行的本地 AI 语音合成引擎**（ZipVoice，含 12 种精选音色），通过 Android 标准 Text-to-Speech 接口赋予您的系统和阅读软件。
+Talkify 是一款基于 Android 的现代化 TTS 连接器。它将云端顶尖大模型（微软、通义千问、豆包、腾讯云、MiniMax、小米 MiMo、Google Gemini TTS、OpenAI）的高质量拟人语音合成能力，以及**完全离线运行的本地 AI 语音合成引擎**（ZipVoice，含 12 种精选音色），通过 Android 标准 Text-to-Speech 接口赋予您的系统和阅读软件。
 
 <p>
   <img src="https://img.shields.io/badge/Language-Kotlin-7f52ff?style=flat-square&logo=kotlin" alt="Kotlin"/>
@@ -20,9 +20,10 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它将云端顶尖�
 
 ## ✨ 核心特性
 
-- **🔌 多供应商支持**：内置 **阿里云通义千问**、**火山引擎豆包**、**腾讯云**、**微软 Azure**、**MiniMax** 和 **小米 MiMo**，支持一键切换。
+- **🔌 多供应商支持**：内置 **阿里云通义千问**、**火山引擎豆包**、**腾讯云**、**微软 Azure**、**MiniMax**、**小米 MiMo**、**Google Gemini TTS** 和 **OpenAI**，支持一键切换。
 - **🆓 本地离线合成**：内置 ZipVoice 本地 AI 引擎与 12 种精选中文音色，无需 API Key、零调用费用、断网可用（详见 [本地 AI 语音合成](#️-本地-ai-语音合成)）。
-- **⚙️ 自定义配置**：支持为每个供应商自定义 API 地址和模型 ID，适配自建代理、私有化部署等高级场景。
+- **⚙️ 自定义配置**：支持为每个供应商自定义 API 地址（BaseURL）和模型 ID，适配自建代理、私有化部署、第三方转接平台等高级场景；Google / OpenAI 供应商额外支持 HTTP/SOCKS 代理，从容应对网络受限环境。
+- **🗣️ 风格指令**：通过一句自然语言描述即可控制朗读的情感、语调与语速（小米 MiMo、Google Gemini TTS、OpenAI 支持），让声音更有戏。
 - **📱 系统级集成**：实现标准 Android TTS 接口，无缝支持 Legado（阅读）、Google Play图书 等任意支持调用TTS引擎的阅读软件。
 - **⚡️ 流式合成**：采用流式传输技术（Streaming），大幅降低首字延迟，实现近乎实时的响应速度。
 - **🛡️ 稳定后台**：完善的权限引导（网络、电池优化、通知），确保在后台长时间朗读不中断。
@@ -38,6 +39,8 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它将云端顶尖�
 | **qwen3-tts-flash** | 阿里云百炼 | 🇨🇳 🇺🇸 🇩🇪 🇫🇷 🇪🇸 <br>🇵🇹 🇮🇹 🇯🇵 🇰🇷 🇷🇺 | 48种音色，多语种支持 |
 | **speech-2.8-turbo** | MiniMax | 🇨🇳 🇺🇸 | 32kHz 高采样率，WebSocket 流式 |
 | **mimo-v2.5-tts** | 小米 | 🇨🇳 🇺🇸 | OpenAI API 兼容 |
+| **gemini-3.8-flash-lite-tts** | Google | 🇨🇳 🇺🇸 🇬🇧 🇯🇵 🇰🇷 <br>🇫🇷 🇩🇪 等 100+ 语言 | 30种预置音色，支持 interactions / generateContent 双接口规范 |
+| **gpt-4o-mini-tts** | OpenAI | 🇨🇳 🇺🇸 🇯🇵 🇰🇷 🇫🇷 🇩🇪 <br>🇪🇸 等多语种 | 13种音色，风格指令控制，兼容第三方转接平台 |
 
 ## 🎙️ 本地 AI 语音合成
 
@@ -72,6 +75,8 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它将云端顶尖�
 3. **阿里云百炼**：前往 [控制台](https://bailian.console.aliyun.com/) 申请 API Key。
 4. **MiniMax**：前往 [控制台](https://platform.minimaxi.com/) 申请 API Key。
 5. **小米 MiMo**：前往 [控制台](https://api.xiaomimimo.com/) 申请 API Key。
+6. **Google Gemini TTS**：前往 [Google AI Studio](https://aistudio.google.com/) 获取 API Key。该服务在中国大陆无法直连，可在 App 内配置 HTTP/SOCKS 代理，或通过自定义 API 地址指向反向代理 / 兼容网关。
+7. **OpenAI**：前往 [OpenAI Platform](https://platform.openai.com/api-keys) 申请 API Key；同样支持自定义 API 地址（BaseURL），可对接遵循 OpenAI 规范的第三方转接平台。
 
 ### 构建与运行
 
@@ -93,10 +98,6 @@ cd TalkifyTTS
 Talkify 作为一个 TTS 连接器，最佳的使用场景是搭配优秀的电子书阅读器：
 *   ~~[Legado / 开源阅读](https://github.com/gedoor/legado)~~（已停止维护）
 *   [Google Play Books / Google Play 图书](https://play.google.com/store/apps/details?id=com.google.android.apps.books)
-
-### 其他电子书阅读器推荐
-
-*   [Readest](https://github.com/readest/readest) （内置微软 EdgeTTS 引擎，可直接免费调用。朗读效果稍逊但好在可以白嫖，也是个不错的选择～）
 
 ## 📚 文档
 
