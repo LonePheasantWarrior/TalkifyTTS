@@ -63,6 +63,11 @@
     <string name="custom_voice_id_placeholder">第三方平台的自定义音色 ID</string>
     <string name="voice_custom_display">自定义</string>
     <string name="voice_select_placeholder">请选择声音</string>
+
+    <!-- 接口规范（Google 供应商） -->
+    <string name="label_api_spec">接口规范</string>
+    <string name="api_spec_interactions">interactions</string>
+    <string name="api_spec_generate_content">generateContent</string>
     <string name="save_config">保存配置</string>
     <string name="advanced_settings">高级设置</string>
     <string name="expand">展开</string>

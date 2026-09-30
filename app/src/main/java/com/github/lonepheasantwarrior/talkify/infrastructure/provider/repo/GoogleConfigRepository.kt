@@ -21,6 +21,7 @@ class GoogleConfigRepository(
         KEY_API_URL to config.apiUrl,
         KEY_MODEL_ID to config.modelId,
         KEY_STYLE_INSTRUCTION to config.styleInstruction,
+        KEY_API_SPEC to config.apiSpec,
         KEY_PROXY_PROTOCOL to config.proxyProtocol,
         KEY_PROXY_HOST to config.proxyHost,
         KEY_PROXY_PORT to config.proxyPort
@@ -32,6 +33,9 @@ class GoogleConfigRepository(
         apiUrl = values[KEY_API_URL] ?: "",
         modelId = values[KEY_MODEL_ID] ?: "",
         styleInstruction = values[KEY_STYLE_INSTRUCTION] ?: "",
+        // 历史配置无该键时回退默认规范（interactions），保证老用户配置语义不变
+        apiSpec = values[KEY_API_SPEC]?.ifBlank { GoogleConfig.SPEC_INTERACTIONS }
+            ?: GoogleConfig.SPEC_INTERACTIONS,
         proxyProtocol = values[KEY_PROXY_PROTOCOL]?.ifBlank { GoogleConfig.PROTOCOL_NONE }
             ?: GoogleConfig.PROTOCOL_NONE,
         proxyHost = values[KEY_PROXY_HOST] ?: "",
@@ -44,6 +48,7 @@ class GoogleConfigRepository(
         const val KEY_API_URL = "api_url"
         const val KEY_MODEL_ID = "model_id"
         const val KEY_STYLE_INSTRUCTION = "style_instruction"
+        const val KEY_API_SPEC = "api_spec"
         const val KEY_PROXY_PROTOCOL = "proxy_protocol"
         const val KEY_PROXY_HOST = "proxy_host"
         const val KEY_PROXY_PORT = "proxy_port"

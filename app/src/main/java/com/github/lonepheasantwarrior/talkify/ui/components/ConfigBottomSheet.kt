@@ -250,6 +250,9 @@ fun ConfigBottomSheet(
                                 // 自定义声音 ID 输入联动：声音选择即时切换为"自定义"展示
                                 changedItem.key == "custom_voice_id" && item.key == "voice_id" ->
                                     item.copy(displayValue = customVoiceDisplayValue(newValue, context))
+                                // 接口规范切换联动：API 地址语义随规范变化，占位符即时切换
+                                changedItem.key == "api_spec" && item.key == "api_url" ->
+                                    item.copy(placeholder = googleApiUrlPlaceholder(newValue))
                                 else -> item
                             }
                         }
@@ -387,6 +390,17 @@ fun ConfigBottomSheet(
  */
 private fun customVoiceDisplayValue(customVoiceId: String, context: Context): String? =
     context.getString(R.string.voice_custom_display).takeIf { customVoiceId.isNotBlank() }
+
+/**
+ * Google 供应商"API 地址"项的占位符：随接口规范切换语义——
+ * interactions 为完整端点，generateContent 为 "/models" 基础前缀
+ */
+private fun googleApiUrlPlaceholder(apiSpec: String): String =
+    if (apiSpec == GoogleConfig.SPEC_GENERATE_CONTENT) {
+        GoogleConfig.DEFAULT_GENERATE_CONTENT_API_URL
+    } else {
+        GoogleConfig.DEFAULT_INTERACTIONS_API_URL
+    }
 
 private fun buildConfigItems(
     config: BaseProviderConfig,
@@ -534,6 +548,29 @@ private fun buildConfigItems(
             }
         }
         is GoogleConfig -> {
+            // 接口规范：interactions / generateContent 双实现分派。
+            // 置于列表首位，使高级面板中先于 API 地址展示——规范决定其地址语义
+            val specLabel = getLabel("api_spec")
+            if (specLabel != null) {
+                items.add(
+                    0,
+                    ConfigItem(
+                        key = "api_spec",
+                        label = specLabel,
+                        value = config.apiSpec.ifBlank { GoogleConfig.SPEC_INTERACTIONS },
+                        dropdownOptions = listOf(
+                            GoogleConfig.SPEC_INTERACTIONS to context.getString(R.string.api_spec_interactions),
+                            GoogleConfig.SPEC_GENERATE_CONTENT to context.getString(R.string.api_spec_generate_content)
+                        )
+                    )
+                )
+            }
+            // API 地址语义随接口规范变化：interactions 为完整端点，generateContent 为 "/models" 基础前缀
+            val apiUrlIndex = items.indexOfFirst { it.key == "api_url" }
+            if (apiUrlIndex >= 0) {
+                items[apiUrlIndex] = items[apiUrlIndex]
+                    .copy(placeholder = googleApiUrlPlaceholder(config.apiSpec))
+            }
             val label = getLabel("api_key")
             if (label != null) {
                 items.add(
@@ -876,6 +913,9 @@ private fun buildConfigFromItems(
         is GoogleConfig -> {
             val apiKey = items.find { it.key == "api_key" }?.value ?: ""
             val styleInstruction = items.find { it.key == "style_instruction" }?.value ?: ""
+            val apiSpec = items.find { it.key == "api_spec" }?.value
+                ?.ifBlank { GoogleConfig.SPEC_INTERACTIONS }
+                ?: GoogleConfig.SPEC_INTERACTIONS
             val proxyProtocol = items.find { it.key == "proxy_protocol" }?.value
                 ?.ifBlank { GoogleConfig.PROTOCOL_NONE }
                 ?: GoogleConfig.PROTOCOL_NONE
@@ -885,6 +925,7 @@ private fun buildConfigFromItems(
                 apiUrl = apiUrl,
                 modelId = modelId,
                 styleInstruction = styleInstruction,
+                apiSpec = apiSpec,
                 proxyProtocol = proxyProtocol,
                 proxyHost = items.find { it.key == "proxy_host" }?.value ?: "",
                 proxyPort = items.find { it.key == "proxy_port" }?.value ?: ""
