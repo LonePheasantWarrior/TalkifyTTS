@@ -6,6 +6,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.LanguageBoost
 import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.HexCodec
@@ -23,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -53,6 +55,9 @@ class MiniMaxProvider : AbstractTtsProvider() {
         private const val MAX_TEXT_LENGTH = 10000
 
         private const val PIPE_BUFFER_SIZE = 65536
+
+        /** 协议事件等待超时（N8）：服务端 TCP 存活但不下发任何事件时的兜底口径，对齐腾讯云分块超时 */
+        private const val PROTOCOL_IDLE_TIMEOUT_MS = 30_000L
     }
 
     private val providerJob = SupervisorJob()
@@ -62,6 +67,9 @@ class MiniMaxProvider : AbstractTtsProvider() {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        // 长连接心跳：readTimeout(0) 下 NAT/代理静默断连只能靠 120s 服务层兜底，
+        // 心跳让 OkHttp 主动发现死连接（对齐 Azure 的 20s，P2-B4）
+        .pingInterval(20, TimeUnit.SECONDS)
         .build()
 
     @Volatile
@@ -136,6 +144,8 @@ class MiniMaxProvider : AbstractTtsProvider() {
 
         logInfo("Starting synthesis: textLength=${text.length}, pitch=${params.pitch}, speechRate=${params.speechRate}, continuousSound=${miniMaxConfig.continuousSound}")
 
+        // 会话代际：入口取消旧任务并捕获快照，全部回调出口校验（P1-15）
+        val session = beginSynthesisSession()
         isCancelled = false
         hasCompleted = false
 
@@ -143,14 +153,16 @@ class MiniMaxProvider : AbstractTtsProvider() {
         synthesisJob = providerScope.launch {
             try {
                 listener.onSynthesisStarted()
-                performWebSocketSynthesis(text, miniMaxConfig, params, listener)
-                if (!isCancelled && !hasCompleted) {
+                performWebSocketSynthesis(text, miniMaxConfig, params, listener, session)
+                if (isSynthesisSessionActive(session) && !isCancelled && !hasCompleted) {
                     hasCompleted = true
                     listener.onSynthesisCompleted()
+                    logInfo("Synthesis completed successfully")
                 }
-                logInfo("Synthesis completed successfully")
             } catch (e: Exception) {
-                if (!isCancelled) {
+                // 入口取消上一会话时旧协程抛 CancellationException：会话已失效，
+                // 不得误报为合成错误（P1-2 同族竞态）
+                if (!isCancelled && e !is kotlinx.coroutines.CancellationException && isSynthesisSessionActive(session)) {
                     logError("Synthesis error", e)
                     listener.onError(e.message ?: "合成失败")
                 }
@@ -165,7 +177,8 @@ class MiniMaxProvider : AbstractTtsProvider() {
         text: String,
         config: MiniMaxConfig,
         params: SynthesisParams,
-        listener: TtsSynthesisListener
+        listener: TtsSynthesisListener,
+        session: Long
     ) {
         val pipeClosed = AtomicBoolean(false)
         val pipedOutputStream = PipedOutputStream()
@@ -174,7 +187,7 @@ class MiniMaxProvider : AbstractTtsProvider() {
         }
 
         val decodeJob = providerScope.launch(Dispatchers.Default) {
-            decodeMp3Stream(pipedInputStream, listener)
+            decodeMp3Stream(pipedInputStream, listener, session)
         }
 
         val connectionDeferred = CompletableDeferred<WebSocket>()
@@ -222,17 +235,54 @@ class MiniMaxProvider : AbstractTtsProvider() {
 
             wsListener.sendTextChunks(webSocket, textChunks)
 
-            select {
-                taskFinishedDeferred.onAwait { }
-                errorDeferred.onAwait { errorMsg ->
-                    logError("WebSocket task failed: $errorMsg")
+            // P1-2：任务完成优先。服务端 task_finished 后通常立即关闭连接，
+            // "连接关闭"错误与完成信号几乎同时就绪，select 在多子句同时就绪时
+            // 随机选择，会以约 50% 概率把成功合成误报为错误。改为确定性判定：
+            // taskFinishedDeferred 仅由 task_finished 消息正常完成（completeAllDeferred
+            // 不再将其标记为异常完成），它已就绪（含 select 竞态后复核）一律按成功收尾。
+            // N8：select 包超时——服务端 TCP 存活但协议挂起（连接后不再下发任何
+            // 事件）时此处原本永久挂起，仅靠服务层 120s 兜底；超时口径对齐腾讯云
+            // 分块超时（30s），超时后按错误收尾
+            val finishedNormally = if (taskFinishedDeferred.isCompleted) {
+                true
+            } else {
+                withTimeoutOrNull(PROTOCOL_IDLE_TIMEOUT_MS) {
+                    select {
+                        taskFinishedDeferred.onAwait { true }
+                        errorDeferred.onAwait { false }
+                    }
+                } ?: false
+            } || taskFinishedDeferred.isCompleted
+
+            if (finishedNormally) {
+                // 正常完成后显式关闭连接：readTimeout(0) 使空闲连接永不超时，
+                // 不关闭则每次成功合成都遗留一条空闲连接（P1-2/P2-B4）
+                runCatching { webSocket.close(1000, "Done") }
+            } else {
+                // N8：errorDeferred 未就绪即 select 超时（协议挂起），直接取超时文案，
+                // 不能再 await()（将永久挂起）；主动断开残留连接——readTimeout(0) 下
+                // 该连接不会自愈
+                val timedOut = !errorDeferred.isCompleted
+                val errorMsg = if (timedOut) "语音合成超时，请稍后重试" else errorDeferred.await()
+                logError("WebSocket task failed: $errorMsg")
+                // G2/N1：出口校验——stop() 作废会话后 errorDeferred 的迟到错误不得穿透
+                // （对照同方法外层 catch 的同名校验，此处此前漏配）
+                if (isSynthesisSessionActive(session)) {
                     listener.onError(errorMsg)
+                    // 错误即本场终态：作废会话——外层不再补发 onSynthesisCompleted
+                    // （避免 onError 后跟 completed 的双重终态），同时静默 decode 残留回调
+                    invalidateSynthesisSession()
+                }
+                if (timedOut) {
+                    runCatching { webSocket.close(1000, "Protocol timeout") }
                 }
             }
         } catch (e: Exception) {
-            if (!isCancelled) {
+            if (!isCancelled && e !is kotlinx.coroutines.CancellationException && isSynthesisSessionActive(session)) {
                 logError("WebSocket synthesis error", e)
                 listener.onError(e.message ?: "WebSocket连接失败")
+                // 错误即本场终态：作废会话，防止外层补发 onSynthesisCompleted（双重终态）
+                invalidateSynthesisSession()
             }
         } finally {
             // 非挂起关闭：协程被 stop() 取消时 withContext 会直接抛 CancellationException，
@@ -241,7 +291,11 @@ class MiniMaxProvider : AbstractTtsProvider() {
             runCatching { pipedOutputStream.close() }
             pipeClosed.set(true)
             decodeJob.join()
-            currentWebSocket = null
+            // 仅当本会话仍是当前会话才清空引用：旧任务的 finally 可能晚于新任务的
+            // 赋值执行，无条件置 null 会抹掉新会话的连接引用（P3-24）
+            if (isSynthesisSessionActive(session)) {
+                currentWebSocket = null
+            }
         }
     }
 
@@ -332,7 +386,11 @@ class MiniMaxProvider : AbstractTtsProvider() {
                     }
                 }
             } catch (e: Exception) {
-                logError("Error processing WebSocket message: $text", e)
+                // N19-b：帧体可能携带 hex 音频（用户文本的语音呈现），release 下也
+                // 不整帧进 logcat——只记事件类型与帧长，原文仅在 debug 门控下输出
+                val eventType = runCatching { JSONObject(text).optString("event", "?") }.getOrDefault("?")
+                logError("Error processing WebSocket message: event=$eventType, length=${text.length}")
+                TtsLogger.d("$tag: failed frame body: $text")
             }
         }
 
@@ -431,9 +489,8 @@ class MiniMaxProvider : AbstractTtsProvider() {
             if (!taskStartedDeferred.isCompleted) {
                 taskStartedDeferred.completeExceptionally(Exception(errorMsg))
             }
-            if (!taskFinishedDeferred.isCompleted) {
-                taskFinishedDeferred.completeExceptionally(Exception(errorMsg))
-            }
+            // 注意：不再将 taskFinishedDeferred 标记为异常完成——它是 select 判定
+            // "任务正常完成"的唯一信号（连接关闭/失败经 errorDeferred 传递，P1-2）
         }
 
         /**
@@ -447,7 +504,6 @@ class MiniMaxProvider : AbstractTtsProvider() {
             val speed = MiniMaxParamMapper.convertSpeechRate(params.speechRate)
             val vol = MiniMaxParamMapper.convertVolume(params.volume)
             val pitch = ((params.pitch - 100f) * 12f / 100f).roundToInt().coerceIn(-12, 12)
-            val emotion = resolveEmotion(params)
 
             val effectiveModel = config.modelId.ifBlank { getDefaultModelId() }
             val message = JSONObject().apply {
@@ -459,9 +515,6 @@ class MiniMaxProvider : AbstractTtsProvider() {
                     put("speed", speed)
                     put("vol", vol)
                     put("pitch", pitch)
-                    if (emotion.isNotBlank()) {
-                        put("emotion", emotion)
-                    }
                 })
                 put("audio_setting", JSONObject().apply {
                     put("sample_rate", getAudioConfig().sampleRate)
@@ -521,12 +574,19 @@ class MiniMaxProvider : AbstractTtsProvider() {
      *
      * @param inputStream 管道输入流，由 WebSocket 线程写入 MP3 数据
      * @param listener 音频合成监听器，接收解码后的 PCM 数据
+     * @param session 会话代际快照：stop() 作废会话后，解码线程在取消探测生效前
+     * 已产出的尾帧不得穿透到监听器（G1/N1）
      */
-    private fun decodeMp3Stream(inputStream: PipedInputStream, listener: TtsSynthesisListener) {
+    private fun decodeMp3Stream(
+        inputStream: PipedInputStream,
+        listener: TtsSynthesisListener,
+        session: Long
+    ) {
         Mp3StreamDecoder.decodeMp3Stream(
             inputStream,
             isCancelled = { isCancelled }
         ) { pcmBytes, sampleRate, channelCount ->
+            if (!isSynthesisSessionActive(session)) return@decodeMp3Stream
             listener.onAudioAvailable(
                 pcmBytes,
                 sampleRate,
@@ -560,19 +620,6 @@ class MiniMaxProvider : AbstractTtsProvider() {
     }
 
     /**
-     * 解析合成参数中的情感设置
-     *
-     * 预留接口，当前返回空字符串表示不设置情感参数
-     *
-     * @param params 合成参数
-     * @return 情感标识字符串，空字符串表示不设置
-     */
-    private fun resolveEmotion(params: SynthesisParams): String {
-        return ""
-    }
-
-
-    /**
      * 停止当前语音合成
      *
      * 关闭 WebSocket 连接并取消合成协程
@@ -580,6 +627,8 @@ class MiniMaxProvider : AbstractTtsProvider() {
     override fun stop() {
         logInfo("Stopping synthesis")
         isCancelled = true
+        // 作废当前会话代际：停止后到达的残留回调被出口校验静默丢弃（P1-15）
+        invalidateSynthesisSession()
         currentWebSocket?.close(1000, "User cancelled")
         currentWebSocket = null
         synthesisJob?.cancel()

@@ -48,8 +48,9 @@ object LocalModelRegistry {
      * 仅有 encoder/decoder/tokens，缺少 lexicon、espeak-ng-data、vocoder 与参考
      * 音频（已全站排查确认），tarball 是唯一完整的官方发布物。
      *
-     * 临时音色说明：test_wavs/leijun-1.wav 为官方测试音频（真人声纹），
-     * 仅用于本地合成链路验证，正式发布前必须替换为授权干净的音色包。
+     * 音色说明：可用音色全部来自内置授权目录 [LocalVoiceCatalog]（应用随包
+     * 分发的参考音频）。官方 tarball 自带的 test_wavs 测试音频为未经授权的
+     * 真人声纹样本（P1-11），不注册为音色，下载服务解压后即行删除。
      */
     val ZIPVOICE_DISTILL = LocalModelInfo(
         id = "zipvoice_distill",
@@ -66,21 +67,14 @@ object LocalModelRegistry {
             "decoder.int8.onnx",
             "tokens.txt",
             "lexicon.txt",
-            "espeak-ng-data/phontab",
-            "test_wavs/leijun-1.wav"
+            "espeak-ng-data/phontab"
         ),
         archiveAssets = mapOf(
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-zipvoice-distill-int8-zh-en-emilia.tar.bz2" to ""
         ),
-        voiceList = listOf(
-            LocalModelVoice(
-                voiceId = "temp_leijun",
-                displayName = "雷军",
-                language = "zh",
-                referenceFileName = "test_wavs/leijun-1.wav",
-                referenceText = "那还是三十六年前, 一九八七年. 我呢考上了武汉大学的计算机系."
-            )
-        ),
+        // 音色以内置授权目录（LocalVoiceCatalog）为准；不注册官方 tarball
+        // 自带的真人声纹测试音频（P1-11）
+        voiceList = emptyList(),
         sampleRate = 24000,
         supportedLanguages = listOf("zh", "en")
     )

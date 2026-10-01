@@ -1,6 +1,8 @@
 package com.github.lonepheasantwarrior.talkify
 
 import android.os.Process
+import com.github.lonepheasantwarrior.talkify.TalkifyExceptionHandler.handleRxJavaGlobalError
+import com.github.lonepheasantwarrior.talkify.TalkifyExceptionHandler.installRxJavaErrorPolicy
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
@@ -26,28 +28,35 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
 
     private var rxJavaErrorPolicyInstalled = false
 
+    private var installed = false
+
     fun initialize() {
+        if (installed) return
         previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler(this)
+        installed = true
         installRxJavaErrorPolicy()
         TtsLogger.i("Global exception handler initialized", tag = TAG)
     }
 
     override fun uncaughtException(thread: Thread, throwable: Throwable) {
-        TtsLogger.e("Uncaught exception caught", throwable = throwable, tag = TAG)
-        reportCrashTelemetry(thread, throwable)
+        try {
+            TtsLogger.e("Uncaught exception caught", throwable = throwable, tag = TAG)
+            reportCrashTelemetry(thread, throwable)
 
-        val context = TalkifyAppHolder.getContext()
-        if (context != null) {
-            // 发送崩溃通知，提示用户应用发生错误
-            TalkifyNotificationHelper.sendSystemNotification(
-                context,
-                context.getString(R.string.crash_notification_message)
-            )
+            val context = TalkifyAppHolder.getContext()
+            if (context != null) {
+                // 发送崩溃通知，提示用户应用发生错误
+                TalkifyNotificationHelper.sendSystemNotification(
+                    context,
+                    context.getString(R.string.crash_notification_message)
+                )
+            }
+        } finally {
+            // 交还必须无条件执行：通知/遥测链路任何一环抛出都不能让崩溃线程悬挂
+            previousHandler?.uncaughtException(thread, throwable)
+                ?: Process.killProcess(Process.myPid())
         }
-
-        previousHandler?.uncaughtException(thread, throwable)
-            ?: Process.killProcess(Process.myPid())
     }
 
     /**
@@ -135,8 +144,10 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
             ?: Process.killProcess(Process.myPid())
     }
 
-    /** 仅供单元测试复位进程级策略状态（幂等标志 + RxJava 全局处理器），业务代码勿调 */
-    internal fun resetRxJavaErrorPolicyForTest() {
+    /** 仅供单元测试复位进程级策略状态（安装标志/前代处理器/RxJava 全局处理器），业务代码勿调 */
+    internal fun resetForTest() {
+        installed = false
+        previousHandler = null
         rxJavaErrorPolicyInstalled = false
         RxJavaPlugins.setErrorHandler(null)
     }

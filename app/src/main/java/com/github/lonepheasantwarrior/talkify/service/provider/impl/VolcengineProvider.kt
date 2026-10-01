@@ -13,6 +13,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListe
 import com.github.lonepheasantwarrior.talkify.service.provider.VolcengineErrorParser
 import com.github.lonepheasantwarrior.talkify.service.provider.VolcengineParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.toMaskedString
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -20,6 +21,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * 火山引擎 - 豆包语音合成 2.0 供应商实现
@@ -35,9 +37,6 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
 
     companion object {
         const val DEFAULT_API_URL = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
-
-        /** 保留静态访问入口（TalkifyCheckDataActivity 等无需实例化即可读取） */
-        val SUPPORTED_LANGUAGES = arrayOf("zho", "eng")
     }
 
     override val chunkMaxLength: Int = 300
@@ -46,8 +45,7 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
         "api_key" to R.string.api_key_label
     )
 
-    override val supportedLanguages: Array<String>
-        get() = SUPPORTED_LANGUAGES
+    override val supportedLanguages: Array<String> = arrayOf("zho", "eng")
 
     override val fallbackVoiceId: String = "zh_female_vv_uranus_bigtts"
 
@@ -72,6 +70,8 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
         if (config.apiKey.isEmpty()) {
             return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
         }
+        // N19-f：明文端点在配置校验层显式拦截（平台禁明文，晚拦只会得到"网络不可用"）
+        validateCleartextEndpoint(config.apiUrl)?.let { return it }
         return null
     }
 
@@ -95,8 +95,9 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
 
         // 构建 additions 参数
         val additions = JSONObject().apply {
-            // 明确语种设置
-            put("explicit_language", "zh")
+            // 按 SynthesisRequest 报告的语言显式设置语种；未知语言不传该参数，
+            // 由服务端自动检测（此前硬编码 "zh" 使英文朗读被强制按中文处理，P1-3）
+            explicitLanguage(params.language)?.let { put("explicit_language", it) }
             // 禁用 markdown 过滤
             put("disable_markdown_filter", true)
         }
@@ -104,7 +105,8 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
         // 构建请求体
         val requestBody = JSONObject().apply {
             put("user", JSONObject().apply {
-                put("uid", "talkify_user_${System.currentTimeMillis()}")
+                // 安装级稳定 uid（此前每请求随机时间戳，服务端画像/限流维度失效，P2-B15）
+                put("uid", "talkify_user")
             })
             put("req_params", JSONObject().apply {
                 put("text", text)
@@ -214,12 +216,24 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logError("Error reading response stream", e)
             hasError = true
+            // 上抛交由基类 fetchChunk 统一分类上报：在此吞掉会让整次合成既无
+            // 完成也无错误回调，服务层静默挂死至 120s 超时（P1-19）
+            throw e
         }
 
         return !hasError
+    }
+
+    /** 映射为豆包 `explicit_language` 取值；不支持的语言返回 null（服务端自动检测） */
+    private fun explicitLanguage(language: String?): String? = when (language?.lowercase(Locale.US)) {
+        "zh", "zho", "chi" -> "zh"
+        "en", "eng" -> "en"
+        else -> null
     }
 
     override fun mapHttpError(errorBody: String): String {

@@ -56,9 +56,9 @@ Talkify 是一款基于 Android 的现代化 TTS 连接器。它将云端顶尖�
 
 ## 🛠️ 技术栈
 
-- **语言**: Kotlin 2.4.10
+- **语言**: Kotlin 2.4.20
 - **架构**: MVVM (Model-View-ViewModel) + Clean Architecture
-- **UI**: Jetpack Compose (BOM 2026.06.01) + Material 3 Expressive
+- **UI**: Jetpack Compose (BOM 2026.09.00) + Material 3 Expressive
 - **网络**: OkHttp 4.12.0 (HTTP/2, WebSocket, Streaming)
 - **本地推理**: sherpa-onnx v1.13.1 (ONNX Runtime, CPU int8) + ZipVoice-Distill
 - **最低兼容**: Android 11 (API 30)
@@ -90,7 +90,7 @@ cd TalkifyTTS
 
 # 3. 编译 Debug 包
 ./gradlew assembleDebug
-# 输出: app/build/outputs/apk/debug/app-debug.apk
+# 输出: app/build/outputs/apk/debug/Talkify-v<版本>-<abi>-debug.apk（universal 包 abi 为 universal）
 ```
 
 ### 推荐搭配
@@ -119,6 +119,11 @@ Talkify 作为一个 TTS 连接器，最佳的使用场景是搭配优秀的电�
     </td>
   </tr>
 </table>
+
+## 📄 许可证
+
+本项目代码以 [MIT License](LICENSE) 发布。第三方依赖与模型资产的许可信息见 [NOTICE.md](NOTICE.md)；
+其中 ZipVoice 模型权重基于 Emilia 数据集训练（CC-BY-NC-4.0），本地合成能力仅供非商业用途。
 
 ## 🤝 致谢
 

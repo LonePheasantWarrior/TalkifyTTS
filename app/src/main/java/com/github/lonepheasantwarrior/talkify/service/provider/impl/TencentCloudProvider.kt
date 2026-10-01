@@ -21,9 +21,11 @@ import com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerRequest
 import com.tencent.cloud.stream.tts.SpeechSynthesizerResponse
 import com.tencent.cloud.stream.tts.core.ws.Credential
 import com.tencent.cloud.stream.tts.core.ws.SpeechClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -46,6 +48,9 @@ class TencentCloudProvider : AbstractTtsProvider() {
     }
 
     private val providerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 当前串行分块任务：新会话入口先取消，防止旧任务复活（P1-15） */
+    private var synthesisJob: Job? = null
 
     @Volatile
     private var isCancelled = false
@@ -164,21 +169,20 @@ class TencentCloudProvider : AbstractTtsProvider() {
         logInfo("Starting synthesis: textLength=${text.length}, voiceId=$realVoiceId, sampleRate=$sampleRate, pitch=${params.pitch}, speechRate=${params.speechRate}")
         logDebug("Audio config: sampleRate=$sampleRate, format=PCM_16BIT, channel=mono")
 
+        // 会话代际：入口取消旧任务并捕获快照，回调出口校验（P1-15）
+        val session = beginSynthesisSession()
         isCancelled = false
         hasCompleted = false
         isFirstChunk = true
         firstErrorMessage = null
 
         val textChunks = TextChunkSplitter.split(text, MAX_TEXT_LENGTH)
-        if (textChunks.isEmpty()) {
-            listener.onError("文本为空")
-            return
-        }
 
         logDebug("Text split into ${textChunks.size} chunks")
 
-        providerScope.launch {
-            processChunksSequentially(textChunks, tencentConfig, params, realVoiceId, sampleRate, listener)
+        synthesisJob?.cancel()
+        synthesisJob = providerScope.launch {
+            processChunksSequentially(textChunks, tencentConfig, params, realVoiceId, sampleRate, listener, session)
         }
     }
 
@@ -188,24 +192,25 @@ class TencentCloudProvider : AbstractTtsProvider() {
         params: SynthesisParams,
         voiceId: String,
         sampleRate: Int,
-        listener: TtsSynthesisListener
+        listener: TtsSynthesisListener,
+        session: Long
     ) {
         for ((index, chunk) in chunks.withIndex()) {
-            if (isCancelled || hasCompleted) {
+            if (isCancelled || hasCompleted || !isSynthesisSessionActive(session)) {
                 logDebug("Synthesis cancelled or completed, stopping chunk processing")
                 return
             }
 
             logDebug("Processing chunk $index/${chunks.size}, length=${chunk.length}")
 
-            val success = processSingleChunk(chunk, config, params, voiceId, sampleRate, listener)
+            val success = processSingleChunk(chunk, config, params, voiceId, sampleRate, listener, session)
             if (!success) {
                 logError("Failed to process chunk $index")
                 return
             }
         }
 
-        if (!isCancelled && !hasCompleted) {
+        if (!isCancelled && !hasCompleted && isSynthesisSessionActive(session)) {
             hasCompleted = true
             withContext(Dispatchers.Main) {
                 listener.onSynthesisCompleted()
@@ -220,7 +225,8 @@ class TencentCloudProvider : AbstractTtsProvider() {
         params: SynthesisParams,
         voiceId: String,
         sampleRate: Int,
-        listener: TtsSynthesisListener
+        listener: TtsSynthesisListener,
+        session: Long
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val credential = Credential(config.appId, config.secretId, config.secretKey, "")
@@ -234,9 +240,12 @@ class TencentCloudProvider : AbstractTtsProvider() {
             val chunkCompleted = CompletableDeferred<Boolean>()
 
             val ttsListener = object : FlowingSpeechSynthesizerListener() {
+                // G4/N1：SDK 匿名回调运行在 SDK 自己的线程上，外层协程的会话校验
+                // 覆盖不到此处——每个 listener 出口独立校验会话代际，stop() 作废
+                // 会话后 SDK 在取消生效前送达的残留回调一律静默丢弃
                 override fun onSynthesisStart(response: SpeechSynthesizerResponse?) {
                     logDebug("onSynthesisStart: sessionId=${response?.sessionId}")
-                    if (!chunkStarted && isFirstChunk) {
+                    if (!chunkStarted && isFirstChunk && isSynthesisSessionActive(session)) {
                         chunkStarted = true
                         isFirstChunk = false
                         listener.onSynthesisStarted()
@@ -249,7 +258,7 @@ class TencentCloudProvider : AbstractTtsProvider() {
                 }
 
                 override fun onAudioResult(buffer: ByteBuffer?) {
-                    if (buffer != null && buffer.remaining() > 0) {
+                    if (buffer != null && buffer.remaining() > 0 && isSynthesisSessionActive(session)) {
                         val data = ByteArray(buffer.remaining())
                         buffer.get(data)
                         logDebug("Received audio chunk: ${data.size} bytes")
@@ -282,7 +291,9 @@ class TencentCloudProvider : AbstractTtsProvider() {
                         firstErrorMessage = friendlyError
                         val message = friendlyError
                         providerScope.launch(Dispatchers.Main) {
-                            listener.onError(message)
+                            if (isSynthesisSessionActive(session)) {
+                                listener.onError(message)
+                            }
                         }
                     }
                     chunkCompleted.complete(false)
@@ -306,16 +317,28 @@ class TencentCloudProvider : AbstractTtsProvider() {
             } ?: run {
                 logError("Chunk completion timed out after ${CHUNK_COMPLETION_TIMEOUT_MS}ms")
                 currentSynthesizer?.cancel()
+                // 超时也必须给出终态：既不回调 onError 也不回调 completed 会让整次
+                // 合成静默终止——服务层表现为无错误无音频（P2-B2）
+                if (firstErrorMessage == null && isSynthesisSessionActive(session)) {
+                    firstErrorMessage = "分块合成超时"
+                    withContext(Dispatchers.Main) {
+                        listener.onError("语音合成失败: 分块合成超时")
+                    }
+                }
                 false
             }
 
             currentSynthesizer = null
 
             success
+        } catch (e: CancellationException) {
+            // 取消不是合成错误：stop() 作废会话后 await() 以 CE 结束，原样上抛交由
+            // 协程取消语义收尾，不得落入下方 Exception 分支记为错误
+            throw e
         } catch (e: Exception) {
             logError("Unexpected error during synthesis", e)
             val message = "语音合成失败: ${e.message ?: "未知错误"}"
-            if (firstErrorMessage == null) {
+            if (firstErrorMessage == null && isSynthesisSessionActive(session)) {
                 firstErrorMessage = message
                 withContext(Dispatchers.Main) {
                     listener.onError(message)
@@ -356,8 +379,12 @@ class TencentCloudProvider : AbstractTtsProvider() {
     override fun stop() {
         logInfo("Stopping synthesis")
         isCancelled = true
+        // 作废当前会话代际：停止后到达的残留回调被出口校验静默丢弃（P1-15）
+        invalidateSynthesisSession()
         currentSynthesizer?.cancel()
         currentSynthesizer = null
+        synthesisJob?.cancel()
+        synthesisJob = null
     }
 
     override fun release() {

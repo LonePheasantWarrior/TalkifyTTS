@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder
 
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
@@ -88,8 +89,14 @@ object UmamiRecorder {
     @Volatile
     private var lastViewportHeight = -1
 
-    /** 应用回到前台时启动一场录制（已有进行中的会话则跳过） */
+    /**
+     * 应用回到前台时启动一场录制（已有进行中的会话则跳过）
+     *
+     * 受用户遥测开关门控（N2）：开关关闭时直接放弃——录制会话经 [RecordTransport]
+     * 上传 `/api/record`，确有流量，不能以"无事件上报即无流量"为由豁免
+     */
     fun start() {
+        if (!TalkifyTelemetry.isUserEnabled()) return
         val generation = synchronized(sessionMutex) {
             if (session != null) return
             // 代数递增：stop() 会使在途探测装配失效，防止"探测期间退到后台"产生僵尸录制
@@ -120,14 +127,20 @@ object UmamiRecorder {
         }
     }
 
-    /** 应用退到后台：冲刷并结束本场录制 */
-    fun stop() {
+    /**
+     * 应用退到后台：冲刷并结束本场录制
+     *
+     * @param flushBufferedEvents 是否冲刷缓冲中的事件；用户关闭遥测开关时应传
+     * false 立即静默丢弃（N2）——缓冲事件虽采集于开关开启期间，但开关关闭后
+     * 不再有任何新增上传才是用户对"关闭遥测"的直觉语义
+     */
+    fun stop(flushBufferedEvents: Boolean = true) {
         val closing = synchronized(sessionMutex) {
             // 使任何在途 start 装配失效（见 start 中的代数校验）
             ++startGeneration
             session.also { session = null }
         } ?: return
-        closing.close()
+        closing.close(flushBufferedEvents)
     }
 
     // ==================== UI 事件入口（主线程调用） ====================
@@ -269,10 +282,19 @@ object UmamiRecorder {
             }
         }
 
-        /** 会话结束（退后台）：冲刷全部缓冲并停止一切任务 */
-        fun close() {
-            expire()
-            transport.flushAll()
+        /**
+         * 会话结束：停止一切任务并按 [flush] 冲刷或静默丢弃缓冲（[flush] = false 见 [UmamiRecorder.stop]）。
+         * [ReplaySession.close] 必须无条件调用——它持有独立协程作用域（checkoutJob 每 30s 采集），
+         * 不随本会话 [job] 取消；漏掉会让录制在遥测关闭后变成僵尸会话（采集照旧、缓冲无冲刷无界增长）
+         */
+        fun close(flush: Boolean = true) {
+            expired = true
+            scrollDebounceJob?.cancel()
+            replay?.close()
+            if (flush) {
+                heatmap?.takeDeeperScrollEvent()?.let { transport.addHeatmapEvent(it) }
+                transport.flushAll()
+            }
             job.cancel()
         }
 

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
+   备份规则（API 31 以下设备亦生效的 Auto Backup 白名单机制）。
+   供应商凭据与本地模型状态不得入云备份：
+   1. talkify_engine_configs：8 家供应商 API Key / 腾讯云密钥三件套（P0-2①）
+   2. talkify_local_model_state：模型"已下载"状态——模型文件本体在
+      getExternalFilesDir，不在 Auto Backup 范围内，恢复出孤儿状态会导致
+      引擎按"已下载"加载失败
    See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="sharedpref" path="talkify_engine_configs.xml"/>
+    <exclude domain="sharedpref" path="talkify_local_model_state.xml"/>
 </full-backup-content>

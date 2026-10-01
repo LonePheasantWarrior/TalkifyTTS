@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.service.provider
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,6 +27,35 @@ class TextChunkSplitterTest {
     fun `splits at sentence end punctuation`() {
         val result = TextChunkSplitter.split("你好世界。你好世界。", 5)
         assertEquals(listOf("你好世界。", "你好世界。"), result)
+    }
+
+    @Test
+    fun `sentence end within window is preferred over hard cut - P1-1 regression`() {
+        // 旧实现在窗口内只检查"当前位置恰为标点"，产出 ["今天天气很好。我", "们出去玩吧。"]
+        assertEquals(
+            listOf("今天天气很好。", "我们出去玩吧。"),
+            TextChunkSplitter.split("今天天气很好。我们出去玩吧。", 8)
+        )
+    }
+
+    @Test
+    fun `consecutive punctuation stays at chunk end`() {
+        assertEquals(
+            listOf("太好了！？", "我们走。"),
+            TextChunkSplitter.split("太好了！？我们走。", 5)
+        )
+    }
+
+    @Test
+    fun `hard cut never breaks surrogate pairs - P2-B5 regression`() {
+        val emoji = "\uD83D\uDE00" // 😀，UTF-16 代理对
+        val text = "ab${emoji}cd"
+        val result = TextChunkSplitter.split(text, 3)
+        assertEquals(text, result.joinToString(""))
+        for (chunk in result) {
+            assertFalse("chunk ends with a lone high surrogate: $chunk", chunk.isNotEmpty() && Character.isHighSurrogate(chunk.last()))
+            assertFalse("chunk starts with a lone low surrogate: $chunk", chunk.isNotEmpty() && Character.isLowSurrogate(chunk.first()))
+        }
     }
 
     @Test

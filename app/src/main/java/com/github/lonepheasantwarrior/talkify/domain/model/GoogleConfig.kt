@@ -1,5 +1,9 @@
 package com.github.lonepheasantwarrior.talkify.domain.model
 
+import com.github.lonepheasantwarrior.talkify.domain.model.GoogleConfig.Companion.SPEC_GENERATE_CONTENT
+import com.github.lonepheasantwarrior.talkify.domain.model.GoogleConfig.Companion.SPEC_INTERACTIONS
+
+
 /**
  * Google Gemini TTS 语音合成供应商配置
  *

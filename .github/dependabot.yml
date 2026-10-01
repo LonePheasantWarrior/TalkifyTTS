@@ -1,0 +1,35 @@
+version: 2
+updates:
+  # 主工程依赖周检；examples/ 下的腾讯云参考工程为独立嵌套工程，
+  # Dependabot 只扫描根目录 gradle 配置，不会误报
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      androidx:
+        patterns:
+          - 'androidx.*'
+      kotlin:
+        patterns:
+          - 'org.jetbrains.kotlin*'
+      # N19-o：其余第三方库分组（AGP/网络/SDK/编解码）
+      android-tools:
+        patterns:
+          - 'com.android.*'
+      libraries:
+        patterns:
+          - 'com.squareup.okhttp3:*'
+          - 'com.alibaba:dashscope-sdk-java'
+          - 'javazoom:*'
+          - 'org.apache.commons:commons-compress'
+          - 'org.json:*'
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # SHA 固定后的 Action 升级合并为单个 PR（N16）；SHA 经注释中的版本号识别
+      actions:
+        patterns:
+          - '*'

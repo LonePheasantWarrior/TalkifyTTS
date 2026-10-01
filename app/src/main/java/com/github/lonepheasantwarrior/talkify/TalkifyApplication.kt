@@ -8,6 +8,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationChannel
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.DeviceInfoCollector
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
@@ -21,13 +22,29 @@ class TalkifyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // release 构建关闭调试日志：用户朗读原文等敏感内容不进系统 logcat（P1-13）
+        val isDebuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        TtsLogger.setDebugEnabled(isDebuggable)
         TtsLogger.i(TAG) { "TalkifyApplication onCreate" }
         TalkifyAppHolder.setContext(this)
         TalkifyExceptionHandler.initialize()
+        injectTelemetrySwitch()
         createNotificationChannels()
         deleteLegacyTelemetryPrefs()
         observeAppForeground()
         trackCurrentActivity()
+    }
+
+    /**
+     * 注入用户遥测开关到遥测门面（N2 门控）
+     *
+     * 必须在 onCreate 注入而非前台观察时读取：TTS 服务可与 UI 独立工作，
+     * 合成遥测在无 Activity 的场景也会产生。注入后全部上报入口统一短路
+     */
+    private fun injectTelemetrySwitch() {
+        TalkifyTelemetry.setUserEnabled(
+            SharedPreferencesAppConfigRepository(this).isTelemetryEnabled()
+        )
     }
 
     /**
@@ -36,11 +53,16 @@ class TalkifyApplication : Application() {
      * 不能依赖 [Application.onCreate]：TTS 前台服务常驻，进程在任务划走后仍存活，
      * 重开应用不会重建进程。[ProcessLifecycleOwner] 以可见 Activity 为准，
      * 冷启动、划走重开、温热重进均触发 onStart，旋转屏幕等 Activity 重建不会误报
+     *
+     * 遥测门控（N2）：开关状态已注入 [TalkifyTelemetry] 门面，pageview/事件与
+     * recorder 会话在门面与 [UmamiRecorder.start] 内部统一短路，此处直接触发即可
      */
     private fun observeAppForeground() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                reportAppOpened()
+                if (TalkifyTelemetry.isUserEnabled()) {
+                    reportAppOpened()
+                }
                 UmamiRecorder.start()
             }
 

@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.AlertDialog
@@ -46,6 +47,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -73,10 +75,12 @@ import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
-import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryScrollObserver
+import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandMark
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandTitle
 import com.github.lonepheasantwarrior.talkify.ui.theme.sharedBrandBounds
@@ -106,6 +110,8 @@ fun AboutScreen(
     var showPrivacyDialog by remember { mutableStateOf(false) }
 
     val githubUrl = stringResource(R.string.about_github_url)
+    // 回调内取资源须用顶层 stringResource（组合期解析，配置变化安全）
+    val qqClipboardLabel = stringResource(R.string.about_clipboard_qq_label)
     val privacyPolicyUrl = stringResource(R.string.about_privacy_policy_url)
 
     val updateChecker = remember { UpdateChecker() }
@@ -267,9 +273,12 @@ fun AboutScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
+                    .clickable(
+                        // N19-i：TalkBack 语义标签——与下方 QQ 群"复制"卡片可区分
+                        onClickLabel = stringResource(R.string.about_github_open_action)
+                    ) {
                         AppActionTracker.externalLinkOpen(AppActionTracker.TARGET_GITHUB, AppActionTracker.URL_ABOUT)
-                        uriHandler.openUri(githubUrl)
+                        openUriSafely(uriHandler, githubUrl)
                     },
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -308,10 +317,14 @@ fun AboutScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
+                    .clickable(
+                        // N19-i：复制语义标签 + 复制图标（原 OpenInNew 与 GitHub 卡片对
+                        // TalkBack 不可区分）
+                        onClickLabel = stringResource(R.string.about_qq_group_copy_action)
+                    ) {
                         AppActionTracker.qqGroupCopied(AppActionTracker.URL_ABOUT)
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("QQ群号", qqGroupNumber)
+                        val clip = ClipData.newPlainText(qqClipboardLabel, qqGroupNumber)
                         clipboard.setPrimaryClip(clip)
                         Toast.makeText(context, R.string.about_qq_group_copied, Toast.LENGTH_SHORT).show()
                     },
@@ -343,8 +356,9 @@ fun AboutScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
                     }
+                    // N19-i：复制语义图标（原 OpenInNew 与 GitHub 卡片对 TalkBack 不可区分）
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                        imageVector = Icons.Filled.ContentCopy,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -381,6 +395,44 @@ fun AboutScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 匿名遥测开关（默认关闭，P1-12）：开启后每次回到前台上报一次
+                    // 匿名启动信号；遥测 payload 不含朗读内容与凭据
+                    val appConfigRepository = remember {
+                        com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository(context)
+                    }
+                    var telemetryEnabled by remember { mutableStateOf(appConfigRepository.isTelemetryEnabled()) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.about_telemetry_toggle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.about_telemetry_toggle_description),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = telemetryEnabled,
+                            onCheckedChange = { checked ->
+                                telemetryEnabled = checked
+                                appConfigRepository.setTelemetryEnabled(checked)
+                                // 开关状态热生效（N2）：门面短路 + 关闭时立即静默丢弃在途录制会话
+                                TalkifyTelemetry.setUserEnabled(checked)
+                                if (!checked) {
+                                    UmamiRecorder.stop(flushBufferedEvents = false)
+                                }
+                            }
+                        )
+                    }
                 }
             }
 
@@ -463,7 +515,7 @@ fun AboutScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(56.dp)
+                            .heightIn(min = 56.dp)
                     ) {
                         Text(stringResource(R.string.donate_wechat))
                     }
@@ -473,7 +525,7 @@ fun AboutScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .height(56.dp)
+                            .heightIn(min = 56.dp)
                     ) {
                         Text(stringResource(R.string.donate_alipay))
                     }
@@ -728,7 +780,7 @@ fun AboutScreen(
                         AppActionTracker.TARGET_PRIVACY_POLICY,
                         AppActionTracker.URL_ABOUT
                     )
-                    uriHandler.openUri(privacyPolicyUrl)
+                    openUriSafely(uriHandler, privacyPolicyUrl)
                 }) {
                     Text(stringResource(R.string.about_privacy_view_full))
                 }
@@ -774,5 +826,18 @@ private suspend fun saveQrCodeToGallery(context: Context, channel: DonateChannel
             TtsLogger.e("Failed to save QR code to gallery", e)
             false
         }
+    }
+}
+
+
+/**
+ * 安全打开外部链接：无浏览器设备 / 受限用户配置文件下 [LocalUriHandler.openUri]
+ * 会抛 ActivityNotFoundException，直接调用可致崩溃（P1-9）
+ */
+private fun openUriSafely(uriHandler: androidx.compose.ui.platform.UriHandler, url: String) {
+    try {
+        uriHandler.openUri(url)
+    } catch (e: Exception) {
+        TtsLogger.e("Failed to open uri: $url", e)
     }
 }

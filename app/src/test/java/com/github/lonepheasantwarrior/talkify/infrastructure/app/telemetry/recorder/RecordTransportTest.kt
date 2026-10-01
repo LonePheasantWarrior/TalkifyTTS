@@ -85,6 +85,30 @@ class RecordTransportTest {
     }
 
     @Test
+    fun `超限的solo事件同样走分片协议`() {
+        val transport = newTransport()
+        transport.addRecordEvent(JSONObject().put("n", "incremental"))
+        transport.addRecordEvent(JSONObject().put("k", "a".repeat(600_000)), solo = true)
+
+        // 第 1 包为被冲刷的增量事件，其余为 solo 超限事件的分片
+        assertEquals("incremental", eventAt(payloads()[0], 0).getString("n"))
+        assertTrue(bodies.size > 2)
+        val fragmentIds = mutableSetOf<String>()
+        var total = 0
+        bodies.drop(1).forEachIndexed { index, body ->
+            val bytes = body.toByteArray(StandardCharsets.UTF_8).size
+            assertTrue("分片 #$index 体积 $bytes 超限", bytes <= 500_000)
+            val fragment = eventAt(payloads()[index + 1], 0)
+            assertEquals(Rrweb.FRAGMENT_EVENT_TYPE, fragment.getString("type"))
+            val data = fragment.getJSONObject("data")
+            fragmentIds.add(data.getString("id"))
+            total = data.getInt("total")
+        }
+        assertEquals(1, fragmentIds.size)
+        assertEquals(bodies.size - 1, total)
+    }
+
+    @Test
     fun `超大事件分片上报且可重组还原`() {
         val transport = newTransport()
         val originalEvent = JSONObject().put("k", "a".repeat(1_200_000))

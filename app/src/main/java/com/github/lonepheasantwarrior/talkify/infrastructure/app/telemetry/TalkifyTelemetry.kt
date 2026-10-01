@@ -1,5 +1,9 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry.setUserEnabled
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry.trackEvent
+
+
 /**
  * Talkify 遥测服务（门面）
  *
@@ -16,12 +20,32 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
  * - **低耦合**：业务层只依赖本门面，更换统计后端只需替换传输层，业务代码零改动
  * - **零阻塞**：上报即入队即返回，绝不阻塞调用线程
  * - **零权限**：不额外收集敏感信息，匿名设备信息由 [DeviceInfoCollector] 负责
+ * - **用户开关门控**（N2）：全部上报入口统一受用户遥测开关短路——开关状态由
+ *   [TalkifyApplication.onCreate] 注入、关于页切换时经 [setUserEnabled] 热生效；
+ *   状态未知（进程极早路径）时按关闭处理（P1-12 隐私基线：明示同意后才采集）
  *
  * @see UmamiClient
  * @see TtsTelemetryTracker
  * @see DeviceInfoCollector
  */
 object TalkifyTelemetry {
+
+    /** 用户遥测开关缓存；null = 尚未注入（按关闭处理） */
+    @Volatile
+    private var userEnabled: Boolean? = null
+
+    /**
+     * 注入用户遥测开关状态
+     *
+     * [com.github.lonepheasantwarrior.talkify.TalkifyApplication] 启动时读取持久化
+     * 状态注入；关于页开关切换时调用以热生效（含关闭时立即停录 recorder 会话）
+     */
+    fun setUserEnabled(enabled: Boolean) {
+        userEnabled = enabled
+    }
+
+    /** 用户遥测开关当前是否开启（未注入时按关闭） */
+    fun isUserEnabled(): Boolean = userEnabled == true
 
     /**
      * 上报一次页面访问（Pageview）
@@ -34,6 +58,7 @@ object TalkifyTelemetry {
      * @param title 页面标题（可选，对齐 script.js 的 document.title 字段）
      */
     fun trackPageView(url: String = "/", title: String? = null) {
+        if (!isUserEnabled()) return
         UmamiClient.trackPage(url, title)
     }
 
@@ -48,6 +73,7 @@ object TalkifyTelemetry {
      * @param eventName 事件名称（建议使用 snake_case）
      */
     fun trackEvent(eventName: String) {
+        if (!isUserEnabled()) return
         UmamiClient.track(eventName, emptyMap())
     }
 
@@ -68,6 +94,7 @@ object TalkifyTelemetry {
      *                   供仪表盘按页面拆分事件）
      */
     fun trackEvent(eventName: String, properties: Map<String, Any>, url: String = "/") {
+        if (!isUserEnabled()) return
         UmamiClient.track(eventName, properties, url)
     }
 
@@ -82,6 +109,7 @@ object TalkifyTelemetry {
      * @param properties 自定义属性，仅支持 String 和 Int 类型值
      */
     fun trackEventBlocking(eventName: String, properties: Map<String, Any>) {
+        if (!isUserEnabled()) return
         UmamiClient.trackBlocking(eventName, properties)
     }
 
@@ -94,6 +122,7 @@ object TalkifyTelemetry {
      * @param properties 会话属性，仅支持 String 和 Int 类型值
      */
     fun identify(properties: Map<String, Any>) {
+        if (!isUserEnabled()) return
         UmamiClient.identify(properties)
     }
 }

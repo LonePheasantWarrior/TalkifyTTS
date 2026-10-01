@@ -24,6 +24,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -75,6 +76,17 @@ class StartupCoordinator(
     /** 当前启动序列 Job：重复触发（如从系统设置返回）时先取消旧序列，防止状态机交错 */
     private var sequenceJob: Job? = null
 
+    /** 在飞更新检查 Job：随启动序列一并取消（P1-7） */
+    private var updateCheckJob: Job? = null
+
+    /**
+     * 启动序列代数：[startStartupSequence] 时自增。更新检查协程以启动时的代数快照
+     * 校验终态写入——isActive 只覆盖挂起期间的取消，"校验通过后、写入前"恰有新序列
+     * 启动（取消不中断非挂起代码）的残余窗口，由"校验+写入"与自增同锁互斥归零（P1-7）
+     */
+    private val generationLock = Any()
+    private var startupGeneration = 0L
+
     /** 默认供应商检测 Job：防重复并发 */
     private var defaultProviderJob: Job? = null
 
@@ -87,8 +99,11 @@ class StartupCoordinator(
      */
     fun startStartupSequence() {
         // 取消在飞序列：反复开关网络面板返回会触发多次重查，
-        // 旧序列的滞后状态写入会把状态机拉回过期阶段
+        // 旧序列的滞后状态写入会把状态机拉回过期阶段。
+        // 在飞的更新检查不在 sequenceJob 子协程内，须显式一并取消（P1-7）
         sequenceJob?.cancel()
+        updateCheckJob?.cancel()
+        synchronized(generationLock) { startupGeneration++ }
         sequenceJob = scope.launch {
             checkNetworkStep()
         }
@@ -154,6 +169,14 @@ class StartupCoordinator(
         val isIgnoring = PowerOptimizationHelper.isIgnoringBatteryOptimizations(application)
 
         if (!isIgnoring) {
+            // N12：用户显式点过"以后再说"的引导不再每次冷启动重弹；点弹窗外/返回键关闭
+            // 不落标记（本会话继续流程，下次冷启动仍会提示，对齐"持续引导"策略）；点击
+            // "去设置"的路径同样不落持久化标记——未完成豁免时下次启动仍会提示
+            if (appConfigRepository.isBatteryOptimizationPromptDismissed()) {
+                TtsLogger.i(logTag) { "Battery optimization prompt dismissed by user, skipping." }
+                checkUpdateStep()
+                return
+            }
             TtsLogger.i(logTag) { "Need to request battery optimization." }
             AppPageTracker.open(AppPageTracker.PATH_BATTERY_OPTIMIZATION, "BatteryOptimization")
             _startupState.value = StartupState.RequestingBatteryOptimization
@@ -168,13 +191,18 @@ class StartupCoordinator(
         _startupState.value = StartupState.CheckingUpdate
         TtsLogger.d(logTag) { "Step 4: Checking Updates..." }
 
-        scope.launch {
+        updateCheckJob?.cancel()
+        val generation = synchronized(generationLock) { startupGeneration }
+        updateCheckJob = scope.launch {
             val startedAt = SystemClock.elapsedRealtime()
             try {
                 val currentVersion = getCurrentAppVersion()
                 val result = withContext(Dispatchers.IO) {
                     updateChecker.checkForUpdates(currentVersion)
                 }
+                // 网络等待期间本检查或所属序列被取消（重试/新序列启动）：
+                // 滞后结果作废，不得把已进入 CheckingNetwork 的状态机拽回更新弹窗（P1-7）
+                if (!isActive) return@launch
                 AppActionTracker.updateCheck(
                     AppActionTracker.TRIGGER_STARTUP,
                     result,
@@ -183,16 +211,32 @@ class StartupCoordinator(
 
                 if (result is UpdateCheckResult.UpdateAvailable) {
                     TtsLogger.i(logTag) { "Update available: ${result.updateInfo.versionName}" }
-                    AppPageTracker.open(AppPageTracker.PATH_UPDATE, "Update")
-                    _startupState.value = StartupState.UpdateAvailable(result.updateInfo)
+                    publishIfCurrent(generation) {
+                        AppPageTracker.open(AppPageTracker.PATH_UPDATE, "Update")
+                        _startupState.value = StartupState.UpdateAvailable(result.updateInfo)
+                    }
                 } else {
                     TtsLogger.i(logTag) { "No update available or check failed: $result" }
-                    finishStartup()
+                    publishIfCurrent(generation) { finishStartup() }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 取消不是失败：重抛，禁止落入通用 catch 把状态机写成 Completed（P1-7）
+                throw e
             } catch (e: Exception) {
                 TtsLogger.e("Error checking updates", e, logTag)
-                finishStartup()
+                // 错误收尾同受代数约束：滞后异常不得把新序列拽到 Completed
+                publishIfCurrent(generation) { finishStartup() }
             }
+        }
+    }
+
+    /**
+     * 校验更新检查协程的代数快照后落地状态；代数失配（新序列已启动）则整体作废。
+     * 校验与写入在 [generationLock] 内原子完成——分离的"先检查后写"仍有竞态窗口
+     */
+    private fun publishIfCurrent(generation: Long, onCurrent: () -> Unit) {
+        synchronized(generationLock) {
+            if (generation == startupGeneration) onCurrent()
         }
     }
 
@@ -224,7 +268,9 @@ class StartupCoordinator(
                     TtsLogger.d(logTag) { "Default TTS engine: $systemDefaultEngine" }
 
                     val talkifyPackageName = application.packageName
-                    systemDefaultEngine == talkifyPackageName || systemDefaultEngine?.contains("talkify") == true
+                    // 精确匹配：contains("talkify") 子串回退会把包名含 "talkify" 的
+                    // 同类应用误判为本应用（P3-19）
+                    systemDefaultEngine == talkifyPackageName
                 } catch (e: Exception) {
                     TtsLogger.e("Failed to get default TTS provider", e, logTag)
                     false
@@ -263,7 +309,14 @@ class StartupCoordinator(
         checkUpdateStep()
     }
 
+    /** 用户在电池优化弹窗显式点击"以后再说"：持久化跳过标记（N12），冷启动不再重弹 */
     fun onBatteryOptimizationSkipped() {
+        appConfigRepository.setBatteryOptimizationPromptDismissed(true)
+        checkUpdateStep()
+    }
+
+    /** 用户以点弹窗外/返回键关闭电池优化弹窗：仅本次继续流程，不落持久化标记 */
+    fun onBatteryOptimizationDialogDismissed() {
         checkUpdateStep()
     }
 

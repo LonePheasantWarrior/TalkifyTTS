@@ -1,19 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
+   数据迁移/提取规则（API 31+）。
+   云备份与设备间迁移（D2D）均排除供应商凭据与本地模型状态，理由见 backup_rules.xml。
    See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <exclude domain="sharedpref" path="talkify_engine_configs.xml"/>
+        <exclude domain="sharedpref" path="talkify_local_model_state.xml"/>
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="talkify_engine_configs.xml"/>
+        <exclude domain="sharedpref" path="talkify_local_model_state.xml"/>
     </device-transfer>
-    -->
 </data-extraction-rules>

@@ -2,6 +2,8 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 
 import android.os.SystemClock
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker.EVENT_PREVIEW_PLAYBACK
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker.appCrash
 
 /**
  * 应用动作事件埋点（语义层）

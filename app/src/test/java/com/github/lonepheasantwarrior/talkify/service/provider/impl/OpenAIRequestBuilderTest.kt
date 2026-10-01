@@ -3,7 +3,6 @@ package com.github.lonepheasantwarrior.talkify.service.provider.impl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
-import org.json.JSONObject
 
 class OpenAIRequestBuilderTest {
 

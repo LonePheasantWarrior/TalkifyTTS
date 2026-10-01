@@ -8,6 +8,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.XiaomiConfig
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.HttpStreamingTtsProvider
+import com.github.lonepheasantwarrior.talkify.service.provider.OpenAIErrorParser
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
 import com.github.lonepheasantwarrior.talkify.service.provider.toMaskedString
@@ -69,6 +70,8 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
         if (config.apiKey.isEmpty()) {
             return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
         }
+        // N19-f：明文端点在配置校验层显式拦截（平台禁明文，晚拦只会得到"网络不可用"）
+        validateCleartextEndpoint(config.apiUrl)?.let { return it }
         return null
     }
 
@@ -197,9 +200,14 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
                     }
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             logError("Error reading response stream", e)
             hasError = true
+            // 上抛交由基类 fetchChunk 统一分类上报：在此吞掉会让整次合成既无
+            // 完成也无错误回调，服务层静默挂死至 120s 超时（P1-19）
+            throw e
         }
 
         return !hasError
@@ -273,20 +281,9 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
     }
 
     override fun mapHttpError(errorBody: String): String {
-        return try {
-            val json = JSONObject(errorBody)
-            val message = json.optString("error", "")
-            if (message.isNotBlank()) {
-                return message
-            }
-            // 尝试从 detail 或 message 获取
-            json.optString(
-                "detail",
-                json.optString("error", TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED))
-            )
-        } catch (_: Exception) {
-            TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED)
-        }
+        // 小米的对象型 error 与 OpenAI 兼容：统一经 OpenAI 兼容解析器处理，
+        // 与自身 SSE 路径的解析一致，避免把原始 JSON 透传给用户（P2-B7）
+        return OpenAIErrorParser.parse(errorBody)
     }
 
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
@@ -297,10 +294,4 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
         return XiaomiConfig()
     }
 
-    override fun getConfigLabel(configKey: String, context: android.content.Context): String? {
-        return when (configKey) {
-            "style_instruction" -> context.getString(R.string.label_style_instruction)
-            else -> super.getConfigLabel(configKey, context)
-        }
-    }
 }

@@ -1,7 +1,6 @@
 package com.github.lonepheasantwarrior.talkify.ui.screens
 
 import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,9 +46,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -102,9 +101,9 @@ import com.github.lonepheasantwarrior.talkify.ui.components.EqualizerBars
 import com.github.lonepheasantwarrior.talkify.ui.components.NetworkBlockedDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.NotificationPermissionDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.ProviderSelector
+import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryScrollObserver
 import com.github.lonepheasantwarrior.talkify.ui.components.UpdateDialog
 import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
-import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryScrollObserver
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandMark
 import com.github.lonepheasantwarrior.talkify.ui.theme.SharedKeyBrandTitle
 import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyMotion
@@ -207,6 +206,7 @@ fun MainScreen(
     val emptyInputHint = stringResource(R.string.input_empty_hint)
     val providerNotConfiguredHint = stringResource(R.string.provider_not_configured_hint)
     val batteryOpenFailed = stringResource(R.string.battery_optimization_open_failed)
+    val modelSizeUnknownHint = stringResource(R.string.model_size_unknown)
 
     LaunchedEffect(previewError) {
         previewError?.let { msg ->
@@ -217,7 +217,7 @@ fun MainScreen(
         }
     }
 
-    // 下载完成状态反馈
+    // 下载完成/失败状态反馈
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
     @Suppress("LocalContextGetResourceValueCall")
     LaunchedEffect(downloadProgress) {
@@ -230,6 +230,18 @@ fun MainScreen(
             viewModel.clearDownloadProgress()
             // 刷新配置版本以更新下拉菜单状态
             configVersion++
+        } else if (progress != null && progress.isFailed) {
+            // 失败终态显式提示：此前失败仅静默清空进度，用户只见进度条消失（P1-6）
+            val reason = viewModel.downloadFailureMessage
+            val message = if (reason.isNullOrBlank()) {
+                context.getString(R.string.model_download_failed, progress.displayName)
+            } else {
+                context.getString(R.string.model_download_failed_reason, progress.displayName, reason)
+            }
+            scope.launch {
+                snackbarHostState.showSnackbar(message)
+            }
+            viewModel.clearDownloadProgress()
         }
     }
 
@@ -652,7 +664,7 @@ fun MainScreen(
                 Text(
                     stringResource(
                         R.string.model_download_confirm_message,
-                        modelInfo?.downloadSizeDisplay ?: "?? MB"
+                        modelInfo?.downloadSizeDisplay ?: modelSizeUnknownHint
                     )
                 )
             },
@@ -746,9 +758,13 @@ fun MainScreen(
                     }
                     viewModel.onBatteryOptimizationResult()
                 },
-                onDismiss = {
+                onSkip = {
                     AppActionTracker.batteryOptimization(AppActionTracker.ACTION_SKIPPED)
                     viewModel.onBatteryOptimizationSkipped()
+                },
+                // 点弹窗外/返回键不是明确的跳过选择：不上报、不持久化，仅本次继续流程
+                onDismiss = {
+                    viewModel.onBatteryOptimizationDialogDismissed()
                 }
             )
         }

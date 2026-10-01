@@ -3,14 +3,17 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.provider.local
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import com.github.lonepheasantwarrior.talkify.BuildConfig
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationIds
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.PermissionChecker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelDownloadService.Companion.DISK_SPACE_HEADROOM_BYTES
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,8 +37,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 本地模型下载前台服务
  *
  * 在前台 Service 中执行模型文件下载，展示实时进度通知。
- * 支持取消操作，下载完成后进行完整性校验（文件存在性 + MD5）；
- * 默认源失败时自动切换备用下载源。
+ * 支持取消操作；下载完成后进行完整性校验（逐文件存在性 + Content-Length 比对，
+ * MD5 校验在注册表提供真实哈希后启用）；默认源失败时自动切换备用下载源。
  *
  * 启动方式：
  * ```kotlin
@@ -67,8 +70,11 @@ class LocalModelDownloadService : Service() {
         /** 下载失败广播 Action */
         const val ACTION_DOWNLOAD_FAILED = "com.github.lonepheasantwarrior.talkify.DOWNLOAD_FAILED"
 
-        /** 通知 ID */
-        private const val NOTIFICATION_ID = 2001
+        /** 通知 ID（全工程通知 ID 收敛于 [NotificationIds]，P1-14） */
+        private const val NOTIFICATION_ID = NotificationIds.MODEL_DOWNLOAD_PROGRESS
+
+        /** 磁盘空间预检的安全余量（128MB），防写满用户分区（P2-I2） */
+        private const val DISK_SPACE_HEADROOM_BYTES = 128L * 1024 * 1024
 
         /** 通知通道 ID */
         const val CHANNEL_ID = "talkify_model_download"
@@ -79,6 +85,9 @@ class LocalModelDownloadService : Service() {
         private const val CONNECT_TIMEOUT = 30L
         private const val READ_TIMEOUT = 120L
         private const val WRITE_TIMEOUT = 30L
+
+        /** 下载请求 User-Agent（N11：收敛常量，替代内联全限定 BuildConfig 引用） */
+        private val DOWNLOAD_USER_AGENT = "TalkifyTTS/${BuildConfig.VERSION_NAME}"
 
         /**
          * 下载服务运行标志（onCreate 置位 / onDestroy 清零）
@@ -135,7 +144,17 @@ class LocalModelDownloadService : Service() {
             runCatching { startForeground(NOTIFICATION_ID, buildIdleForegroundNotification()) }
                 .onFailure { TtsLogger.w("startForeground on cancel failed: ${it.message}", tag = TAG) }
             isCancelled.set(true)
-            // 不在此处 stopSelf：让下载循环命中取消分支，统一走
+            // 无在飞下载时取消分支不会有循环命中（下载循环才消费取消标志）：
+            // 进程重建后的残留取消 PendingIntent 直达此处，必须自行清理前台状态，
+            // 否则前台服务与通知永久滞留（P2-I1）
+            if (downloadJob?.isActive != true) {
+                LocalModelManager.setDownloadingModelId(null)
+                runCatching {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+            // 有在飞下载时不在此处 stopSelf：让下载循环命中取消分支，统一走
             // onDownloadCancelled（清理文件/移除通知/停止服务）
             return START_NOT_STICKY
         }
@@ -157,7 +176,12 @@ class LocalModelDownloadService : Service() {
         // 防重入：已有下载进行中时忽略新的启动请求（避免并发写同一目录/临时归档）
         if (downloadJob?.isActive == true) {
             TtsLogger.w("Download already in progress, ignoring start request: $modelId", tag = TAG)
-            runCatching { startForeground(NOTIFICATION_ID, buildProgressNotification(modelInfo.displayName, lastProgress)) }
+            // 通知沿用运行中任务的信息：本次请求的 modelId 与在飞任务可能不同，
+            // 用新请求渲染会产出"新模型名 + 旧进度"的错配通知（P3-26）
+            val runningId = LocalModelManager.getDownloadingModelId()
+            val runningName = runningId?.let { LocalModelRegistry.getModel(it)?.displayName }
+                ?: modelInfo.displayName
+            runCatching { startForeground(NOTIFICATION_ID, buildProgressNotification(runningName, lastProgress)) }
             return START_NOT_STICKY
         }
 
@@ -186,6 +210,32 @@ class LocalModelDownloadService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    /**
+     * dataSync 型前台服务运行限额超时（N19-a，Android 15+）
+     *
+     * Android 15 起 dataSync 型前台服务有 6 小时/24 小时运行限额，超时后未在系统
+     * 给定的短暂窗口内自行停止将抛 ForegroundServiceDidNotStopInTimeException 崩溃。
+     * 弱网重试下 200MB 级模型下载可达小时级，可能触达限额：此处置位取消标志并立即
+     * 停止服务（窗口内同步收尾），清理由 [onDestroy] 统一承担；已下载的部分文件
+     * 留待下次下载入口的整包清理，断点续传属 R-G 立项范围
+     *
+     * 框架分派随系统版本而异：API 35 设备回调单参 [onTimeout]，API 36+ 回调双参
+     * 版本，两个默认实现均为空——必须同时覆写，缺一即在该版本系统上崩溃
+     */
+    override fun onTimeout(startId: Int) = handleForegroundTimeout(fgsType = -1)
+
+    override fun onTimeout(startId: Int, fgsType: Int) = handleForegroundTimeout(fgsType)
+
+    private fun handleForegroundTimeout(fgsType: Int) {
+        TtsLogger.w("FGS dataSync timeout (fgsType=$fgsType), stopping download gracefully", tag = TAG)
+        isCancelled.set(true)
+        downloadJob?.cancel()
+        runCatching {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
 
     override fun onDestroy() {
         isServiceRunning = false
@@ -217,8 +267,22 @@ class LocalModelDownloadService : Service() {
             return
         }
 
-        // 清理旧文件
-        modelDir.listFiles()?.forEach { it.delete() }
+        // 磁盘空间预检：下载体积超出可用空间时提前失败，避免写满用户磁盘（P2-I2）
+        if (!hasEnoughDiskSpace(modelDir, modelInfo.downloadSizeBytes)) {
+            onDownloadFailed(modelInfo, "磁盘空间不足，请清理后重试")
+            cleanupPartialFiles(modelDir)
+            return
+        }
+
+        // 清理旧文件：deleteRecursively 可处理非空子目录（listFiles+delete 对含
+        // 子文件的目录静默失败，残留旧文件会污染解压布局与完整性校验，P2-I2）
+        if (modelDir.exists()) {
+            modelDir.deleteRecursively()
+        }
+        if (!modelDir.exists() && !modelDir.mkdirs()) {
+            onDownloadFailed(modelInfo, "创建模型目录失败")
+            return
+        }
 
         val urlEntries = modelInfo.downloadFileInfo.entries.toList()
         val totalFiles = urlEntries.size
@@ -306,6 +370,10 @@ class LocalModelDownloadService : Service() {
                 return
             }
         }
+
+        // P1-11：官方 tarball 自带的 test_wavs 测试音频为未经授权的真人声纹样本，
+        // 解压后立即删除，不作为可用音色随模型分发
+        File(modelDir, "test_wavs").deleteRecursively()
 
         // ========== 阶段切换：下载完成 → 完整性校验 ==========
         TtsLogger.i("All files downloaded for ${modelInfo.id}, starting integrity verification", tag = TAG)
@@ -396,7 +464,7 @@ class LocalModelDownloadService : Service() {
         try {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "TalkifyTTS/1.0")
+                .header("User-Agent", DOWNLOAD_USER_AGENT)
                 .build()
 
             // response 经 use 关闭：写盘过程中抛出 IOException 也不泄漏底层连接
@@ -406,10 +474,10 @@ class LocalModelDownloadService : Service() {
                     return false
                 }
 
+                val contentLength = response.body?.contentLength() ?: -1L
+                var downloaded = 0L
                 response.body?.source()?.use { source ->
                     targetFile.sink().buffer().use { sink ->
-                        var downloaded = 0L
-                        val contentLength = response.body?.contentLength() ?: -1L
                         // 通知节流：系统对通知更新有约 5 次/秒的限流，逐块回调会被整批丢弃并刷爆日志
                         var lastNotifyAt = 0L
 
@@ -436,17 +504,39 @@ class LocalModelDownloadService : Service() {
                         sink.flush()
                     }
                 }
-            }
 
-            // 取消时半截文件不能算成功，否则取消会被误判为下载完成
-            if (isCancelled.get()) {
-                TtsLogger.i("Download interrupted by user cancel", tag = TAG)
-                return false
+                // 取消时半截文件不能算成功，否则取消会被误判为下载完成
+                if (isCancelled.get()) {
+                    TtsLogger.i("Download interrupted by user cancel", tag = TAG)
+                    return false
+                }
+                // 完整性第一道防线：服务端声明的 Content-Length 与落盘字节数必须一致。
+                // 不可信代理返回 200 + 截断 body 时按失败换源重试，不能只判"文件存在"（P1-9①/P1-10）
+                if (contentLength > 0 && downloaded != contentLength) {
+                    TtsLogger.e("Content length mismatch: expected $contentLength, got $downloaded for: $url", tag = TAG)
+                    return false
+                }
+                return targetFile.exists() && targetFile.length() > 0
             }
-            return targetFile.exists() && targetFile.length() > 0
         } catch (e: IOException) {
             TtsLogger.e("Download error: ${e.message}", tag = TAG)
             return false
+        }
+    }
+
+    /**
+     * 磁盘可用空间预检（P2-I2）
+     *
+     * 预留 [DISK_SPACE_HEADROOM_BYTES] 余量；StatFs 不可用（路径无效等）时
+     * 不阻断下载，交由写盘失败兜底
+     */
+    private fun hasEnoughDiskSpace(modelDir: File, requiredBytes: Long): Boolean {
+        return try {
+            val stat = android.os.StatFs(modelDir.absolutePath)
+            stat.availableBytes > requiredBytes + DISK_SPACE_HEADROOM_BYTES
+        } catch (e: Exception) {
+            TtsLogger.w("StatFs precheck failed: ${e.message}", tag = TAG)
+            true
         }
     }
 
@@ -512,41 +602,43 @@ class LocalModelDownloadService : Service() {
                 return false
             }
 
-            val bz2Stream = BZip2CompressorInputStream(archiveFile.inputStream().buffered())
-            val tarStream = TarArchiveInputStream(bz2Stream)
+            // N19-d：单层 use 嵌套——BZip2CompressorInputStream 在构造阶段（读 magic
+            // 头）即可抛异常，此前的"先构造后 use"会让构造失败时底层 FileInputStream
+            // 泄漏；嵌套 use 保证任一层构造成功即受闭包保护
+            archiveFile.inputStream().buffered().use { fileStream ->
+                BZip2CompressorInputStream(fileStream).use { bz2Stream ->
+                    TarArchiveInputStream(bz2Stream).use { tar ->
+                        var currentEntry = tar.nextEntry
+                        while (currentEntry != null) {
+                            if (isCancelled.get()) return false
 
-            bz2Stream.use { _bz2 ->
-                tarStream.use { tar ->
-                    var currentEntry = tar.nextEntry
-                    while (currentEntry != null) {
-                        if (isCancelled.get()) return false
+                            val entry = currentEntry  // 局部 val 供 smart cast
+                            val outputFile = File(targetDir, entry.name)
 
-                        val entry = currentEntry  // 局部 val 供 smart cast
-                        val outputFile = File(targetDir, entry.name)
+                            // 防止 Zip Slip 攻击：确保解压路径在目标目录内
+                            if (!outputFile.canonicalPath.startsWith(targetDir.canonicalPath + File.separator) &&
+                                outputFile.canonicalPath != targetDir.canonicalPath
+                            ) {
+                                TtsLogger.w("Skipping entry with unsafe path: ${entry.name}", tag = TAG)
+                                currentEntry = tar.nextEntry
+                                continue
+                            }
 
-                        // 防止 Zip Slip 攻击：确保解压路径在目标目录内
-                        if (!outputFile.canonicalPath.startsWith(targetDir.canonicalPath + File.separator) &&
-                            outputFile.canonicalPath != targetDir.canonicalPath
-                        ) {
-                            TtsLogger.w("Skipping entry with unsafe path: ${entry.name}", tag = TAG)
-                            currentEntry = tar.nextEntry
-                            continue
-                        }
-
-                        if (entry.isDirectory) {
-                            outputFile.mkdirs()
-                        } else {
-                            outputFile.parentFile?.mkdirs()
-                            outputFile.outputStream().buffered().use { output ->
-                                val buffer = ByteArray(8192)
-                                var bytesRead: Int
-                                while (tar.read(buffer).also { bytesRead = it } != -1) {
-                                    output.write(buffer, 0, bytesRead)
+                            if (entry.isDirectory) {
+                                outputFile.mkdirs()
+                            } else {
+                                outputFile.parentFile?.mkdirs()
+                                outputFile.outputStream().buffered().use { output ->
+                                    val buffer = ByteArray(8192)
+                                    var bytesRead: Int
+                                    while (tar.read(buffer).also { bytesRead = it } != -1) {
+                                        output.write(buffer, 0, bytesRead)
+                                    }
                                 }
                             }
-                        }
 
-                        currentEntry = tar.nextEntry
+                            currentEntry = tar.nextEntry
+                        }
                     }
                 }
             }
@@ -642,13 +734,13 @@ class LocalModelDownloadService : Service() {
      * 权限守卫的通知发送
      *
      * API 33+ 通知需要运行时 POST_NOTIFICATIONS 权限（启动流程会引导授权）；
-     * 未授权时静默跳过——下载进度不依赖通知展示，不能因此中断下载
+     * 未授权时静默跳过——下载进度不依赖通知展示，不能因此中断下载。
+     * N13：权限判断收敛至 [PermissionChecker] 单点（与服务通知/系统通知同源）。
+     * MissingPermission：权限检查在该 Helper 内完成，lint 无法跨方法追踪，此处显式抑制
      */
+    @android.annotation.SuppressLint("MissingPermission")
     private fun postNotification(notification: android.app.Notification) {
-        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (granted) {
+        if (PermissionChecker.hasNotificationPermission(this)) {
             NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
         } else {
             TtsLogger.d("POST_NOTIFICATIONS not granted, skip download notification", tag = TAG)
@@ -822,7 +914,9 @@ class LocalModelDownloadService : Service() {
 
     private fun cleanupPartialFiles(dir: File) {
         try {
-            dir.listFiles()?.forEach { it.delete() }
+            // deleteRecursively：归档解压产物含子目录（espeak-ng-data 等），
+            // 单层 listFiles+delete 会残留整个子树，与整包重下的磁盘占用预期不符（N11）
+            dir.deleteRecursively()
         } catch (_: Exception) {}
     }
 }

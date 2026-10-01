@@ -1,10 +1,10 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.permission
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import android.annotation.SuppressLint
 import androidx.core.content.ContextCompat
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 

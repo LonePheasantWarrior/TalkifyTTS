@@ -91,6 +91,27 @@ class SharedPreferencesAppConfigRepository(
         }
     }
 
+    override fun isTelemetryEnabled(): Boolean {
+        // 默认关闭：仅在用户显式开启后上报匿名事件（P1-12 隐私基线）
+        return sharedPreferences.getBoolean(KEY_TELEMETRY_ENABLED, false)
+    }
+
+    override fun setTelemetryEnabled(enabled: Boolean) {
+        sharedPreferences.edit {
+            putBoolean(KEY_TELEMETRY_ENABLED, enabled)
+        }
+    }
+
+    override fun isBatteryOptimizationPromptDismissed(): Boolean {
+        return sharedPreferences.getBoolean(KEY_BATTERY_PROMPT_DISMISSED, false)
+    }
+
+    override fun setBatteryOptimizationPromptDismissed(dismissed: Boolean) {
+        sharedPreferences.edit {
+            putBoolean(KEY_BATTERY_PROMPT_DISMISSED, dismissed)
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "talkify_app_config"
         private const val KEY_SELECTED_PROVIDER = "selected_provider"
@@ -99,6 +120,8 @@ class SharedPreferencesAppConfigRepository(
         private const val KEY_SELECTED_PROVIDER_LEGACY = "selected_engine"
         private const val KEY_HAS_REQUESTED_NOTIFICATION = "has_requested_notification"
         private const val KEY_HAS_OPENED_ABOUT_PAGE = "has_opened_about_page"
+        private const val KEY_TELEMETRY_ENABLED = "telemetry_enabled"
+        private const val KEY_BATTERY_PROMPT_DISMISSED = "battery_optimization_prompt_dismissed"
 
         /** 旧版 ProviderIds.value → 新版 ProviderIds.providerId 映射 */
         private val LEGACY_PROVIDER_ID_MAP = mapOf(

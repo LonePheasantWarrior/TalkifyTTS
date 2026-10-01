@@ -22,6 +22,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
 import com.github.lonepheasantwarrior.talkify.service.provider.VOICE_NAME_SEPARATOR
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider.Companion.scheduleEngineIdleRelease
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,6 +77,9 @@ class LocalModelProvider : AbstractTtsProvider() {
 
         /** 空闲释放定时器挂在独立 scope：不随任何 Provider 实例 release 而失效 */
         private val engineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+        /** 服务与预览两个实例共享，schedule/cancel 跨线程读写，须保证可见性 */
+        @Volatile
         private var engineIdleJob: Job? = null
 
         /** 共享引擎不支持并发 native 推理（服务与预览同时合成会争抢 CPU），串行化 */
@@ -134,14 +138,18 @@ class LocalModelProvider : AbstractTtsProvider() {
             val generation = engineGeneration
             engineIdleJob = engineScope.launch {
                 kotlinx.coroutines.delay(ENGINE_IDLE_TIMEOUT_MS)
-                synchronized(engineLock) {
-                    // 代际校验：若期间有新合成开始（generation 变化）或已换引擎，跳过释放
-                    if (engineGeneration != generation) return@synchronized
-                    val idleEngine = engine ?: return@synchronized
-                    TtsLogger.i("Engine idle for ${ENGINE_IDLE_TIMEOUT_MS}ms, releasing native resources", tag = TAG)
-                    engine = null
-                    currentModelId = null
-                    idleEngine.release()
+                // 先取 synthesisMutex 证明无在飞推理（推理全程持锁），再进 engineLock
+                // 释放——否则空闲定时器可能释放正在推理的引擎（native use-after-free，P1-20）
+                synthesisMutex.withLock {
+                    synchronized(engineLock) {
+                        // 代际校验：若期间有新合成开始（generation 变化）或已换引擎，跳过释放
+                        if (engineGeneration != generation) return@withLock
+                        val idleEngine = engine ?: return@withLock
+                        TtsLogger.i("Engine idle for ${ENGINE_IDLE_TIMEOUT_MS}ms, releasing native resources", tag = TAG)
+                        engine = null
+                        currentModelId = null
+                        idleEngine.release()
+                    }
                 }
             }
         }
@@ -232,55 +240,61 @@ class LocalModelProvider : AbstractTtsProvider() {
 
         logInfo("Starting local synthesis: model=$modelId, textLength=${text.length}")
 
+        // 会话代际：入口取消旧任务并捕获快照，回调出口校验（P1-15）
+        val session = beginSynthesisSession()
         isCancelled = false
         cancelEngineIdleRelease()
         bumpEngineGeneration()
 
+        synthesisJob?.cancel()
         synthesisJob = providerScope.launch {
             try {
-                val currentEngine = ensureEngine(modelId, modelInfo)
+                // 引擎获取、音色解析与推理全程持有 synthesisMutex：换模型释放
+                // （ensureEngine）与空闲释放（scheduleEngineIdleRelease）都必须先
+                // 拿到该锁才能动引擎，保证绝不会释放正在推理的引擎（P1-20）
+                synthesisMutex.withLock {
+                    val currentEngine = ensureEngine(modelId, modelInfo)
 
-                val speed = if (params.speechRate > 0) {
-                    params.speechRate / 100f
-                } else {
-                    DEFAULT_SPEED
-                }
+                    val speed = if (params.speechRate > 0) {
+                        params.speechRate / 100f
+                    } else {
+                        DEFAULT_SPEED
+                    }
 
-                listener.onSynthesisStarted()
+                    listener.onSynthesisStarted()
 
-                // ZipVoice 音色 = 参考音频 + 逐字稿；音色以内置目录为准，
-                // 历史持久化的 voiceId（如已隐藏的雷军音色）不在目录内时
-                // 透明迁移到目录默认音色，用户侧体验不变
-                val requestedVoiceName = extractRealVoiceName(lc.voiceId) ?: lc.voiceId
-                val bundledVoices = LocalVoiceCatalog.getVoices()
-                val voice = bundledVoices.firstOrNull { it.voiceId == requestedVoiceName }
-                    ?: bundledVoices.firstOrNull()
-                    ?: modelInfo.voiceList.firstOrNull { it.voiceId == requestedVoiceName }
-                    ?: modelInfo.voiceList.firstOrNull()
-                    ?: throw IllegalStateException("模型 ${modelInfo.id} 未配置音色")
-                if (requestedVoiceName != voice.voiceId) {
-                    logWarning("Voice '$requestedVoiceName' unavailable, falling back to '${voice.voiceId}'")
-                }
-                val modelDir = LocalModelManager.getModelDownloadedDir(modelId)
-                    ?: throw IllegalStateException("无法获取模型目录: $modelId")
-                val reference = synchronized(referenceCache) {
-                    referenceCache.getOrPut("${modelInfo.id}:${voice.voiceId}") {
-                        if (voice.isBundled) {
-                            val context = TalkifyAppHolder.getContext()
-                                ?: throw IllegalStateException("Context unavailable for bundled voice: ${voice.voiceId}")
-                            context.assets.open("${LocalVoiceCatalog.ASSETS_DIR}/${voice.referenceFileName}")
-                                .use { WavSampleReader.read(it) }
-                        } else {
-                            WavSampleReader.read(File(modelDir, voice.referenceFileName))
+                    // ZipVoice 音色 = 参考音频 + 逐字稿；音色以内置目录为准，
+                    // 历史持久化的 voiceId（如已隐藏的雷军音色）不在目录内时
+                    // 透明迁移到目录默认音色，用户侧体验不变
+                    val requestedVoiceName = extractRealVoiceName(lc.voiceId) ?: lc.voiceId
+                    val bundledVoices = LocalVoiceCatalog.getVoices()
+                    val voice = bundledVoices.firstOrNull { it.voiceId == requestedVoiceName }
+                        ?: bundledVoices.firstOrNull()
+                        ?: modelInfo.voiceList.firstOrNull { it.voiceId == requestedVoiceName }
+                        ?: modelInfo.voiceList.firstOrNull()
+                        ?: throw IllegalStateException("模型 ${modelInfo.id} 未配置音色")
+                    if (requestedVoiceName != voice.voiceId) {
+                        logWarning("Voice '$requestedVoiceName' unavailable, falling back to '${voice.voiceId}'")
+                    }
+                    val modelDir = LocalModelManager.getModelDownloadedDir(modelId)
+                        ?: throw IllegalStateException("无法获取模型目录: $modelId")
+                    val reference = synchronized(referenceCache) {
+                        referenceCache.getOrPut("${modelInfo.id}:${voice.voiceId}") {
+                            if (voice.isBundled) {
+                                val context = TalkifyAppHolder.getContext()
+                                    ?: throw IllegalStateException("Context unavailable for bundled voice: ${voice.voiceId}")
+                                context.assets.open("${LocalVoiceCatalog.ASSETS_DIR}/${voice.referenceFileName}")
+                                    .use { WavSampleReader.read(it) }
+                            } else {
+                                WavSampleReader.read(File(modelDir, voice.referenceFileName))
+                            }
                         }
                     }
-                }
-                logInfo("Using voice=${voice.voiceId}, reference=${voice.referenceFileName}")
+                    logInfo("Using voice=${voice.voiceId}, reference=${voice.referenceFileName}")
 
-                // 真正流式合成：Sherpa-onnx 每生成一小段 PCM（通常为一个句子）
-                // 就通过 generateWithConfigAndCallback 回调第一时间送达给 Android TTS callback。
-                // 共享引擎串行化：后到请求排队等待，避免并发推理争抢 CPU
-                synthesisMutex.withLock {
+                    // 真正流式合成：Sherpa-onnx 每生成一小段 PCM（通常为一个句子）
+                    // 就通过 generateWithConfigAndCallback 回调第一时间送达给 Android TTS callback。
+                    // 共享引擎串行化：后到请求排队等待，避免并发推理争抢 CPU
                     currentEngine.synthesizeStream(
                         text = text,
                         referenceAudio = reference.samples,
@@ -288,7 +302,8 @@ class LocalModelProvider : AbstractTtsProvider() {
                         referenceText = voice.referenceText,
                         speed = speed
                     ) { pcmData, sampleRate ->
-                        if (!isCancelled) {
+                        // 过期会话的残留音频静默丢弃（取消是协作式的，P1-15）
+                        if (!isCancelled && isSynthesisSessionActive(session)) {
                             listener.onAudioAvailable(
                                 pcmData,
                                 sampleRate,
@@ -299,14 +314,15 @@ class LocalModelProvider : AbstractTtsProvider() {
                         // 返回 true 继续合成，false 中断（对应停止播放）
                         !isCancelled
                     }
-                }
 
-                if (!isCancelled) {
-                    listener.onSynthesisCompleted()
-                    logInfo("Streaming synthesis completed successfully")
+                    if (!isCancelled && isSynthesisSessionActive(session)) {
+                        listener.onSynthesisCompleted()
+                        logInfo("Streaming synthesis completed successfully")
+                    }
                 }
             } catch (e: Exception) {
-                if (!isCancelled) {
+                // 入口取消旧会话的 CancellationException 不是合成错误；会话已失效也不得误报
+                if (!isCancelled && e !is kotlinx.coroutines.CancellationException && isSynthesisSessionActive(session)) {
                     logError("Synthesis error", e)
                     listener.onError("本地合成失败: ${e.message}")
                 }
@@ -345,7 +361,10 @@ class LocalModelProvider : AbstractTtsProvider() {
                 if (!LocalModelManager.isModelDownloaded(modelInfo.id)) return@launch
                 cancelEngineIdleRelease()
                 bumpEngineGeneration()
-                ensureEngine(modelInfo.id, modelInfo)
+                // 与合成路径同样持 synthesisMutex：换模型释放不得发生在推理中（P1-20）
+                synthesisMutex.withLock {
+                    ensureEngine(modelInfo.id, modelInfo)
+                }
                 scheduleEngineIdleRelease()
             } catch (e: Exception) {
                 // 预热失败静默忽略：首次合成时仍会走正常初始化路径
@@ -359,6 +378,8 @@ class LocalModelProvider : AbstractTtsProvider() {
     override fun stop() {
         logInfo("Stopping synthesis")
         isCancelled = true
+        // 作废当前会话代际：停止后到达的残留回调被出口校验静默丢弃（P1-15）
+        invalidateSynthesisSession()
         synthesisJob?.cancel()
         synthesisJob = null
     }

@@ -39,16 +39,16 @@ import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
 import com.github.lonepheasantwarrior.talkify.domain.model.OpenAIConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentCloudConfig
-import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProvider
 import com.github.lonepheasantwarrior.talkify.domain.model.VolcengineConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.XiaomiConfig
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceInfo
 import com.github.lonepheasantwarrior.talkify.domain.repository.VoiceRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel.DownloadProgress
@@ -592,7 +592,7 @@ private fun buildConfigItems(
                         placeholder = context.getString(R.string.style_instruction_placeholder),
                         supportingText = context.getString(R.string.style_instruction_hint),
                         isDialogEditor = true,
-                        editorTitle = context.getString(R.string.gemini_style_instruction_edit_title),
+                        editorTitle = context.getString(R.string.style_instruction_edit_title),
                         guideContent = context.getString(R.string.gemini_style_instruction_guide_content)
                     )
                 )

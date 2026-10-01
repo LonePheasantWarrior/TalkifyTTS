@@ -4,6 +4,9 @@ import android.graphics.Rect
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.CHECKOUT_INTERVAL_MS
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.POINTER_BATCH_INTERVAL_MS
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.POINTER_SAMPLE_INTERVAL_MS
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -192,23 +195,26 @@ internal class ReplaySession(
      * 无障碍节点 → [UiNode]
      *
      * 坐标取 boundsInScreen（全屏窗口下与窗口坐标一致）；文本取 text，缺省回退
-     * contentDescription；可编辑节点仅记录 editable 标记（内容在序列化层丢弃）。
-     * 带节点数与深度上限，防止异常树耗尽资源
+     * contentDescription；可编辑节点仅记录 editable 标记。带节点数与深度上限，
+     * 防止异常树耗尽资源
      */
     private fun toUiNode(info: AccessibilityNodeInfo, depth: Int, counter: IntArray): UiNode? {
         counter[0]++
         if (depth > MAX_CAPTURE_DEPTH || counter[0] > MAX_CAPTURE_NODES) return null
         val bounds = Rect()
         info.getBoundsInScreen(bounds)
+        // 隐私红线前移（N11）：可编辑节点（API Key 输入框等）文本在捕获层即丢弃，
+        // 不进入内存中的语义树；序列化层 displayText 的 editable 守卫保留为第二道防线
+        val editable = info.isEditable
         return UiNode(
             left = bounds.left,
             top = bounds.top,
             width = bounds.width(),
             height = bounds.height(),
-            text = info.text?.toString()?.takeIf { it.isNotBlank() },
-            contentDescription = info.contentDescription?.toString()?.takeIf { it.isNotBlank() },
-            role = mapRole(info.className?.toString(), info.isEditable),
-            editable = info.isEditable,
+            text = if (editable) null else info.text?.toString()?.takeIf { it.isNotBlank() },
+            contentDescription = if (editable) null else info.contentDescription?.toString()?.takeIf { it.isNotBlank() },
+            role = mapRole(info.className?.toString(), editable),
+            editable = editable,
             children = buildList {
                 for (i in 0 until info.childCount) {
                     val child = info.getChild(i) ?: continue

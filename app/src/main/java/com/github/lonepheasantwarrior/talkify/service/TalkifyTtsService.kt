@@ -3,7 +3,11 @@ package com.github.lonepheasantwarrior.talkify.service
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.DeadObjectException
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
+import android.os.RemoteException
 import android.speech.tts.SynthesisCallback
 import android.speech.tts.SynthesisRequest
 import android.speech.tts.TextToSpeech
@@ -15,9 +19,11 @@ import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProviderRegistry
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationIds
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TtsTelemetryTracker
+import com.github.lonepheasantwarrior.talkify.service.TalkifyTtsService.Companion.FOREGROUND_IDLE_EXIT_DELAY_MS
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
@@ -35,25 +41,26 @@ import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * 前台阅读服务通知 ID
- */
-private const val FOREGROUND_SERVICE_N_ID = 1001
-
-/**
  * Talkify TTS 服务
  *
- * 实现 [TextToSpeechService]，作为系统 TTS 框架与本应用供应商之间的桥梁
+ * 实现 [TextToSpeechService]，作为系统 TTS 框架与本应用供应商之间的桥梁。
  * 负责：
  * 1. 根据用户选择的供应商 ID 获取对应的合成供应商
  * 2. 获取用户配置的供应商设置
  * 3. 委托供应商执行实际的语音合成
  *
- * 采用请求队列机制实现请求调度，支持请求优先级和流量控制
- * 支持兼容模式和非兼容模式两种音频处理方式
+ * 并发模型（与实现保持一致）：
+ * - 系统框架经单个 SynthThread 串行分发 onSynthesizeText，本服务在请求内
+ *   runBlocking 同步等待合成结果，单请求上限 120s（[processRequestSynchronously]）
+ * - 语言/音色探测回调（onIsLanguageAvailable 等）由 binder 线程池并发调用，
+ *   与 SynthThread 共享的供应商生命周期字段经 [providerLifecycleLock] 串行化
+ *   （选择 + 创建 + 替换收敛在 [ensureProvider] 锁内）
+ * - 合成期间经 startForeground 提升优先级并持有 WakeLock/WifiLock，
+ *   请求结束进入空闲延迟退出前台，避免逐句通知闪烁
  *
  * @property isStopped 服务停止标志，使用 AtomicBoolean 保证线程安全
+ * @property activeContinuation 在途合成的挂起点，onStop/onDestroy 经其取消阻塞中的请求
  * @property wakeLock 电源唤醒锁，防止合成过程中设备休眠
- * @property isForegroundServiceRunning 前台服务运行状态
  * @property appConfigRepository 应用配置仓储，管理全局应用设置
  * @property currentProvider 当前活动的 TTS 供应商实例
  * @property currentProviderId 当前供应商的唯一标识符
@@ -166,25 +173,27 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     /**
-     * 启动前台服务
+     * 提升为前台服务
      *
-     * 如果服务尚未运行，则启动为前台服务并显示通知
+     * 如果服务尚未处于前台状态，则 startForeground 并显示常驻通知
      * 使用 [TalkifyNotificationHelper.buildForegroundWithNotification] 构建通知
-     * 
+     *
      * 注意：Android 12+ 限制了后台启动前台服务，当第三方应用在后台调用 TTS 时
      * 可能抛出 ForegroundServiceStartNotAllowedException，此时我们会静默降级为非前台服务
      */
-    private fun startForegroundService() {
+    private fun enterForegroundState() {
         if (!isForegroundServiceRunning) {
+            // 新请求到来：撤销此前排定的空闲退出，避免刚退出又立即进入造成通知闪烁
+            foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     startForeground(
-                        FOREGROUND_SERVICE_N_ID,
+                        NotificationIds.TTS_PLAYBACK,
                         TalkifyNotificationHelper.buildForegroundWithNotification(this),
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
                     )
                 } else {
-                    startForeground(FOREGROUND_SERVICE_N_ID, TalkifyNotificationHelper.buildForegroundWithNotification(this))
+                    startForeground(NotificationIds.TTS_PLAYBACK, TalkifyNotificationHelper.buildForegroundWithNotification(this))
                 }
                 isForegroundServiceRunning = true
                 TtsLogger.d("Foreground service started")
@@ -192,7 +201,7 @@ class TalkifyTtsService : TextToSpeechService() {
                 // Android 12+ 可能抛出 ForegroundServiceStartNotAllowedException
                 // 当第三方应用在后台调用 TTS 服务时，系统禁止启动前台服务
                 // 此时我们静默处理，继续以非前台服务模式运行
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                     e is android.app.ForegroundServiceStartNotAllowedException) {
                     TtsLogger.w("Cannot start foreground service from background, continuing without foreground status")
                 } else {
@@ -206,17 +215,37 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     /**
-     * 停止前台服务
+     * 退出前台状态
      *
      * 移除前台服务状态和关联的通知
      */
-    private fun stopForegroundService() {
+    private fun exitForegroundState() {
         if (isForegroundServiceRunning) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             isForegroundServiceRunning = false
             TtsLogger.d("Foreground service stopped")
         }
     }
+
+    /**
+     * 空闲延迟退出前台
+     *
+     * 每次合成请求结束后调用（TTS 请求由系统串行调度，无并发请求）。
+     * 不立即退出：连续朗读场景下逐句 startForeground/stopForeground 会让通知
+     * 每句闪烁一次；改为最后一句结束后延迟 [FOREGROUND_IDLE_EXIT_DELAY_MS]
+     * 再退出（P3-2），期间新请求到来则由 [enterForegroundState] 撤销排定任务
+     */
+    private fun scheduleForegroundIdleExit() {
+        // N19-e：服务已销毁（onDestroy 置位 isStopped）后不再投递延迟任务——
+        // 否则已销毁实例被多持 10s 并幽灵回调 stopForeground
+        if (isStopped.get()) return
+        foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
+        foregroundIdleHandler.postDelayed(exitForegroundRunnable, FOREGROUND_IDLE_EXIT_DELAY_MS)
+    }
+
+    private val foregroundIdleHandler = Handler(Looper.getMainLooper())
+
+    private val exitForegroundRunnable = Runnable { exitForegroundState() }
 
     /**
      * 获取 WakeLock
@@ -249,13 +278,10 @@ class TalkifyTtsService : TextToSpeechService() {
 
 
     /**
-     * 在空闲时停止前台服务
-     *
-     * 每次合成请求结束后调用（TTS 请求由系统串行调度，无并发请求），
-     * 释放前台状态以减少后台资源占用
+     * 在空闲时退出前台的延迟
      */
-    private fun stopForegroundServiceIfIdle() {
-        stopForegroundService()
+    private companion object {
+        const val FOREGROUND_IDLE_EXIT_DELAY_MS = 10_000L
     }
 
     /**
@@ -307,10 +333,66 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     /**
+     * 供应商生命周期锁
+     *
+     * "选择 + 创建 + 释放 + 替换"必须在锁内完成：语言/音色探测回调由 binder
+     * 线程池并发进入（AOSP 不保证单线程），与 SynthThread 共享以下字段，
+     * 无锁时并发线程可能双重创建/释放，或 release 掉另一线程正在使用的实例（P1-17）。
+     * 字段保留 @Volatile 供锁外读优化。
+     */
+    private val providerLifecycleLock = Any()
+
+    /**
+     * 确保指定供应商已创建（幂等）
+     *
+     * 供 binder 探测路径、onCreate 与每次合成请求共同调用：
+     * - 供应商未变且实例存活：快速返回，不做磁盘读
+     * - 供应商变更或上次创建失败：在锁内释放旧实例并创建新实例
+     *
+     * @return 供应商是否就绪
+     */
+    private fun ensureProvider(providerId: String): Boolean {
+        synchronized(providerLifecycleLock) {
+            if (currentProviderId == providerId && currentProvider != null) {
+                return true
+            }
+
+            TtsLogger.i("Provider changed from $currentProviderId to $providerId, reinitializing")
+            currentProvider?.release()
+            currentProvider = TtsProviderFactory.createProvider(providerId)
+
+            if (currentProvider == null) {
+                // P1-5：创建失败必须清空 currentProviderId。若保留 providerId，
+                // 后续调用因 "currentProviderId == providerId" 跳过重建，
+                // 所有合成只能报 "provider not ready"，只能重启服务恢复
+                currentProviderId = null
+                TtsLogger.e("Failed to create provider: $providerId")
+                TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_provider_init_failed))
+                return false
+            }
+            currentProviderId = providerId
+
+            // 供应商切换后强制丢弃配置仓储缓存，避免读到旧供应商的遗留配置
+            providerConfigRepositoryMap.remove(providerId)
+
+            if (TtsProviderRegistry.getProvider(providerId) == null) {
+                TtsLogger.e("Provider not found in registry: $providerId")
+                TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_provider_not_found))
+                return false
+            }
+
+            // 仅在创建路径加载配置；快速路径不读磁盘（binder 探测高频调用）
+            currentConfig = getProviderConfigRepository(providerId)?.getConfig(providerId)
+            TtsLogger.d("Provider initialized: ${currentProvider?.getProviderName()}")
+            return true
+        }
+    }
+
+    /**
      * 初始化 TTS 供应商
      *
-     * 根据用户选择的供应商 ID 创建对应的合成供应商
-     * 并从配置仓储加载供应商配置
+     * 读取用户选择的供应商 ID 并经 [ensureProvider] 创建对应实例、加载配置。
+     * 调用频率低（onCreate 与 provider 未就绪时的探测路径），故每次刷新 currentConfig
      *
      * @return 初始化是否成功
      */
@@ -327,28 +409,11 @@ class TalkifyTtsService : TextToSpeechService() {
 
         TtsLogger.d("Initializing provider: $providerId")
 
-        if (currentProviderId != providerId) {
-            TtsLogger.i("Provider changed from $currentProviderId to $providerId, reinitializing")
-            currentProvider?.release()
-            currentProvider = TtsProviderFactory.createProvider(providerId)
-            currentProviderId = providerId
-
-            if (currentProvider == null) {
-                TtsLogger.e("Failed to create provider: $providerId")
-                TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_provider_init_failed))
-                return false
-            }
-        }
-
-        val ttsProvider = TtsProviderRegistry.getProvider(providerId)
-        if (ttsProvider == null) {
-            TtsLogger.e("Provider not found in registry: $providerId")
-            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_provider_not_found))
+        if (!ensureProvider(providerId)) {
             return false
         }
 
         currentConfig = getProviderConfigRepository(providerId)?.getConfig(providerId)
-        TtsLogger.d("Provider initialized: ${currentProvider?.getProviderName()}")
         return true
     }
 
@@ -442,25 +507,39 @@ class TalkifyTtsService : TextToSpeechService() {
     }
 
     /**
-     * 转换国家代码为有效区域码
+     * ISO 3166-1 alpha-3 → alpha-2 全量映射（懒构建，仅构建一次）
      *
-     * 将各种格式的国家代码标准化为双字母 ISO 3166-1 alpha-2 格式
-     * 支持常见国家的中英文缩写和三字母代码
+     * AOSP 客户端调用 isLanguageAvailable 时传 `loc.getISO3Country()`（三字母码），
+     * 而 [Locale.Builder.setRegion] 只接受两字母或数字 UN M.49 码；此前仅硬编码
+     * 7 国，zh-TW/pt-BR 等常见 locale 直接抛 IllformedLocaleException 被吞为
+     * LANG_NOT_SUPPORTED（P1-4）。
+     */
+    private val iso3ToIso2Region: Map<String, String> by lazy {
+        buildMap {
+            for (iso2 in Locale.getISOCountries()) {
+                // 少数历史代码（如 AN）无 ISO3 对应，getISO3Country 返回空串，跳过
+                val iso3 = Locale("", iso2).isO3Country
+                if (iso3.isNotEmpty()) put(iso3, iso2)
+            }
+        }
+    }
+
+    /**
+     * 转换国家代码为 [Locale.Builder] 接受的有效区域码
      *
-     * @param country 原始国家代码
+     * 两字母 ISO 3166-1 alpha-2 与数字 UN M.49 码原样放行；三字母 alpha-3 码
+     * 经全量映射转换为两字母；无法识别的输入原样返回，由
+     * [buildLocaleSafely] 的异常捕获统一按不支持处理
+     *
+     * @param country 原始国家代码（来自任意第三方客户端，格式不受信任）
      * @return 标准化后的区域码
      */
     private fun convertToValidRegionCode(country: String): String {
-        return when (country.uppercase()) {
-            "CHN", "CN" -> "CN"
-            "USA", "US" -> "US"
-            "GBR", "GB" -> "GB"
-            "JPN", "JP" -> "JP"
-            "DEU", "DE" -> "DE"
-            "FRA", "FR" -> "FR"
-            "KOR", "KR" -> "KR"
-            else -> country.uppercase()
+        val normalized = country.uppercase(Locale.US)
+        if (normalized.length != 3) {
+            return normalized
         }
+        return iso3ToIso2Region[normalized] ?: normalized
     }
 
     override fun onGetLanguage(): Array<String> {
@@ -545,7 +624,8 @@ class TalkifyTtsService : TextToSpeechService() {
             return
         }
 
-        TtsLogger.d("onSynthesizeText: queuing text: ${request.charSequenceText}")
+        // 惰性求值：release 下 d() 被门控后字符串不再求值，用户朗读原文不进系统日志（P1-13）
+        TtsLogger.d { "onSynthesizeText: queuing text: ${request.charSequenceText}" }
         processRequestSynchronously(request, callback)
     }
 
@@ -575,36 +655,21 @@ class TalkifyTtsService : TextToSpeechService() {
         acquireWifiLock()
 
         // 提升前台优先级，防止被系统查杀
-        startForegroundService()
+        enterForegroundState()
 
         // 语音合成遥测计时器：创建于合成开始前，各出口标记终态，finally 统一上报
         var attempt: TtsTelemetryTracker.Attempt? = null
 
         try {
             // 3. 准备供应商与配置
-            // 每次合成前重新读取配置，确保获取最新的供应商选择
+            // 每次合成前重新读取配置，确保获取最新的供应商选择；
+            // 变更检测与创建收敛在 ensureProvider 的生命周期锁内（P1-5/P1-17）
             val selectedProviderId = appConfigRepository?.getSelectedProviderId()
                 ?: TtsProviderRegistry.defaultProvider.id
-            
-            // 检测供应商是否切换，如果切换则重新初始化
-            if (currentProviderId != selectedProviderId) {
-                TtsLogger.i("Provider changed from $currentProviderId to $selectedProviderId during synthesis, reinitializing")
-                currentProvider?.release()
-                currentProvider = TtsProviderFactory.createProvider(selectedProviderId)
-                currentProviderId = selectedProviderId
-                
-                if (currentProvider == null) {
-                    TtsLogger.e("Failed to create provider: $selectedProviderId")
-                    TalkifyNotificationHelper.sendSystemNotification(
-                        this@TalkifyTtsService,
-                        getString(R.string.tts_error_provider_init_failed)
-                    )
-                    callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
-                    return@runBlocking
-                }
-                
-                // 更新配置仓储的缓存
-                providerConfigRepositoryMap.remove(selectedProviderId)
+
+            if (!ensureProvider(selectedProviderId)) {
+                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
+                return@runBlocking
             }
             
             val providerId = currentProviderId
@@ -634,7 +699,9 @@ class TalkifyTtsService : TextToSpeechService() {
                 )
                 return@runBlocking
             }
-            if (config.voiceId.isNotBlank() && request.voiceName.isNotBlank()) {
+            // request.voiceName 为 Java 框架类平台类型（String!）：客户端仅 setLanguage
+            // 未 setVoice 时为 null，必须用 isNullOrEmpty 判空而非 isNotBlank（P0-1）
+            if (config.voiceId.isNotBlank() && !request.voiceName.isNullOrEmpty()) {
                 if (config.voiceId != request.voiceName) {
                     TtsLogger.w("Synthesize: SynthesisRequest.voiceName: ${request.voiceName}, ProviderConfig.voiceId: ${config.voiceId}")
                 }
@@ -773,39 +840,63 @@ class TalkifyTtsService : TextToSpeechService() {
             // 7. 统一清理资源
             attempt?.report()
             activeContinuation = null
-            stopForegroundServiceIfIdle()
+            scheduleForegroundIdleExit()
             releaseWifiLock()
             releaseWakeLock()
         }
     }
 
 
+    /**
+     * 取消在途合成的挂起点
+     *
+     * onStop 与 onDestroy 共用：不取消时 runBlocking 阻塞的 SynthThread 会
+     * 持续等待到合成完成或 120s 超时，onDestroy 场景下还会向已销毁的服务
+     * 回调"网络超时"并发出误导性通知（P1-18）
+     */
+    private fun cancelActiveSynthesis() {
+        val continuation = activeContinuation
+        if (continuation != null && continuation.isActive) {
+            TtsLogger.d("cancelActiveSynthesis: cancelling active continuation")
+            continuation.cancel()
+        }
+        activeContinuation = null
+    }
+
     override fun onDestroy() {
         TtsLogger.i("TalkifyTtsService onDestroy")
         isStopped.set(true)
+        cancelActiveSynthesis()
         try {
             currentProvider?.stop()
-        } catch (e: android.os.RemoteException) {
-            TtsLogger.w("Remote exception during provider stop, service may be disconnecting: ${e.message}")
-        } catch (e: android.os.DeadObjectException) {
+        } catch (e: DeadObjectException) {
+            // 先捕获子类 DeadObjectException 再捕获父类 RemoteException，否则本分支不可达（P1-18）
             TtsLogger.w("Provider connection lost during stop, service is being destroyed: ${e.message}")
+        } catch (e: RemoteException) {
+            TtsLogger.w("Remote exception during provider stop, service may be disconnecting: ${e.message}")
         } catch (e: Exception) {
             TtsLogger.e("Unexpected error during provider stop", e)
         }
         try {
             currentProvider?.release()
-        } catch (e: android.os.RemoteException) {
-            TtsLogger.w("Remote exception during provider release: ${e.message}")
-        } catch (e: android.os.DeadObjectException) {
+        } catch (e: DeadObjectException) {
             TtsLogger.w("Provider connection lost during release: ${e.message}")
+        } catch (e: RemoteException) {
+            TtsLogger.w("Remote exception during provider release: ${e.message}")
         } catch (e: Exception) {
             TtsLogger.e("Unexpected error during provider release", e)
         }
         currentProvider = null
         currentConfig = null
         currentProviderId = null
+        foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
+        // 与合成 finally 成对补齐 WifiLock 释放，消除"销毁与在途 finally 之间"的泄漏窗口（P1-18）
+        releaseWifiLock()
         releaseWakeLock()
-        stopForegroundService()
+        exitForegroundState()
+        // N19-e：最后防线——在飞 finally 若在 isStopped 置位前已通过 scheduleForegroundIdleExit
+        // 的校验，其 postDelayed 可能落在上方 removeCallbacks 之后，销毁路径末尾再补一次移除
+        foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
         super.onDestroy()
     }
 
@@ -818,19 +909,14 @@ class TalkifyTtsService : TextToSpeechService() {
     override fun onStop() {
         TtsLogger.d("onStop called")
 
-        val continuation = activeContinuation
-        if (continuation != null && continuation.isActive) {
-            TtsLogger.d("onStop: cancelling active continuation")
-            continuation.cancel()
-        }
-        activeContinuation = null
+        cancelActiveSynthesis()
 
         try {
             currentProvider?.stop()
-        } catch (e: android.os.RemoteException) {
-            TtsLogger.w("Remote exception during provider stop in onStop: ${e.message}")
-        } catch (e: android.os.DeadObjectException) {
+        } catch (e: DeadObjectException) {
             TtsLogger.w("Provider connection lost during onStop: ${e.message}")
+        } catch (e: RemoteException) {
+            TtsLogger.w("Remote exception during provider stop in onStop: ${e.message}")
         } catch (e: Exception) {
             TtsLogger.e("Unexpected error during provider stop in onStop", e)
         }

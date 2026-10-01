@@ -1,0 +1,17 @@
+# 行尾与二进制属性（N19-n / R-O：防 Windows/CI 行尾漂移，保护大文件不入 delta 压缩）
+* text=auto eol=lf
+*.bat eol=crlf
+*.cmd eol=crlf
+
+# 二进制资产：不做行尾处理与 diff
+*.aar binary
+*.jar binary
+*.so binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.wav binary
+*.mp3 binary
+*.jks binary
+*.keystore binary

@@ -245,17 +245,23 @@ class AzureProvider : AbstractTtsProvider() {
 
     /**
      * 持久化 WebSocket 连接，跨 synthesize() 调用复用
-     * 通过 Mutex 保证协程安全的连接获取与释放
+     * 通过 Mutex 保证协程安全的连接获取与释放。
+     * N7：release() 无锁读取本组字段，@Volatile 保证可见性
      */
     private val connectionMutex = Mutex()
+
+    @Volatile
     private var persistentWebSocket: WebSocket? = null
+
+    @Volatile
     private var persistentListener: PersistentWebSocketListener? = null
 
     /** 连接是否处于可用状态（已连接且未被服务端关闭） */
     @Volatile
     private var isConnectionAlive = false
 
-    /** 空闲超时定时器 */
+    /** 空闲超时定时器（N7：scheduleIdleTimeout/closeConnectionInternal/release 多线程写点，@Volatile 保可见） */
+    @Volatile
     private var idleTimeoutJob: Job? = null
 
     /** 上次使用连接的时间戳 */
@@ -325,8 +331,12 @@ class AzureProvider : AbstractTtsProvider() {
 
         logInfo("Starting Microsoft TTS synthesis: textLength=${text.length}, chunks=${textChunks.size}")
 
+        // 会话代际：入口取消旧任务并捕获快照，回调出口校验——旧会话协程若不取消，
+        // beginStreamingSession 覆写监听器状态后旧协程永久挂起、管道与解码线程泄漏（P2-B14/P1-15）
+        val session = beginSynthesisSession()
         isCancelled = false
 
+        synthesisJob?.cancel()
         synthesisJob = providerScope.launch {
             try {
                 if (newApiUrl != currentApiUrl) {
@@ -335,12 +345,12 @@ class AzureProvider : AbstractTtsProvider() {
                     closeConnection()
                 }
                 listener.onSynthesisStarted()
-                processChunks(textChunks, params, msConfig, listener)
-                if (!isCancelled) {
+                processChunks(textChunks, params, msConfig, listener, session)
+                if (!isCancelled && isSynthesisSessionActive(session)) {
                     listener.onSynthesisCompleted()
                 }
             } catch (e: Exception) {
-                if (!isCancelled && e !is CancellationException) {
+                if (!isCancelled && e !is CancellationException && isSynthesisSessionActive(session)) {
                     logError("Synthesis error", e)
                     listener.onError("合成失败：${e.message}")
                 }
@@ -365,7 +375,8 @@ class AzureProvider : AbstractTtsProvider() {
         chunks: List<String>,
         params: SynthesisParams,
         config: AzureConfig,
-        listener: TtsSynthesisListener
+        listener: TtsSynthesisListener,
+        session: Long
     ) {
         val pipeClosed = AtomicBoolean(false)
         val pipedOutputStream = PipedOutputStream()
@@ -373,7 +384,7 @@ class AzureProvider : AbstractTtsProvider() {
 
         // 解码是 CPU 密集型操作，调度至 Default
         val decodeJob = providerScope.launch(Dispatchers.Default) {
-            decodeMp3Stream(pipedInputStream, listener)
+            decodeMp3Stream(pipedInputStream, listener, session)
         }
         try {
             // 1. 获取或复用持久化 WebSocket 连接
@@ -477,7 +488,9 @@ class AzureProvider : AbstractTtsProvider() {
      */
     private suspend fun openWebSocket(listener: PersistentWebSocketListener): WebSocket {
         val connectionId = connectId()
-        val url = "$currentApiUrl&ConnectionId=$connectionId" +
+        // 自定义 URL 可能不带查询串：无条件用 "&" 拼接会把参数沦为路径的一部分（P2-B16）
+        val separator = if (currentApiUrl.contains('?')) "&" else "?"
+        val url = "$currentApiUrl${separator}ConnectionId=$connectionId" +
                 "&Sec-MS-GEC=${generateSecMsGec()}&Sec-MS-GEC-Version=$SEC_MS_GEC_VERSION"
 
         val requestBuilder = Request.Builder().url(url)
@@ -485,8 +498,16 @@ class AzureProvider : AbstractTtsProvider() {
             requestBuilder.addHeader(key, value)
         }
 
-        client.newWebSocket(requestBuilder.build(), listener)
-        return listener.awaitConnection()
+        // 捕获 newWebSocket 返回值：握手窗口期协程被取消（stop/release/120s 兜底）时，
+        // awaitConnection 抛出而 persistentWebSocket 尚未赋值，握手中的连接将无持有者
+        // 去 close，还被 pingInterval 长期保活——取消路径显式 cancel 该连接（P2-B17）
+        val webSocket = client.newWebSocket(requestBuilder.build(), listener)
+        try {
+            return listener.awaitConnection()
+        } catch (e: Throwable) {
+            webSocket.cancel()
+            throw e
+        }
     }
 
     /**
@@ -828,10 +849,16 @@ class AzureProvider : AbstractTtsProvider() {
                 connectionDeferred.complete(Result.failure(if (exception is Exception) exception else Exception(exception)))
             }
 
+            // P2-B3：会话进行中收到 onClosing(1000) 是服务端提前关闭（音频截断），
+            // 不能把未完成块标成功；仅在空闲期（无活动流式会话）的正常关闭按成功收尾
+            val sessionActive = synchronized(streamLock) { inSession }
             for (deferred in chunkDeferreds.values) {
                 if (!deferred.isCompleted) {
-                    if (code == 1000) deferred.complete(Result.success(Unit))
-                    else deferred.complete(Result.failure(if (exception is Exception) exception else Exception(exception)))
+                    if (code == 1000 && !sessionActive) {
+                        deferred.complete(Result.success(Unit))
+                    } else {
+                        deferred.complete(Result.failure(if (exception is Exception) exception else Exception(exception)))
+                    }
                 }
             }
         }
@@ -839,11 +866,22 @@ class AzureProvider : AbstractTtsProvider() {
 
     // ==================== 音频解码 ====================
 
-    private fun decodeMp3Stream(inputStream: PipedInputStream, listener: TtsSynthesisListener) {
+    /**
+     * 解码 MP3 流并输出 PCM 音频数据
+     *
+     * @param session 会话代际快照：stop() 作废会话后，解码线程在取消探测生效前
+     * 已产出的尾帧不得穿透到监听器（G1/N1）
+     */
+    private fun decodeMp3Stream(
+        inputStream: PipedInputStream,
+        listener: TtsSynthesisListener,
+        session: Long
+    ) {
         Mp3StreamDecoder.decodeMp3Stream(
             inputStream,
             isCancelled = { isCancelled }
         ) { pcmBytes, sampleRate, channelCount ->
+            if (!isSynthesisSessionActive(session)) return@decodeMp3Stream
             listener.onAudioAvailable(
                 pcmBytes,
                 sampleRate,
@@ -921,6 +959,8 @@ class AzureProvider : AbstractTtsProvider() {
     override fun stop() {
         logInfo("Stopping synthesis")
         isCancelled = true
+        // 作废当前会话代际：停止后到达的残留回调被出口校验静默丢弃（P1-15）
+        invalidateSynthesisSession()
         synthesisJob?.cancel()
         synthesisJob = null
     }
@@ -928,15 +968,32 @@ class AzureProvider : AbstractTtsProvider() {
     override fun release() {
         logInfo("Releasing provider")
         isCancelled = true
-        // 先取消在飞作业再抢锁关闭：合成协程可能挂起在 connectionMutex 上等待握手，
+        invalidateSynthesisSession()
+        // 先取消在飞作业再关闭连接：合成协程可能挂起在 connectionMutex 上等待握手，
         // 取消使其立即释放锁，避免释放路径被阻塞到连接超时
         synthesisJob?.cancel()
         synthesisJob = null
         providerJob.cancel()
-        runBlocking { closeConnection() }
-        // 释放独立持有的 OkHttp 连接池与调度线程池（本类未复用全局共享客户端）
+        // P2-B13：不在调用线程（主线程 onDestroy）runBlocking 等待优雅关闭帧完成——
+        // WebSocket.close 本身非阻塞，关闭帧由 OkHttp 线程异步收尾；
+        // 连接池仅 evictAll：dispatcher 线程池为 60s keepalive 的缓存池无需 shutdown，
+        // 且 shutdown 会丢弃尚未发完的关闭帧
+        // 连接关闭收口进 connectionMutex（与 getOrCreateConnection 的赋值路径互斥）：
+        // 无锁直关时"握手恰在 release 期间返回"的协程会把新连接写入已被清空的字段，
+        // 该连接此后无持有者关闭、还被 pingInterval 长期保活（泄漏）。在飞协程已被
+        // 上方 cancel，awaitConnection 挂起点随即抛 CancellationException 释放锁，
+        // 此处锁等待有界，不构成 P2-B13 所避免的关闭帧等待
+        runBlocking {
+            connectionMutex.withLock {
+                runCatching { persistentWebSocket?.close(1000, "Provider released") }
+                persistentWebSocket = null
+                persistentListener = null
+                isConnectionAlive = false
+                idleTimeoutJob?.cancel()
+                idleTimeoutJob = null
+            }
+        }
         client.connectionPool.evictAll()
-        client.dispatcher.executorService.shutdown()
         super.release()
     }
 

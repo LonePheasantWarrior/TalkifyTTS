@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -49,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -470,9 +471,11 @@ private fun DialogEditorField(
     item: ConfigItem,
     onValueChange: (String) -> Unit
 ) {
-    var showEditorDialog by remember { mutableStateOf(false) }
-    var showGuideDialog by remember { mutableStateOf(false) }
-    var draftValue by remember(item.value) { mutableStateOf(item.value) }
+    // N19-c：对话框可见性与草稿用 rememberSaveable——旋转/配置变更后对话框消失、
+    // 大段草稿丢失是纯 remember 状态的固有行为
+    var showEditorDialog by rememberSaveable { mutableStateOf(false) }
+    var showGuideDialog by rememberSaveable { mutableStateOf(false) }
+    var draftValue by rememberSaveable(item.value) { mutableStateOf(item.value) }
 
     // 摘要卡片：模拟输入框外观，点击唤起编辑对话框
     OutlinedCard(
@@ -646,7 +649,7 @@ private fun UsageGuideDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(
-                    text = stringResource(R.string.usage_guide_close),
+                    text = stringResource(R.string.action_got_it),
                     style = MaterialTheme.typography.labelLarge
                 )
             }

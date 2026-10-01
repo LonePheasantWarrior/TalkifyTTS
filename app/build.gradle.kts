@@ -1,4 +1,13 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+// 签名配置（§7.3）：优先读取 keystore.properties（已 gitignore，不入库）。
+// 文件不存在时（本地 debug / 未配置密钥的 CI）不注册签名配置，release 产物
+// 不签名；正式发布经 release.yml 从 GitHub Secrets 注入。
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -25,6 +34,23 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
+
+        // N19-g：匿名遥测端点与网站 ID 不入库（公开仓库不暴露自建服务器地址）。
+        // 维护者经 local.properties（umami.endpoint / umami.websiteId，已 gitignore）
+        // 或 CI 环境变量（UMAMI_ENDPOINT / UMAMI_WEBSITE_ID）注入；二者缺一即
+        // 构建出"未配置遥测"的包，UmamiClient 侧自检短路、零网络流量
+        val localProperties = Properties().apply {
+            val file = rootProject.file("local.properties")
+            if (file.exists()) file.inputStream().use { load(it) }
+        }
+        // 经 providers.environmentVariable 读取（而非 System.getenv）：configuration
+        // cache 将其追踪为输入，环境变量变化会触发重新配置，避免复用缓存条目打出旧值
+        val umamiEndpoint = localProperties.getProperty("umami.endpoint")
+            ?: providers.environmentVariable("UMAMI_ENDPOINT").orNull ?: ""
+        val umamiWebsiteId = localProperties.getProperty("umami.websiteId")
+            ?: providers.environmentVariable("UMAMI_WEBSITE_ID").orNull ?: ""
+        buildConfigField("String", "UMAMI_ENDPOINT", "\"$umamiEndpoint\"")
+        buildConfigField("String", "UMAMI_WEBSITE_ID", "\"$umamiWebsiteId\"")
     }
 
     splits {
@@ -38,6 +64,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (keystoreProperties.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -46,6 +83,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystoreProperties.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
@@ -54,6 +94,13 @@ android {
     }
     buildFeatures {
         compose = true
+        // 生成 BuildConfig（VERSION_NAME/DEBUG）：下载 UA 拼接真实版本号（P3-14）、
+        // 日志门控等按构建类型区分的能力依赖该类
+        buildConfig = true
+    }
+    lint {
+        // 固化现有 warning 基线（41+ 条历史告警），CI 只对新引入的问题硬门禁（§7.4）
+        baseline = file("lint-baseline.xml")
     }
     testOptions {
         unitTests {

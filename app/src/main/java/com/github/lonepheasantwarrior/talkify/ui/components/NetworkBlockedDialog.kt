@@ -72,7 +72,7 @@ fun NetworkBlockedDialog(
                 onClick = onAcknowledge
             ) {
                 Text(
-                    text = stringResource(R.string.network_blocked_acknowledge),
+                    text = stringResource(R.string.action_got_it),
                     style = MaterialTheme.typography.labelLarge
                 )
             }

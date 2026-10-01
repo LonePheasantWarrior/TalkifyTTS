@@ -3,8 +3,10 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.notification
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationHelper.buildNotification
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.PermissionChecker
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
 /**
  * 通知辅助工具类
@@ -31,6 +33,7 @@ import androidx.core.app.NotificationCompat
 object NotificationHelper {
 
     private const val DEFAULT_NOTIFICATION_ID = 1000
+    private const val TAG = "TalkifyNotification"
 
     /**
      * 创建通知通道
@@ -80,6 +83,7 @@ object NotificationHelper {
         builder.setSmallIcon(options.content.smallIconResId)
         builder.setOngoing(options.isOngoing)
         builder.setSilent(options.isSilent)
+        builder.setOnlyAlertOnce(options.isOnlyAlertOnce)
         builder.setPriority(options.priority)
 
         if (options.pendingIntent != null) {
@@ -102,6 +106,13 @@ object NotificationHelper {
      *
      * 将构建好的通知对象发送到系统通知栏
      *
+     * N13 发送侧单点门控：POST_NOTIFICATIONS 未授权（API 33+）时系统本会静默
+     * 丢弃通知，此处显式短路并记录日志——否则"用户拒绝通知权限后对合成错误/
+     * 崩溃提示零感知"且无任何可诊断痕迹。全部通知栏发送路径（含
+     * [TalkifyNotificationHelper.sendSystemNotification]）都经本方法下发，
+     * 权限判断由此单点承担；startForeground 的 FGS 常驻通知走
+     * [buildNotification] 直建，不受本门控影响（FGS 通知必须始终投递给系统）
+     *
      * @param context 应用程序上下文
      * @param notification 要发送的通知对象
      * @param notificationId 通知标识符，用于后续取消通知
@@ -111,6 +122,10 @@ object NotificationHelper {
         notification: Notification,
         notificationId: Int = DEFAULT_NOTIFICATION_ID
     ) {
+        if (!PermissionChecker.hasNotificationPermission(context)) {
+            TtsLogger.w("Skip notification #$notificationId: POST_NOTIFICATIONS not granted", tag = TAG)
+            return
+        }
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(notificationId, notification)
     }

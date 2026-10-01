@@ -53,16 +53,11 @@ import org.json.JSONObject
  */
 class GoogleProvider : HttpStreamingTtsProvider() {
 
-    companion object {
-        /**
-         * 保留静态访问入口（TalkifyCheckDataActivity 等无需实例化即可读取）。
-         * Gemini TTS 自动检测输入语言，此处声明常用的朗读语言。
-         */
-        val SUPPORTED_LANGUAGES = arrayOf(
-            "zho", "yue", "eng", "jpn", "kor", "fra", "deu", "spa",
-            "por", "ita", "rus", "ara", "hin", "tha", "vie"
-        )
-    }
+    // Gemini TTS 自动检测输入语言，此处声明常用的朗读语言（N11：原伴生静态入口无外部引用，收归实例属性）
+    override val supportedLanguages: Array<String> = arrayOf(
+        "zho", "yue", "eng", "jpn", "kor", "fra", "deu", "spa",
+        "por", "ita", "rus", "ara", "hin", "tha", "vie"
+    )
 
     override val chunkMaxLength: Int = 500
 
@@ -74,9 +69,6 @@ class GoogleProvider : HttpStreamingTtsProvider() {
         "proxy_host" to R.string.label_proxy_host,
         "proxy_port" to R.string.label_proxy_port
     )
-
-    override val supportedLanguages: Array<String>
-        get() = SUPPORTED_LANGUAGES
 
     override val fallbackVoiceId: String = "Kore"
 
@@ -101,6 +93,8 @@ class GoogleProvider : HttpStreamingTtsProvider() {
         if (config.apiKey.isBlank()) {
             return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
         }
+        // N19-f：明文端点在配置校验层显式拦截（平台禁明文，晚拦只会得到"网络不可用"）
+        validateCleartextEndpoint(config.apiUrl)?.let { return it }
         // 代理配置不完整时在合成入口即给出明确提示，而非等待网络错误
         val proxyResult = ProxySettings.parse(config.proxyProtocol, config.proxyHost, config.proxyPort)
         if (proxyResult is ProxyParseResult.Invalid) {
@@ -216,9 +210,14 @@ class GoogleProvider : HttpStreamingTtsProvider() {
                     }
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             logError("Error reading response stream", e)
             hasError = true
+            // 上抛交由基类 fetchChunk 统一分类上报：在此吞掉会让整次合成既无
+            // 完成也无错误回调，服务层静默挂死至 120s 超时（P1-19）
+            throw e
         }
 
         return !hasError

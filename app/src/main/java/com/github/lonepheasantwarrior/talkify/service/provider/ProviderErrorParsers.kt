@@ -34,14 +34,16 @@ internal object VolcengineErrorParser {
                 return message
             }
 
+            // 能走到 here 的前提是 message 为空（非空已在上面提前 return），
+            // 分支内不再插值 $message（恒为空串，曾产出"参数错误： (code: …)"残缺文案，P2-B15）
             when (code) {
                 45000030 -> "资源未授权：请在火山引擎控制台开通对应服务服务 (code: $code)"
                 45000001 -> "认证失败：请检查 App ID 和 Access Key 是否正确 (code: $code)"
-                45000002 -> "参数错误：$message (code: $code)"
+                45000002 -> "参数错误，请检查请求配置 (code: $code)"
                 45000003 -> "请求过于频繁，请稍后重试 (code: $code)"
                 45000004 -> "服务暂时不可用，请稍后重试 (code: $code)"
                 45000005 -> "余额不足：请充值后再试 (code: $code)"
-                else -> "语音合成失败：$message (code: $code)"
+                else -> "语音合成失败 (code: $code)"
             }
         } catch (_: Exception) {
             TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_SYNTHESIS_FAILED)

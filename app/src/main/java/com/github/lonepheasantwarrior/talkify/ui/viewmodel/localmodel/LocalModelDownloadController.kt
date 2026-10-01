@@ -15,12 +15,16 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 下载进度状态
+ *
+ * @property isFailed 下载失败终态：消费端必须展示失败提示——此前失败仅清空
+ * 进度状态，UI 表现为进度条凭空消失、无任何反馈（P1-6）
  */
 data class DownloadProgress(
     val modelId: String,
     val displayName: String,
     val progress: Int,       // 0-100
-    val isCompleted: Boolean
+    val isCompleted: Boolean,
+    val isFailed: Boolean = false
 )
 
 /**
@@ -51,11 +55,24 @@ class LocalModelDownloadController(
                     )
                 }
                 LocalModelDownloadService.ACTION_DOWNLOAD_FAILED -> {
-                    _downloadProgress.value = null
+                    // 失败是可见终态而非静默清空：UI 据此弹出失败提示（P1-6）
+                    lastFailureMessage = intent.getStringExtra(LocalModelDownloadService.EXTRA_ERROR)
+                    _downloadProgress.value = DownloadProgress(
+                        modelId = modelId,
+                        displayName = modelInfo.displayName,
+                        progress = 0,
+                        isCompleted = false,
+                        isFailed = true
+                    )
                 }
             }
         }
     }
+
+    /** 最近一次下载失败的原因（随失败广播携带，供 UI 提示展示） */
+    @Volatile
+    var lastFailureMessage: String? = null
+        private set
 
     init {
         val filter = IntentFilter().apply {

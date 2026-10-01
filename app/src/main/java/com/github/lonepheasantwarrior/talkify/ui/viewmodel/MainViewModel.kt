@@ -47,6 +47,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- 下载进度状态（委托 LocalModelDownloadController）---
     val downloadProgress: StateFlow<DownloadProgress?> = modelDownload.downloadProgress
 
+    /** 最近一次下载失败的原因（P1-6 失败提示用） */
+    val downloadFailureMessage: String?
+        get() = modelDownload.lastFailureMessage
+
     // --- 配置面板状态 ---
     private val _isConfigSheetOpen = MutableStateFlow(false)
     val isConfigSheetOpen: StateFlow<Boolean> = _isConfigSheetOpen.asStateFlow()
@@ -80,6 +84,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onBatteryOptimizationResult() = startup.onBatteryOptimizationResult()
 
     fun onBatteryOptimizationSkipped() = startup.onBatteryOptimizationSkipped()
+
+    fun onBatteryOptimizationDialogDismissed() = startup.onBatteryOptimizationDialogDismissed()
 
     fun onUpdateDialogDismissed() = startup.onUpdateDialogDismissed()
 

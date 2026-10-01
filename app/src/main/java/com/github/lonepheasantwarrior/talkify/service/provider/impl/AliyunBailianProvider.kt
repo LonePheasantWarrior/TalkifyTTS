@@ -22,6 +22,7 @@ import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
 import com.github.lonepheasantwarrior.talkify.service.provider.VOICE_NAME_SEPARATOR
 import com.github.lonepheasantwarrior.talkify.service.provider.WavHeaderSanitizer
+import com.github.lonepheasantwarrior.talkify.service.provider.impl.AliyunBailianProvider.Companion.ENDPOINT_MUTEX
 import io.reactivex.Flowable
 import io.reactivex.disposables.Disposable
 import io.reactivex.subscribers.DisposableSubscriber
@@ -49,6 +50,17 @@ class AliyunBailianProvider : AbstractTtsProvider() {
 
         /** 支持的语言列表（ISO 639-2 三字母代码） */
         val SUPPORTED_LANGUAGES = arrayOf("zho", "eng", "deu", "ita", "por", "spa", "jpn", "kor", "fra", "rus")
+
+        /**
+         * DashScope SDK 请求端点是进程级全局静态（[Constants.baseHttpApiUrl]）：
+         * 服务与预览两个实例并行且自定义地址不同时，互相覆写会把对方的请求
+         * 路由到错误端点（P1-16）。默认值写入与"端点覆写 + streamCall 订阅"
+         * 全部经 [ENDPOINT_MUTEX] 串行化，保证写入与 SDK 读端点成对生效。
+         */
+        private val ENDPOINT_MUTEX = Any()
+
+        @Volatile
+        private var defaultEndpointInitialized = false
     }
 
     @Volatile
@@ -57,12 +69,23 @@ class AliyunBailianProvider : AbstractTtsProvider() {
     @Volatile
     private var isCancelled = false
 
+    @Volatile
     private var hasCompleted = false
 
     init {
-        // DashScope SDK 的请求端点是全局静态（Constants.baseHttpApiUrl），仅在此设置一次默认值；
-        // 用户自定义地址的写入收敛见 buildConversationParam
-        Constants.baseHttpApiUrl = DEFAULT_API_URL
+        ensureDefaultEndpoint()
+    }
+
+    /** 幂等写入默认端点（进程内仅首次生效） */
+    private fun ensureDefaultEndpoint() {
+        if (!defaultEndpointInitialized) {
+            synchronized(ENDPOINT_MUTEX) {
+                if (!defaultEndpointInitialized) {
+                    Constants.baseHttpApiUrl = DEFAULT_API_URL
+                    defaultEndpointInitialized = true
+                }
+            }
+        }
     }
 
     override fun getProviderId(): String = ProviderIds.AliyunBailian.providerId
@@ -103,10 +126,14 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         logInfo("Starting streaming synthesis: textLength=${text.length}, chunks=${textChunks.size}, pitch=${params.pitch}, speechRate=${params.speechRate}")
         logDebug("Audio config: ${getAudioConfig().getFormatDescription()}")
 
+        // 会话代际：入口取消旧任务并捕获快照，回调出口校验（P1-15）
+        val session = beginSynthesisSession()
         isCancelled = false
         hasCompleted = false
+        // 入口取消上一会话的在飞订阅：stop() 是异步语义，dispose 确保旧任务立即终止
+        currentDisposable?.dispose()
 
-        processNextChunk(textChunks, 0, params, qwenConfig, listener)
+        processNextChunk(textChunks, 0, params, qwenConfig, listener, session)
     }
 
     private fun processNextChunk(
@@ -114,16 +141,19 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         index: Int,
         params: SynthesisParams,
         config: AliyunBailianConfig,
-        listener: TtsSynthesisListener
+        listener: TtsSynthesisListener,
+        session: Long
     ) {
-        if (isCancelled || hasCompleted) {
+        if (isCancelled || hasCompleted || !isSynthesisSessionActive(session)) {
             return
         }
 
         if (index >= chunks.size) {
             logDebug("All chunks processed")
             hasCompleted = true
-            listener.onSynthesisCompleted()
+            if (isSynthesisSessionActive(session)) {
+                listener.onSynthesisCompleted()
+            }
             return
         }
 
@@ -132,19 +162,24 @@ class AliyunBailianProvider : AbstractTtsProvider() {
 
         try {
             val conversation = MultiModalConversation()
-            val param = buildConversationParam(chunk, params, config)
-            val resultFlowable: Flowable<MultiModalConversationResult> =
+            // 端点覆写与订阅（SDK 在订阅的同步阶段构建请求读取全局端点）
+            // 成对持锁，多实例并行时不互相串台（P1-16）
+            val resultFlowable: Flowable<MultiModalConversationResult> = synchronized(ENDPOINT_MUTEX) {
+                val param = buildConversationParam(chunk, params, config)
                 conversation.streamCall(param)
+            }
 
             currentDisposable = resultFlowable.subscribeWith(
                 createChunkSubscriber(
-                    chunks, index, params, config, listener
+                    chunks, index, params, config, listener, session
                 )
             )
         } catch (e: Exception) {
             val (errorCode, errorMessage) = mapExceptionToErrorCode(e)
             logError("Synthesis error: $errorMessage", e)
-            listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
+            if (isSynthesisSessionActive(session)) {
+                listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
+            }
         }
     }
 
@@ -211,15 +246,21 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         index: Int,
         params: SynthesisParams,
         config: AliyunBailianConfig,
-        listener: TtsSynthesisListener
+        listener: TtsSynthesisListener,
+        session: Long
     ): DisposableSubscriber<MultiModalConversationResult> {
         return object : DisposableSubscriber<MultiModalConversationResult>() {
             private var isFirstChunk = index == 0
-            // 新增：用于跟踪当前文本块的第一个音频数据包，以便剥离可能存在的 WAV 头
+            // 用于跟踪当前文本块的第一个音频数据包，以便剥离可能存在的 WAV 头
             private var isFirstAudioPacket = true
 
             override fun onStart() {
                 super.onStart()
+                if (!isSynthesisSessionActive(session)) {
+                    // 过期会话的迟到订阅：立即终止，不触达监听器（P1-15）
+                    cancel()
+                    return
+                }
                 if (isFirstChunk) {
                     listener.onSynthesisStarted()
                     isFirstChunk = false
@@ -227,7 +268,7 @@ class AliyunBailianProvider : AbstractTtsProvider() {
             }
 
             override fun onNext(result: MultiModalConversationResult) {
-                if (isCancelled || hasCompleted) {
+                if (isCancelled || hasCompleted || !isSynthesisSessionActive(session)) {
                     return
                 }
 
@@ -259,7 +300,11 @@ class AliyunBailianProvider : AbstractTtsProvider() {
                 } catch (e: Exception) {
                     logError("Error processing audio chunk", e)
                     val (errorCode, errorMessage) = mapExceptionToErrorCode(e)
-                    listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
+                    // G3/N1：出口校验——与下方 onError override 的同名校验对齐，
+                    // stop() 作废会话后音频处理异常不得穿透到监听器
+                    if (isSynthesisSessionActive(session)) {
+                        listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
+                    }
                     dispose()
                 }
             }
@@ -268,13 +313,16 @@ class AliyunBailianProvider : AbstractTtsProvider() {
                 logError("Stream error for chunk $index", throwable)
                 // throwable 可能是非 Exception 的 Throwable（如 Error），避免强转抛 ClassCastException
                 val (errorCode, errorMessage) = mapExceptionToErrorCode(throwable as? Exception ?: Exception(throwable))
-                listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
+                // 过期会话的错误静默丢弃（P1-15）
+                if (isSynthesisSessionActive(session)) {
+                    listener.onError(TtsErrorCode.getErrorMessage(errorCode, errorMessage))
+                }
             }
 
             override fun onComplete() {
                 logDebug("Chunk $index completed")
-                if (!isCancelled && !hasCompleted) {
-                    processNextChunk(chunks, index + 1, params, config, listener)
+                if (!isCancelled && !hasCompleted && isSynthesisSessionActive(session)) {
+                    processNextChunk(chunks, index + 1, params, config, listener, session)
                 }
             }
         }
@@ -293,8 +341,8 @@ class AliyunBailianProvider : AbstractTtsProvider() {
         val languageType = convertToQwenLanguageType(params.language)
 
         // 用户自定义 API 地址优先，为空时回退到默认地址。
-        // 注意：Constants.baseHttpApiUrl 是 SDK 全局静态，仅在值变化时写入，
-        // 且本 Provider 的分块合成为串行执行，避免并发写竞态
+        // 调用方已在 ENDPOINT_MUTEX 内（processNextChunk）：Constants.baseHttpApiUrl
+        // 是 SDK 全局静态，覆写必须与 streamCall 订阅成对持锁（P1-16）
         val effectiveApiUrl = config.apiUrl.ifBlank { DEFAULT_API_URL }
         if (effectiveApiUrl != Constants.baseHttpApiUrl) {
             Constants.baseHttpApiUrl = effectiveApiUrl
@@ -402,6 +450,8 @@ class AliyunBailianProvider : AbstractTtsProvider() {
     override fun stop() {
         logInfo("Stopping synthesis")
         isCancelled = true
+        // 作废当前会话代际：停止后到达的残留回调被出口校验静默丢弃（P1-15）
+        invalidateSynthesisSession()
         currentDisposable?.dispose()
         currentDisposable = null
     }
@@ -409,6 +459,7 @@ class AliyunBailianProvider : AbstractTtsProvider() {
     override fun release() {
         logInfo("Releasing provider")
         isCancelled = true
+        invalidateSynthesisSession()
         currentDisposable?.dispose()
         currentDisposable = null
         super.release()

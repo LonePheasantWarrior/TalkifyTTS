@@ -4,7 +4,6 @@ import io.reactivex.BackpressureStrategy
 import io.reactivex.Flowable
 import io.reactivex.exceptions.OnErrorNotImplementedException
 import io.reactivex.exceptions.UndeliverableException
-import io.reactivex.plugins.RxJavaPlugins
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -45,12 +44,12 @@ class TalkifyExceptionHandlerTest {
         originalDefaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         fakeDefaultHandler = RecordingUncaughtHandler()
         Thread.setDefaultUncaughtExceptionHandler(fakeDefaultHandler)
-        TalkifyExceptionHandler.resetRxJavaErrorPolicyForTest()
+        TalkifyExceptionHandler.resetForTest()
     }
 
     @After
     fun tearDown() {
-        TalkifyExceptionHandler.resetRxJavaErrorPolicyForTest()
+        TalkifyExceptionHandler.resetForTest()
         Thread.setDefaultUncaughtExceptionHandler(originalDefaultHandler)
     }
 
@@ -131,6 +130,36 @@ class TalkifyExceptionHandlerTest {
         triggerDisposedCancellableOrphanError()
 
         assertTrue(fakeDefaultHandler.errors.isEmpty())
+    }
+
+    // ==================== 用例 #6 / #7 initialize 幂等与交还保证（N3） ====================
+
+    /**
+     * initialize 二次调用不得把自身记成前代处理器——修复前二次调用会使
+     * previousHandler == this，崩溃时经 uncaughtException 无限递归 StackOverflowError。
+     * 修复后第二次调用短路，崩溃仍交还给装置处理器（恰一次）
+     */
+    @Test
+    fun initializeIsIdempotentAndDoesNotChainItself() {
+        TalkifyExceptionHandler.initialize()
+        TalkifyExceptionHandler.initialize()
+
+        assertEquals(TalkifyExceptionHandler, Thread.getDefaultUncaughtExceptionHandler())
+
+        TalkifyExceptionHandler.uncaughtException(Thread.currentThread(), RuntimeException("boom"))
+        assertEquals(1, fakeDefaultHandler.errors.size)
+        assertEquals("boom", fakeDefaultHandler.errors[0].message)
+    }
+
+    /** 崩溃处理主体（JVM 下 context 为 null 走最短路径）必须交还前代处理器恰一次 */
+    @Test
+    fun uncaughtExceptionDelegatesToPreviousHandlerExactlyOnce() {
+        TalkifyExceptionHandler.initialize()
+        val crashThread = Thread.currentThread()
+        TalkifyExceptionHandler.uncaughtException(crashThread, IllegalStateException("crash"))
+
+        assertEquals(1, fakeDefaultHandler.errors.size)
+        assertEquals(crashThread, fakeDefaultHandler.threads.single())
     }
 
     /**

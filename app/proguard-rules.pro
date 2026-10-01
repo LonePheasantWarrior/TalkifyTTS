@@ -12,13 +12,11 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ==================== 崩溃可观测性（§7.3） ====================
+# 保留行号：release 崩溃堆栈需配合 mapping.txt 才可解读（CI release.yml 随
+# Release 归档 mapping.txt）；无行号时 app_crash 遥测收集的是废数据
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
 # ==================== 阿里云 DashScope SDK ProGuard 规则 ====================
 # 修复通义千问3语音合成在 Release 模式下崩溃的问题
@@ -43,20 +41,16 @@
     @com.google.gson.annotations.Expose <fields>;
 }
 
-# 保留无参构造函数（Gson 需要）
--keepclassmembers class * {
-    public <init>(***);
-}
-
 # 保留枚举类（SDK 内部可能使用）
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 
-# 保留 Kotlin 元数据（SDK 可能使用 Kotlin）
+# 保留 Kotlin 元数据（R8 需要 kotlin.Metadata 才能正确处理 Kotlin 代码；
+# 注意不可用 -keep class kotlin.** { *; } 全量保留标准库——那会整体关闭
+# stdlib 收缩，显著膨胀 APK（P3-28））
 -keep class kotlin.Metadata { *; }
--keep class kotlin.** { *; }
 
 # 保留 Kotlin 协程相关（SDK 使用协程）
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
@@ -72,12 +66,10 @@
 -keepclassmembers class * extends com.tencent.cloud.stream.tts.core.ws.CommonRequest { *; }
 
 # ==================== Lombok ProGuard 规则 ====================
-# Lombok 是编译期注解处理器，运行时不需要
-# 忽略 Lombok 相关的所有警告
+# Lombok 是编译期注解处理器，运行时类不会进入 APK，无需 -keep；
+# 仅保留 -dontwarn 抑制混淆期对缺失类的警告（N11）
 -dontwarn lombok.**
 -dontwarn org.eclipse.**
--keep class lombok.** { *; }
--keep class org.eclipse.** { *; }
 
 # ==================== JLayer MP3 解码库 ProGuard 规则 ====================
 # 修复 JLayer 在 Release 模式下崩溃的问题

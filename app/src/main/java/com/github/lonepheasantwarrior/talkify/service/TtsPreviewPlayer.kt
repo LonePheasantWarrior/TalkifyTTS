@@ -4,6 +4,9 @@ import android.media.AudioFormat
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker.PreviewAttempt
+import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_POINTS
+import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_POLL_INTERVAL_MS
+import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_WINDOW_MS
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
@@ -34,7 +37,6 @@ class TtsPreviewPlayer(
     companion object {
         const val STATE_IDLE = 0
         const val STATE_PLAYING = 1
-        const val STATE_STOPPED = 2
         const val STATE_ERROR = 3
 
         /** 波形包络历史点数（50ms/点 ≈ 3.2s），与 VoiceWave 的 AGSL uniform 数组尺寸一致 */
@@ -64,6 +66,18 @@ class TtsPreviewPlayer(
     /** 本次预览播放的遥测计时器（stopPlayback 时消费并清空，防止跨场次串报） */
     @Volatile
     private var playbackAttempt: PreviewAttempt? = null
+
+    /**
+     * stopPlayback 已摘除、等待异步收尾的场次数据（N15）
+     *
+     * stopPlayback 把播放器与 attempt 转入本字段后经协程收尾；release() 必须先
+     * 同步冲刷本字段再取消 scope——否则"已 launch、未开始执行"的收尾协程随
+     * cancel 永不执行，AudioTrack native 资源与场次遥测一并丢失
+     */
+    @Volatile
+    private var pendingTeardown: PendingTeardown? = null
+
+    private class PendingTeardown(val player: TalkifyAudioPlayer?, val attempt: PreviewAttempt?)
 
     /**
      * 场次代数：每次 speak() 递增。
@@ -118,9 +132,8 @@ class TtsPreviewPlayer(
         // 新场次代数：此后旧场次的异步收尾协程不再影响共享状态
         sessionGeneration++
         isStopped.set(false)
-        currentState = STATE_IDLE
         lastErrorMessage = null
-        notifyStateChange()
+        transition(STATE_IDLE)
         resetWaveState()
 
         var provider = currentProvider
@@ -134,20 +147,35 @@ class TtsPreviewPlayer(
             currentProvider = provider
         }
 
+        // 音频焦点：预览是本应用自己播放的音频，不请求焦点会与后台音乐/播客
+        // 直接混音（P2-I14）。焦点被系统（如通话中）拒绝时放弃本次预览。
+        if (!requestAudioFocus()) {
+            TtsLogger.w("Audio focus denied, aborting preview")
+            onError("无法获取音频焦点，请稍后重试")
+            return
+        }
+
         playbackAttempt = AppActionTracker.beginPreviewPlayback(
             providerId, config.modelId, config.voiceId, text.length
         )
 
-        currentState = STATE_PLAYING
-        notifyStateChange()
+        transition(STATE_PLAYING)
+
+        // 会话监听器必须在调用线程同步创建（N5）：代数捕获与上方自增同线程
+        // 天然有序。若延迟到 IO 协程体内创建，派发间隙的新 speak() 会使旧协程
+        // 捕获到新代数，旧场次回调将穿过代数校验污染新场次
+        val listener = createListener()
+        val generation = sessionGeneration
 
         serviceScope.launch {
             try {
-                provider.synthesize(text, params, config, createListener())
+                provider.synthesize(text, params, config, listener)
             } catch (e: Exception) {
                 TtsLogger.e("Synthesis failed: ${e.message}", e)
-                playbackAttempt?.markError(e.javaClass.simpleName)
-                onError("合成失败：${e.message}")
+                if (generation == sessionGeneration) {
+                    playbackAttempt?.markError(e.javaClass.simpleName)
+                    onError("合成失败：${e.message}")
+                }
             }
         }
     }
@@ -363,78 +391,202 @@ class TtsPreviewPlayer(
         playbackAttempt = null
         wavePollJob?.cancel()
         wavePollJob = null
+        abandonAudioFocus()
         // 捕获本场播放器/供应商的局部引用：清理只作用于本场对象，
         // 快速 stop→speak 后新场次创建的播放器不会被旧协程误杀
         val player = audioPlayer
         val provider = currentProvider
         val generation = sessionGeneration
-        // 同步清空共享引用：新场次据此创建全新播放器，旧实例由下方协程释放
+        // 同步清空共享引用：新场次据此创建全新播放器，旧实例经 pendingTeardown 收尾
         audioPlayer = null
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                player?.stop()
-                player?.release()
-            } catch (e: Exception) {
-                TtsLogger.e("Error stopping audio player: ${e.message}", e)
+        val teardown = PendingTeardown(player, attempt)
+        pendingTeardown = teardown
+        if (serviceScope.isActive) {
+            serviceScope.launch(Dispatchers.IO) {
+                runTeardown(teardown, generation, provider)
+                if (pendingTeardown === teardown) {
+                    pendingTeardown = null
+                }
             }
+        } else {
+            // scope 已被 release() 取消：协程经 launch 必被永久跳过，直接同步收尾，
+            // 防止 AudioTrack 泄漏（N15 最后防线；runTeardown 幂等，与 release 的
+            // 冲刷双跑无副作用）
+            runTeardown(teardown, generation, provider)
+        }
+    }
 
+    /**
+     * 场次收尾：释放播放器 + 停止供应商 + attempt 上报 + 状态落地
+     *
+     * 供 stopPlayback 的异步协程与 release() 的同步冲刷共用；全部操作
+     * 幂等（player.stop/release 幂等、attempt.report 幂等、状态落地有代数守卫），
+     * 双路径并发执行无副作用
+     */
+    private fun runTeardown(teardown: PendingTeardown, generation: Long, provider: TtsProviderApi?) {
+        try {
+            teardown.player?.stop()
+            teardown.player?.release()
+        } catch (e: Exception) {
+            TtsLogger.e("Error stopping audio player: ${e.message}", e)
+        }
+
+        // provider 实例跨场次复用：新场次开始后不得 stop——那会误杀新场次
+        // 的在飞合成（供应商入口已取消旧会话，无需此处代劳）（P2-I13①）
+        if (generation == sessionGeneration) {
             try {
                 provider?.stop()
             } catch (e: Exception) {
                 TtsLogger.e("Error stopping provider: ${e.message}", e)
             }
-
-            // 未经显式 mark 的终态（provider onError / 播放器错误路径）按错误收尾
-            attempt?.let {
-                val errMsg = lastErrorMessage
-                if (errMsg != null) {
-                    it.markError(TtsErrorCode.inferErrorCodeFromMessage(errMsg).toString())
-                }
-                it.report()
-            }
-
-            if (generation == sessionGeneration && currentState != STATE_STOPPED) {
-                currentState = if (lastErrorMessage != null) {
-                    STATE_ERROR
-                } else {
-                    STATE_IDLE
-                }
-                notifyStateChange()
-            }
         }
+
+        // 未经显式 mark 的终态（provider onError / 播放器错误路径）按错误收尾
+        teardown.attempt?.let {
+            val errMsg = lastErrorMessage
+            if (errMsg != null) {
+                it.markError(TtsErrorCode.inferErrorCodeFromMessage(errMsg).toString())
+            }
+            it.report()
+        }
+
+        if (generation == sessionGeneration) {
+            transition(if (lastErrorMessage != null) STATE_ERROR else STATE_IDLE)
+        }
+    }
+
+    // ==================== 音频焦点（P2-I14） ====================
+
+    private var audioFocusRequest: android.media.AudioFocusRequest? = null
+
+    private fun audioManager(): android.media.AudioManager? {
+        val context = com.github.lonepheasantwarrior.talkify.TalkifyAppHolder.getContext()
+            ?: return null
+        return context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
+    }
+
+    /** 请求瞬时独占焦点；被系统拒绝（如通话中）返回 false */
+    private fun requestAudioFocus(): Boolean {
+        val manager = audioManager() ?: return true  // 上下文不可用时不阻断预览
+        val request = audioFocusRequest ?: android.media.AudioFocusRequest.Builder(
+            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+        )
+            .setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener { change ->
+                if (change == android.media.AudioManager.AUDIOFOCUS_LOSS) {
+                    stop()
+                }
+            }
+            .build()
+            .also { audioFocusRequest = it }
+        return manager.requestAudioFocus(request) == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonAudioFocus() {
+        val request = audioFocusRequest ?: return
+        audioFocusRequest = null
+        audioManager()?.abandonAudioFocusRequest(request)
     }
 
     private fun onError(message: String) {
         lastErrorMessage = message
-        currentState = STATE_ERROR
-        notifyStateChange()
+        transition(STATE_ERROR)
     }
 
     private fun notifyStateChange() {
         stateListener?.invoke(currentState, lastErrorMessage)
     }
 
+    /**
+     * 状态迁移单点（N5 状态机收敛）：活动期所有状态写入经此并同步广播；
+     * release() 终态（scope 已取消）为唯一例外，直接写 [currentState]
+     */
+    private fun transition(to: Int) {
+        currentState = to
+        notifyStateChange()
+    }
+
     fun release() {
         TtsLogger.d("Releasing preview player")
-        stop()
-        // stop() 的清理协程是异步派发的，随后 serviceScope.cancel() 可能使其永不执行；
-        // 播放器必须在取消作用域前同步释放，否则 AudioTrack native 资源泄漏
+        // release 不复用 stop()：stop 的播放器释放在异步协程中执行，随后的
+        // serviceScope.cancel() 可能使清理协程永不执行——播放中的 AudioTrack
+        // native 资源泄漏（P2-I13②）。此处全部同步收尾。
+        isStopped.set(true)
+        sessionGeneration++          // 作废在飞收尾协程的状态写入
+        abandonAudioFocus()
+        wavePollJob?.cancel()
+
+        // N15：先同步冲刷 stopPlayback 遗留的待收尾数据，再取消 scope——
+        // 在飞收尾协程一旦尚未开始执行便会被 cancel 永久跳过。player.stop/release
+        // 与 attempt.report 均幂等，与并发的收尾协程双跑无副作用
+        flushPendingTeardown()
+
+        val player = audioPlayer
+        audioPlayer = null
         try {
-            audioPlayer?.stop()
-            audioPlayer?.release()
+            player?.stop()
+            player?.release()
         } catch (e: Exception) {
             TtsLogger.e("Error releasing audio player: ${e.message}", e)
         }
-        audioPlayer = null
+
+        val provider = currentProvider
+        currentProvider = null
         try {
-            currentProvider?.release()
+            provider?.stop()
+        } catch (e: Exception) {
+            TtsLogger.e("Error stopping provider: ${e.message}", e)
+        }
+        try {
+            provider?.release()
         } catch (e: Exception) {
             TtsLogger.e("Error releasing provider: ${e.message}", e)
         }
-        currentProvider = null
+
+        // 遥测 attempt 释放前同步上报（release 丢弃 attempt 是已知的独立缺陷，
+        // 此处顺手修复）
+        playbackAttempt?.let { attempt ->
+            val errMsg = lastErrorMessage
+            if (errMsg != null) {
+                attempt.markError(TtsErrorCode.inferErrorCodeFromMessage(errMsg).toString())
+            }
+            attempt.report()
+        }
+        playbackAttempt = null
+
         serviceScope.cancel()
+
+        // N15 补强：冲刷点与 cancel 之间并发到达的 stopPlayback（如音频线程错误监听
+        // 触发）遗留的待收尾件，其收尾协程已随 cancel 被跳过——cancel 后复冲兜底
+        flushPendingTeardown()
+
+        // 终态直写：scope 已取消，不再广播（transition 的唯一例外，见其 KDoc）
         currentState = STATE_IDLE
         lastErrorMessage = null
+    }
+
+    /** 同步冲刷并清空待收尾件（release 的 cancel 前后两次冲刷共用；全部操作幂等） */
+    private fun flushPendingTeardown() {
+        val pending = pendingTeardown
+        pendingTeardown = null
+        try {
+            pending?.player?.stop()
+            pending?.player?.release()
+        } catch (e: Exception) {
+            TtsLogger.e("Error releasing audio player: ${e.message}", e)
+        }
+        pending?.attempt?.let { attempt ->
+            val errMsg = lastErrorMessage
+            if (errMsg != null) {
+                attempt.markError(TtsErrorCode.inferErrorCodeFromMessage(errMsg).toString())
+            }
+            attempt.report()
+        }
     }
 
     fun getState(): Int = currentState

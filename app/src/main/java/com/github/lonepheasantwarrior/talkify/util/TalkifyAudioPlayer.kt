@@ -320,11 +320,9 @@ class TalkifyAudioPlayer(
             return false
         }
 
-        val bytesPerFrame = if (audioFormat == AudioFormat.ENCODING_PCM_16BIT) {
-            channelCount * 2
-        } else {
-            channelCount
-        }
+        // 每帧字节数按编码精确计算（FLOAT=4 字节，N6a：二分支曾把 FLOAT 按 1 字节/帧计，
+        // 排空目标帧数虚高 4 倍导致尾段迟迟判不完）
+        val bytesPerFrame = channelCount * bytesPerSample(audioFormat)
 
         val targetFrames = totalAudioBytes / bytesPerFrame
         val timeoutMs = timeoutSeconds * 1000L
@@ -388,11 +386,7 @@ class TalkifyAudioPlayer(
             return
         }
 
-        val bytesPerFrame = if (audioFormat == AudioFormat.ENCODING_PCM_16BIT) {
-            channelCount * 2
-        } else {
-            channelCount
-        }
+        val bytesPerFrame = channelCount * bytesPerSample(audioFormat)
 
         var positionBytes = positionFrames * bytesPerFrame
         if (positionBytes > totalAudioBytes) {
@@ -418,5 +412,12 @@ class TalkifyAudioPlayer(
 
     private fun notifyError(message: String) {
         errorListener?.invoke(message)
+    }
+
+    /** PCM 编码 → 每采样字节数（与 TtsPreviewPlayer.bytesPerSample 同一口径） */
+    private fun bytesPerSample(format: Int): Int = when (format) {
+        AudioFormat.ENCODING_PCM_8BIT -> 1
+        AudioFormat.ENCODING_PCM_FLOAT -> 4
+        else -> 2
     }
 }

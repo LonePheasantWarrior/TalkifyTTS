@@ -29,8 +29,8 @@ object TtsErrorCode {
     const val ERROR_API_AUTH_FAILED = 1104
     const val ERROR_NOT_IMPLEMENTED = 1105
 
-    fun getErrorMessage(errorCode: Int): String {
-        return when (errorCode) {
+    fun getErrorMessage(errorCode: Int, detailMessage: String? = null): String {
+        val baseMessage = when (errorCode) {
             ERROR_NO_PROVIDER -> "未找到可用的 TTS 供应商"
             ERROR_PROVIDER_NOT_FOUND -> "供应商不存在"
             ERROR_PROVIDER_NOT_CONFIGURED -> "请先配置 API Key"
@@ -48,10 +48,6 @@ object TtsErrorCode {
             ERROR_NOT_IMPLEMENTED -> "该供应商功能尚未实现"
             else -> "发生错误（错误码：$errorCode）"
         }
-    }
-
-    fun getErrorMessage(errorCode: Int, detailMessage: String? = null): String {
-        val baseMessage = getErrorMessage(errorCode)
         if (detailMessage.isNullOrBlank()) {
             return baseMessage
         }
@@ -84,12 +80,28 @@ object TtsErrorCode {
 
     fun toAndroidError(errorCode: Int): Int {
         return when (errorCode) {
+            // 防御：SUCCESS 落入 else 会被误映射为 ERROR_INVALID_REQUEST（P2-B12）
+            SUCCESS -> SUCCESS
             ERROR_INVALID_REQUEST -> android.speech.tts.TextToSpeech.ERROR_INVALID_REQUEST
             ERROR_NETWORK_UNAVAILABLE -> android.speech.tts.TextToSpeech.ERROR_NETWORK
             ERROR_NETWORK_TIMEOUT -> android.speech.tts.TextToSpeech.ERROR_NETWORK
             ERROR_SYNTHESIS_FAILED -> android.speech.tts.TextToSpeech.ERROR_SYNTHESIS
             ERROR_API_SERVER_ERROR -> android.speech.tts.TextToSpeech.ERROR_SERVICE
-            else -> android.speech.tts.TextToSpeech.ERROR_INVALID_REQUEST
+            // 限流是暂时性故障：按可重试的网络错误上报，此前会误导客户端
+            // 判定为自身请求参数问题（P2-B12）
+            ERROR_API_RATE_LIMITED -> android.speech.tts.TextToSpeech.ERROR_NETWORK
+            // 认证/配置类错误与客户端请求参数无关：按服务端错误上报（P2-B12）
+            ERROR_API_AUTH_FAILED, ERROR_PROVIDER_NOT_CONFIGURED, ERROR_CONFIG_NOT_FOUND ->
+                android.speech.tts.TextToSpeech.ERROR_SERVICE
+            // N10：供应商侧故障（无供应商/未找到/初始化失败/未知/通用失败）此前
+            // 一刀切落 ERROR_INVALID_REQUEST，"无供应商"会被 TTS 客户端误判为
+            // 自身请求参数问题——统一按服务端错误上报
+            ERROR_NO_PROVIDER, ERROR_PROVIDER_NOT_FOUND, ERROR_PROVIDER_INIT_FAILED,
+            ERROR_UNKNOWN, ERROR_GENERIC, ERROR_NOT_IMPLEMENTED ->
+                android.speech.tts.TextToSpeech.ERROR_SERVICE
+            // 兜底仅覆盖未来新增的未知错误码：无更精确语义时按通用错误上报，
+            // 不再臆断为客户端请求问题
+            else -> android.speech.tts.TextToSpeech.ERROR
         }
     }
 
@@ -148,8 +160,9 @@ object TtsErrorCode {
                 ERROR_API_SERVER_ERROR
             }
 
-            errorMessage.contains("API Key", ignoreCase = true) ||
-                    errorMessage.contains("配置", ignoreCase = true) -> {
+            // 注意：此处不再检查 "API Key"——首个分支已覆盖该关键词并返回
+            // ERROR_API_AUTH_FAILED，重复条件在本分支不可达（P3-3）
+            errorMessage.contains("配置", ignoreCase = true) -> {
                 ERROR_PROVIDER_NOT_CONFIGURED
             }
 

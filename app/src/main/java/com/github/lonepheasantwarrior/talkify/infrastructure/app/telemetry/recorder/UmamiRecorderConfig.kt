@@ -43,9 +43,11 @@ internal data class UmamiRecorderConfig(
         /**
          * 同步探测配置（网络调用，必须在 IO 线程调用）
          *
-         * 任何失败返回 null（调用方静默放弃本场录制，对齐 recorder.js 的 catch-return）
+         * 任何失败返回 null（调用方静默放弃本场录制，对齐 recorder.js 的 catch-return）；
+         * 遥测后端未配置（N19-g BuildConfig 注入为空）时同样返回 null，零网络流量
          */
         fun fetch(): UmamiRecorderConfig? {
+            if (!UmamiClient.isConfigured) return null
             return try {
                 val request = Request.Builder()
                     .url("${UmamiClient.BASE_URL}/api/websites/${UmamiClient.WEBSITE_ID}/recorder")

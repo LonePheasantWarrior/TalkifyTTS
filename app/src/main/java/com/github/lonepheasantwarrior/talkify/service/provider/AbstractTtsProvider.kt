@@ -15,8 +15,37 @@ internal const val VOICE_NAME_SEPARATOR = "::"
 
 abstract class AbstractTtsProvider : TtsProviderApi {
 
+    @Volatile
     protected var isReleased: Boolean = false
         private set
+
+    // ==================== 会话代际（P1-15/P2-A7） ====================
+
+    /**
+     * 会话代际计数器：[synthesize] 每次进入须自增并捕获快照，全部回调出口
+     * 校验快照与当前值一致才允许触达监听器——"stop 后立即 synthesize"交错时，
+     * 取消是协作式的，旧会话在取消信号生效前产出的残留回调（网络竞态窗口内
+     * 到达）被静默丢弃，不会污染新会话。
+     */
+    private val sessionGeneration = java.util.concurrent.atomic.AtomicLong(0)
+
+    /**
+     * 开启新合成会话：自增代际并返回本会话快照。
+     * 入口同时应取消上一会话的合成任务（对齐 MiniMax/LocalModelProvider 的入口取消）。
+     */
+    protected fun beginSynthesisSession(): Long = sessionGeneration.incrementAndGet()
+
+    /**
+     * 作废当前会话：stop() 后残留回调（取消信号生效前的竞态窗口内到达）
+     * 被出口校验静默丢弃，直到下一次 synthesize 开启新会话
+     */
+    protected fun invalidateSynthesisSession() {
+        sessionGeneration.incrementAndGet()
+    }
+
+    /** 本会话是否仍为当前会话；不匹配时回调应静默丢弃并做会话局部清理 */
+    protected fun isSynthesisSessionActive(session: Long): Boolean =
+        !isReleased && session == sessionGeneration.get()
 
     protected open val tag: String
         get() = javaClass.simpleName
@@ -120,11 +149,16 @@ abstract class AbstractTtsProvider : TtsProviderApi {
 
     override fun stop() {
         TtsLogger.d("$tag: stop called")
+        // N1：停止即作废当前会话——"stop 后、下次 synthesize 前"的窗口内，
+        // 残留回调（取消信号生效前的竞态窗口内到达）不能再通过代际校验。
+        // 覆写 stop() 的子类须自行作废会话（调用 super.stop() 或 invalidateSynthesisSession()）
+        invalidateSynthesisSession()
     }
 
     override fun release() {
         TtsLogger.i("$tag: release called")
         isReleased = true
+        invalidateSynthesisSession()
     }
 
     override fun getAudioConfig(): AudioConfig {

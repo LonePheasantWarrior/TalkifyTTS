@@ -1,16 +1,17 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.local
 
 import android.content.Context
+import androidx.core.content.edit
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
+import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager.getModelStatus
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
-import androidx.core.content.edit
 
 /**
  * 本地模型生命周期管理器（单例）
@@ -18,7 +19,8 @@ import androidx.core.content.edit
  * 核心职责：
  * 1. 模型状态查询（已下载 / 下载中 / 未下载）
  * 2. 模型完整性校验（检查所有必需文件是否就位）
- * 3. 跨进程下载状态同步（通过 SharedPreferences）
+ * 3. 跨组件下载状态同步（通过 SharedPreferences；本应用为单进程，
+ *    无跨进程一致性需求，拆分进程时需换用 MMKV/ContentProvider）
  *
  * 存储路径结构：
  * ```

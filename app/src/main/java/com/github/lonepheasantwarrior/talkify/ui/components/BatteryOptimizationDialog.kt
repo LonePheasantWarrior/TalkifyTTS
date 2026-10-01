@@ -23,12 +23,14 @@ import com.github.lonepheasantwarrior.talkify.R
  * 遵循 Material 3 Expressive 设计规范
  *
  * @param onConfirm 确认回调（跳转系统设置）
- * @param onDismiss 取消回调（"以后再说"）
+ * @param onSkip    显式"以后再说"回调（用户明确选择跳过，调用方持久化）
+ * @param onDismiss 弹窗外点击/返回键关闭回调（不视为显式跳过）
  * @param modifier 修饰符
  */
 @Composable
 fun BatteryOptimizationDialog(
     onConfirm: () -> Unit,
+    onSkip: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -74,10 +76,10 @@ fun BatteryOptimizationDialog(
         },
         dismissButton = {
             TextButton(
-                onClick = onDismiss
+                onClick = onSkip
             ) {
                 Text(
-                    text = stringResource(R.string.battery_optimization_skip),
+                    text = stringResource(R.string.action_later),
                     style = MaterialTheme.typography.labelLarge
                 )
             }

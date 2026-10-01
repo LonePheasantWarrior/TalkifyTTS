@@ -48,4 +48,28 @@ interface AppConfigRepository {
      * 设置关于页面已打开
      */
     fun setAboutPageOpened(opened: Boolean)
+
+    /**
+     * 匿名遥测是否已启用
+     *
+     * 默认关闭；仅在用户于"关于"页显式开启后上报 app_opened 等匿名事件（P1-12）
+     */
+    fun isTelemetryEnabled(): Boolean
+
+    /**
+     * 设置匿名遥测开关
+     */
+    fun setTelemetryEnabled(enabled: Boolean)
+
+    /**
+     * 用户是否已跳过电池优化引导（N12）
+     *
+     * 跳过后冷启动不再重弹电池优化弹窗；设置/关于页的手动入口不受影响
+     */
+    fun isBatteryOptimizationPromptDismissed(): Boolean
+
+    /**
+     * 记录用户跳过电池优化引导
+     */
+    fun setBatteryOptimizationPromptDismissed(dismissed: Boolean)
 }

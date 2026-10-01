@@ -1,6 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 
 import android.os.SystemClock
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TtsTelemetryTracker.begin
 
 /**
  * TTS 语音合成事件埋点（语义层）

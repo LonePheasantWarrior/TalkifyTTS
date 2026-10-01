@@ -2,7 +2,10 @@ package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 
 import android.content.Context
 import android.os.Build
+import com.github.lonepheasantwarrior.talkify.BuildConfig
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient.send
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient.trackPage
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import okhttp3.Call
 import okhttp3.Callback
@@ -48,12 +51,20 @@ object UmamiClient {
 
     private const val TAG = "TalkifyTelemetry"
 
-    /** 不带尾斜杠：所有端点经 "$BASE_URL/api/..." 拼接，避免产生 //api/... 双斜杠路径 */
-    const val BASE_URL = "https://photon.private-cloud.site:3000"
+    /**
+     * 自建实例端点，不带尾斜杠：所有端点经 "$BASE_URL/api/..." 拼接，避免产生
+     * //api/... 双斜杠路径。
+     * N19-g：经 BuildConfig 注入（local.properties / CI 环境变量），不再硬编码进
+     * 公开仓库；为空表示本构建未配置遥测后端，全部上报路径自检短路
+     */
+    val BASE_URL: String = BuildConfig.UMAMI_ENDPOINT.trimEnd('/')
 
-    private const val ENDPOINT = "$BASE_URL/api/send"
+    private val ENDPOINT: String get() = "$BASE_URL/api/send"
 
-    const val WEBSITE_ID = "231277c5-4b7b-4be3-a9d3-588d5ee2a352"
+    val WEBSITE_ID: String = BuildConfig.UMAMI_WEBSITE_ID
+
+    /** 遥测后端是否已配置（N19-g）：未配置时 send/探测全链路短路，零网络流量 */
+    val isConfigured: Boolean = BASE_URL.isNotBlank() && WEBSITE_ID.isNotBlank()
 
     /** 与 Umami 后台网站的 Domain 设置保持一致，保证仪表盘筛选与展示一致 */
     const val HOSTNAME = "com.github.lonepheasantwarrior.talkify"
@@ -134,7 +145,7 @@ object UmamiClient {
         data: Map<String, Any> = emptyMap(),
         title: String? = null,
     ) {
-        if (disabled) return
+        if (disabled || !isConfigured) return
         val context = TalkifyAppHolder.getContext() ?: return
         try {
             httpClient.newCall(buildRequest(context, url, type, name, data, title)).enqueue(object : Callback {
@@ -170,7 +181,7 @@ object UmamiClient {
         data: Map<String, Any> = emptyMap(),
         title: String? = null,
     ) {
-        if (disabled) return
+        if (disabled || !isConfigured) return
         val context = TalkifyAppHolder.getContext() ?: return
         try {
             httpClient.newCall(buildRequest(context, url, type, name, data, title)).execute().use { response ->

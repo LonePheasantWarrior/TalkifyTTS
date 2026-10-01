@@ -1,5 +1,9 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder
 
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.FRAGMENT_CHUNK_BYTES
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_BATCH_BYTES
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_BATCH_EVENTS
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_HEATMAP_EVENTS
 import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
@@ -33,6 +37,9 @@ internal class RecordTransport(
     private val lock = Any()
     private val recordBuffer = mutableListOf<JSONObject>()
     private val heatmapBuffer = mutableListOf<JSONObject>()
+
+    /** 缓冲中事件序列化字节数的增量累计（N11：替代每追加一条全量序列化测长的 O(n²)） */
+    private var bufferedRecordBytes = 0
     private var lastRecordTimestampSec = 0L
 
     /**
@@ -43,23 +50,34 @@ internal class RecordTransport(
      */
     fun addRecordEvent(event: JSONObject, solo: Boolean = false, eventTimestampMs: Long = clockMs()) {
         synchronized(lock) {
-            val oversize = payloadTooLarge(listOf(event))
-            if (solo || oversize) {
-                if (recordBuffer.isNotEmpty()) {
-                    sendRecordLocked(recordBuffer.toList(), nextMonotonicSecLocked())
-                    recordBuffer.clear()
-                }
-                val baseSec = nextMonotonicSecLocked()
-                if (oversize) sendFragmentedLocked(event.toString(), eventTimestampMs, baseSec)
-                else sendRecordLocked(listOf(event), baseSec)
+            val eventJson = event.toString()
+            val eventBytes = eventJson.toByteArray(StandardCharsets.UTF_8).size
+            if (eventBytes + ENVELOPE_BYTES > MAX_BATCH_BYTES) {
+                // 单事件即超限（含 solo 的 FullSnapshot）：先冲刷缓冲，再走分片协议
+                flushRecordBufferLocked()
+                sendFragmentedLocked(eventJson, eventTimestampMs, nextMonotonicSecLocked())
+                return
+            }
+            if (solo) {
+                // FullSnapshot 单独成包，先冲刷缓冲避免与增量事件混批
+                flushRecordBufferLocked()
+                sendRecordLocked(listOf(event), nextMonotonicSecLocked())
                 return
             }
             recordBuffer.add(event)
-            if (recordBuffer.size >= MAX_BATCH_EVENTS || payloadTooLarge(recordBuffer)) {
-                sendRecordLocked(recordBuffer.toList(), nextMonotonicSecLocked())
-                recordBuffer.clear()
+            bufferedRecordBytes += eventBytes
+            if (recordBuffer.size >= MAX_BATCH_EVENTS || bufferedRecordBytes + ENVELOPE_BYTES > MAX_BATCH_BYTES) {
+                flushRecordBufferLocked()
             }
         }
+    }
+
+    /** 发送并清空增量事件缓冲（须持 [lock]；入列后判定，单批允许略超 [MAX_BATCH_BYTES]） */
+    private fun flushRecordBufferLocked() {
+        if (recordBuffer.isEmpty()) return
+        sendRecordLocked(recordBuffer.toList(), nextMonotonicSecLocked())
+        recordBuffer.clear()
+        bufferedRecordBytes = 0
     }
 
     /** 追加一个热图事件（click/scroll），缓冲满 [MAX_HEATMAP_EVENTS] 触发批量发送 */
@@ -71,11 +89,7 @@ internal class RecordTransport(
     }
 
     fun flushRecord() {
-        synchronized(lock) {
-            if (recordBuffer.isEmpty()) return
-            sendRecordLocked(recordBuffer.toList(), nextMonotonicSecLocked())
-            recordBuffer.clear()
-        }
+        synchronized(lock) { flushRecordBufferLocked() }
     }
 
     fun flushHeatmap() {
@@ -85,10 +99,7 @@ internal class RecordTransport(
     /** 会话结束时冲刷全部缓冲 */
     fun flushAll() {
         synchronized(lock) {
-            if (recordBuffer.isNotEmpty()) {
-                sendRecordLocked(recordBuffer.toList(), nextMonotonicSecLocked())
-                recordBuffer.clear()
-            }
+            flushRecordBufferLocked()
             flushHeatmapLocked()
         }
     }
@@ -139,14 +150,6 @@ internal class RecordTransport(
         }
     }
 
-    private fun payloadTooLarge(events: List<JSONObject>): Boolean {
-        val payload = JSONObject()
-            .put("website", websiteId)
-            .put("timestamp", 0)
-            .put("events", JSONArray(events))
-        return wrap("record", payload).toByteArray(StandardCharsets.UTF_8).size > MAX_BATCH_BYTES
-    }
-
     private fun wrap(type: String, payload: JSONObject): String =
         JSONObject().put("type", type).put("payload", payload).toString()
 
@@ -187,6 +190,12 @@ internal class RecordTransport(
     companion object {
         private const val MAX_BATCH_EVENTS = 100
         private const val MAX_BATCH_BYTES = 500_000
+
+        /**
+         * payload 信封开销余量：type/website/timestamp 等包装字段与事件间逗号
+         * 的保守估计，增量字节判定时计入，保证整包不超 [MAX_BATCH_BYTES]
+         */
+        private const val ENVELOPE_BYTES = 256
 
         /** 分片切片预算：预算内最坏情况（全角转义 ×2）仍低于 MAX_BATCH_BYTES */
         private const val FRAGMENT_CHUNK_BYTES = 200_000

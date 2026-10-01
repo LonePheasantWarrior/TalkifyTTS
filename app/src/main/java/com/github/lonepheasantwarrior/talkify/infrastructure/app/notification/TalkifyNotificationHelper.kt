@@ -14,7 +14,7 @@ import com.github.lonepheasantwarrior.talkify.R
  */
 object TalkifyNotificationHelper {
 
-    private const val TTS_PLAYBACK_NOTIFICATION_ID = 1001
+    private const val TTS_PLAYBACK_NOTIFICATION_ID = NotificationIds.TTS_PLAYBACK
 
     /**
      * 通知类型密封类
@@ -151,10 +151,13 @@ object TalkifyNotificationHelper {
      * 发送系统通知 (Heads-up 悬浮通知)
      *
      * 只有 Priority 为 HIGH 且 Channel 重要性为 HIGH 时，才会触发悬浮。
+     * 固定 [NotificationIds.SYSTEM_NOTIFICATION] + onlyAlertOnce：同类错误
+     * 反复发生时仅更新同栏通知内容、只在首次发声（P1-14 通知风暴治理）。
      *
      * @param context 应用程序上下文
      * @param text 通知正文
-     * @param notificationId 通知 ID
+     * @param notificationId 通知 ID，默认为系统通知固定 ID（历史上按时间戳取模生成，
+     *   会导致同一错误每条新开一栏并逐条提醒，现仅保留参数以兼容特殊场景）
      * @param priority 优先级，默认 HIGH 以触发悬浮
      */
     fun sendSystemNotification(
@@ -180,11 +183,12 @@ object TalkifyNotificationHelper {
 
         val options = NotificationOptions(
             channel = channel,
-            notificationId = notificationId ?: (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+            notificationId = notificationId ?: NotificationIds.SYSTEM_NOTIFICATION,
             content = content,
             pendingIntent = createDefaultPendingIntent(context),
             isOngoing = false, // 系统通知应该是可以滑除的
             isSilent = false,  // 系统通知应该有声音或震动
+            isOnlyAlertOnce = true, // 同栏重复投递仅在首次提醒，避免错误风暴刷屏
             category = android.app.Notification.CATEGORY_STATUS, // 或者 CATEGORY_ERROR
             priority = priority,
             fullScreenIntent = null

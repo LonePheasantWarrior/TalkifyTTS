@@ -77,7 +77,7 @@ fun NotificationPermissionDialog(
                 onClick = onDismiss
             ) {
                 Text(
-                    text = stringResource(R.string.notification_permission_ask_later),
+                    text = stringResource(R.string.action_later),
                     style = MaterialTheme.typography.labelLarge
                 )
             }

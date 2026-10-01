@@ -9,11 +9,11 @@
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
 .DS_Store
+Thumbs.db
 /build
 /captures
 .externalNativeBuild
 .cxx
-local.properties
 /app/build/
 /app/debug/
 /app/release/
@@ -22,3 +22,12 @@ local.properties
 /.vscode/
 /doc/local/
 /.zcodeignore
+
+# Python 工具脚本的字节码缓存（仓库根目录的 gen_voices 等本地脚本）
+__pycache__/
+*.pyc
+
+# 签名材料永不入库（签名配置见 app/build.gradle.kts 的 keystore.properties 读取逻辑）
+*.jks
+*.keystore
+keystore.properties

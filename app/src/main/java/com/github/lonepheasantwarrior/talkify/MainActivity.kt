@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                             // 经领域仓储持久化"关于页已打开"，键名收敛在仓储实现内
                                             SharedPreferencesAppConfigRepository(this@MainActivity)
                                                 .setAboutPageOpened(true)
-                                            navController.navigate(ROUTE_ABOUT)
+                                            navController.navigate(ROUTE_ABOUT) { launchSingleTop = true } // 快速连点防堆叠（P3-16）
                                         }
                                     )
                                 }
