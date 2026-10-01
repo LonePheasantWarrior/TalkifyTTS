@@ -92,8 +92,8 @@ class SharedPreferencesAppConfigRepository(
     }
 
     override fun isTelemetryEnabled(): Boolean {
-        // 默认关闭：仅在用户显式开启后上报匿名事件（P1-12 隐私基线）
-        return sharedPreferences.getBoolean(KEY_TELEMETRY_ENABLED, false)
+        // 默认开启：匿名统计帮助改进应用，用户可在关于页随时关闭（N2 门控）
+        return sharedPreferences.getBoolean(KEY_TELEMETRY_ENABLED, true)
     }
 
     override fun setTelemetryEnabled(enabled: Boolean) {

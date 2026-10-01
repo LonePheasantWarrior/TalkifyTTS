@@ -21,8 +21,8 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.Talki
  * - **零阻塞**：上报即入队即返回，绝不阻塞调用线程
  * - **零权限**：不额外收集敏感信息，匿名设备信息由 [DeviceInfoCollector] 负责
  * - **用户开关门控**（N2）：全部上报入口统一受用户遥测开关短路——开关状态由
- *   [TalkifyApplication.onCreate] 注入、关于页切换时经 [setUserEnabled] 热生效；
- *   状态未知（进程极早路径）时按关闭处理（P1-12 隐私基线：明示同意后才采集）
+ *   [TalkifyApplication.onCreate] 注入（持久化默认开启）、关于页切换时经
+ *   [setUserEnabled] 热生效；状态未知（进程极早路径）时按关闭处理
  *
  * @see UmamiClient
  * @see TtsTelemetryTracker

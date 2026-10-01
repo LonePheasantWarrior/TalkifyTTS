@@ -52,7 +52,7 @@ interface AppConfigRepository {
     /**
      * 匿名遥测是否已启用
      *
-     * 默认关闭；仅在用户于"关于"页显式开启后上报 app_opened 等匿名事件（P1-12）
+     * 默认开启；用户可于"关于"页随时关闭，关闭后不上报 app_opened 等匿名事件（N2）
      */
     fun isTelemetryEnabled(): Boolean
 

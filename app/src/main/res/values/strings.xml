@@ -164,7 +164,7 @@
     <string name="about_description">一款基于 Android 的现代化 TTS 引擎应用，连接云端大模型的高质量语音合成能力</string>
     <string name="about_qq_group">QQ群</string>
     <string name="about_qq_group_number">1087849270</string>
-    <string name="about_qq_group_note">仅限技术交流，禁止商业推广</string>
+    <string name="about_qq_group_note">技术交流，禁止商业推广</string>
     <string name="about_qq_group_copied">QQ群号已复制到剪贴板</string>
     <!-- 无障碍 onClickLabel（N19-i）：TalkBack 用户区分"复制群号"与"打开链接"两类卡片 -->
     <string name="about_qq_group_copy_action">复制 QQ 群号</string>
@@ -234,7 +234,7 @@
     <string name="model_download_failed">%1$s 下载失败，请检查网络后重试</string>
     <string name="model_download_failed_reason">%1$s 下载失败：%2$s</string>
     <string name="about_telemetry_toggle">匿名使用统计</string>
-    <string name="about_telemetry_toggle_description">默认关闭。开启后仅在每次回到前台时上报一次匿名启动信号，不含朗读内容与任何凭据</string>
+    <string name="about_telemetry_toggle_description">仅收集匿名使用数据用于改进应用</string>
     <string name="model_size_unknown">大小未知</string>
     <string name="about_clipboard_qq_label">QQ群号</string>
     <string name="model_downloading_busy">%1$s 正在下载中，请稍后再试</string>

@@ -398,8 +398,8 @@ fun AboutScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 匿名遥测开关（默认关闭，P1-12）：开启后每次回到前台上报一次
-                    // 匿名启动信号；遥测 payload 不含朗读内容与凭据
+                    // 匿名遥测开关（默认开启）：关闭后全部上报路径短路；遥测
+                    // payload 不含朗读内容与凭据
                     val appConfigRepository = remember {
                         com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository(context)
                     }
