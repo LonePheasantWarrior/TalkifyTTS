@@ -36,7 +36,8 @@ object TalkifyMotion {
         spring(dampingRatio = 1f, stiffness = 1600f, visibilityThreshold = visibilityThreshold)
 
     // sharedBounds 边界变形专用：须在 NavHost 转场（250ms）内收敛完毕，否则交接时残留
-    // 弹簧行程会在动画结束瞬间跳到真实布局位置（默认 spring(400) 收敛约 330ms，会错位）
+    // 弹簧行程会在动画结束瞬间跳到真实布局位置（默认 spring(400) 为临界阻尼 ω=20，
+    // 250ms 时仍余约 4% 行程——400px 约 16px，全收敛约 450ms，必错位）
     val sharedBoundsMorph: BoundsTransform =
         BoundsTransform { _, _ ->
             spring(

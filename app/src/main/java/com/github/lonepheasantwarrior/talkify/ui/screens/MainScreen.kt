@@ -320,6 +320,8 @@ fun MainScreen(
                     // 位置（HeadlineMedium 28sp）。共享元素只能注册在"当前可见行"的实例上，
                     // 否则同一 shared key 有两份边界，转场目标在两者间漂移——表现为先飞向
                     // 左上角折叠行、结束时回落到展开行。
+                    // 注意：下行的 ≥25f 字号指纹与 material3 内部两行样式耦合，升级
+                    // material3 时必须回归验证本守卫（指纹失效会静默复发漂移）。
                     val isBottomRow = LocalTextStyle.current.fontSize.value >= 25f
                     val isBottomRowVisible by remember {
                         derivedStateOf { scrollBehavior.state.collapsedFraction < 0.5f }
@@ -618,6 +620,16 @@ fun MainScreen(
         }
     }
 
+    // 抽屉依赖的仓储按 providerId 记忆：MainScreen body 订阅了预览波形等高频状态
+    // （预览播放期约 30 次重组/秒），实参表达式直接内联会让每次重组都构造全新仓储
+    // 并重跑一遍构造期迁移扫描
+    val sheetConfigRepository = remember(currentProvider.id) {
+        getConfigRepository(currentProvider.id)
+    }
+    val sheetVoiceRepository = remember(currentProvider.id) {
+        getVoiceRepository(currentProvider.id)
+    }
+
     ConfigBottomSheet(
         onConfigSaved = {
             val freshConfig = getConfigRepository(currentProvider.id).getConfig(currentProvider.id)
@@ -635,8 +647,8 @@ fun MainScreen(
         onDismiss = { viewModel.closeConfigSheet() },
         downloadProgress = downloadProgress,
         currentProvider = currentProvider,
-        configRepository = getConfigRepository(currentProvider.id),
-        voiceRepository = getVoiceRepository(currentProvider.id),
+        configRepository = sheetConfigRepository,
+        voiceRepository = sheetVoiceRepository,
         onDownloadRequested = { modelId ->
             val conflict = viewModel.startModelDownload(modelId)
             if (conflict != null) {

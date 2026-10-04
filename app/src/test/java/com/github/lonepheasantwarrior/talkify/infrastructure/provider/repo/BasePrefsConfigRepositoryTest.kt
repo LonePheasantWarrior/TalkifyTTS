@@ -1,7 +1,7 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo
 
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
-import com.github.lonepheasantwarrior.talkify.infrastructure.security.ValueCodec
+import com.github.lonepheasantwarrior.talkify.infrastructure.security.CipherUnavailableException
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,11 +9,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [BasePrefsConfigRepository] 序列化/迁移/容错链路单测（R-M①）
+ * [BasePrefsConfigRepository] 序列化/迁移链路单测（R-M①）
  *
- * 经 [KeyValueStore] 与 [ValueCodec] 注入点以内存实现覆盖，不含 Android 依赖。
- * 用户数据兼容是回归代价最高的面：读写对称、可选字段清除、明文迁移幂等、
- * 密钥失效清理、N4 加密写失败降级，均在此锁定。
+ * 经 [KeyValueStore] 与历史密文解码器注入点以内存实现覆盖，不含 Android 依赖。
+ * 用户数据兼容是回归代价最高的面：读写对称、可选字段清除、v1.0.35 加密版本的
+ * `enc:v1:` 密文还原为明文（幂等、无变更不写盘）、Keystore 不可用延迟重试与
+ * 读取兜底、不可解密清理、陈旧迁移标志清理、历史原生类型兼容，均在此锁定。
  */
 class BasePrefsConfigRepositoryTest {
 
@@ -30,6 +31,11 @@ class BasePrefsConfigRepositoryTest {
     /** 内存键值存储：edit 语义对齐 SharedPreferences（transform 返回后原子应用） */
     private class InMemoryKeyValueStore : KeyValueStore {
         val map = LinkedHashMap<String, Any?>()
+
+        /** 实际变更计数：值变化的写入与对存在键的移除各计一次（锁"无变更不写盘"） */
+        var changeCount = 0
+            private set
+
         override val all: Map<String, Any?> get() = map.toMap()
         override fun getString(key: String): String? = map[key] as? String
         override fun getBoolean(key: String, defaultValue: Boolean): Boolean =
@@ -38,42 +44,52 @@ class BasePrefsConfigRepositoryTest {
         override fun edit(transform: (KeyValueStore.Editor) -> Unit) {
             val ops = mutableListOf<(MutableMap<String, Any?>) -> Unit>()
             transform(object : KeyValueStore.Editor {
-                override fun putString(key: String, value: String) { ops.add { it[key] = value } }
-                override fun putBoolean(key: String, value: Boolean) { ops.add { it[key] = value } }
-                override fun remove(key: String) { ops.add { it.remove(key) } }
+                override fun putString(key: String, value: String) {
+                    ops.add {
+                        if (it[key] != value) { it[key] = value; changeCount++ }
+                    }
+                }
+                override fun putBoolean(key: String, value: Boolean) {
+                    ops.add {
+                        if (it[key] != value) { it[key] = value; changeCount++ }
+                    }
+                }
+                override fun remove(key: String) {
+                    ops.add {
+                        if (it.containsKey(key)) { it.remove(key); changeCount++ }
+                    }
+                }
             })
             ops.forEach { it(map) }
         }
     }
 
     /**
-     * 假编解码：`enc:fake:` 前缀 + 倒序可逆变换。
-     * [failDecryptMarkers] 中的密文解密返回 null（模拟主密钥不可用）；
-     * [throwOnEncrypt] 置位时 encrypt 抛异常（模拟 Keystore 瞬时不可用）
+     * 测试用历史密文编解码：与生产 [com.github.lonepheasantwarrior.talkify.infrastructure.security.PrefsValueCipher]
+     * 同构（真实 `enc:v1:` 前缀 + 可逆变换），使读取兜底的 [com.github.lonepheasantwarrior.talkify.infrastructure.security.CipherTextFormat.isEncrypted]
+     * 前缀判别在生产与测试间走同一逻辑。[unavailable] 置位时解码抛出
+     * [CipherUnavailableException]（模拟 Keystore 环境性不可用）；
+     * [failDecryptMarkers] 中的密文解码返回 null（模拟 tag 校验失败，永久不可读）。
      */
     private class FakeCodec(
-        private val failDecryptMarkers: Set<String> = emptySet(),
-        private val throwOnEncrypt: Boolean = false
-    ) : ValueCodec {
-        override fun isEncrypted(value: String) = value.startsWith("enc:fake:")
-        override fun encrypt(plain: String): String {
-            if (throwOnEncrypt) throw IllegalStateException("keystore unavailable")
-            return "enc:fake:" + plain.reversed()
-        }
-
-        override fun decrypt(value: String): String? {
-            if (!isEncrypted(value)) return value
-            val plain = value.removePrefix("enc:fake:").reversed()
+        var unavailable: Boolean = false,
+        private val failDecryptMarkers: Set<String> = emptySet()
+    ) {
+        fun encrypt(plain: String) = "enc:v1:" + plain.reversed()
+        fun decrypt(value: String): String? {
+            if (unavailable) throw CipherUnavailableException(IllegalStateException("test keystore down"))
+            if (!value.startsWith("enc:v1:")) return value
+            val plain = value.removePrefix("enc:v1:").reversed()
             return if (plain in failDecryptMarkers) null else plain
         }
     }
 
     private class TestRepo(
         store: KeyValueStore? = null,
-        codec: ValueCodec = FakeCodec()
+        codec: FakeCodec = FakeCodec()
     ) : BasePrefsConfigRepository<TestConfig>(
         // store 恒注入：context 不会触达，传 null 即可（Kotlin 侧无法桩化抽象 Context）
-        null, TestConfig::class.java, store, codec
+        null, TestConfig::class.java, store, codec::decrypt
     ) {
         override fun serialize(config: TestConfig) = buildMap {
             if (config.voiceId.isNotEmpty()) put("voice_id", config.voiceId)
@@ -107,6 +123,8 @@ class BasePrefsConfigRepositoryTest {
         assertEquals("v1", loaded.voiceId)
         assertEquals("https://a", loaded.apiUrl)
         assertEquals("m1", loaded.modelId)
+        // 本地明文存储：值原样落盘
+        assertEquals("v1", store.getString("engine_${PID}_voice_id"))
     }
 
     @Test
@@ -143,93 +161,95 @@ class BasePrefsConfigRepositoryTest {
         assertTrue(store.map.none { it.key.startsWith("engine_${PID}_") })
     }
 
-    // ==================== 明文迁移（幂等） ====================
+    // ==================== 历史密文迁移（v1.0.35 加密版本 → 明文） ====================
 
     @Test
-    fun `legacy plaintext values are migrated on construction`() {
-        val store = InMemoryKeyValueStore()
-        store.map["engine_${PID}_voice_id"] = "legacy-voice"
-        store.map["engine_${PID}_api_url"] = "https://legacy"
-
-        TestRepo(store) // 构造即迁移
-
-        val migratedVoice = store.getString("engine_${PID}_voice_id")!!
-        val migratedUrl = store.getString("engine_${PID}_api_url")!!
-        assertTrue(migratedVoice.startsWith("enc:fake:"))
-        assertTrue(migratedUrl.startsWith("enc:fake:"))
-        assertTrue(store.getBoolean(BasePrefsConfigRepository.KEY_MIGRATED, false))
-        // 可逆还原：迁移未破坏数据
-        assertEquals("legacy-voice", FakeCodec().decrypt(migratedVoice))
-    }
-
-    @Test
-    fun `migration is idempotent across re-construction`() {
-        val store = InMemoryKeyValueStore()
-        store.map["engine_${PID}_voice_id"] = "legacy-voice"
-        TestRepo(store)
-        val first = store.getString("engine_${PID}_voice_id")!!
-
-        TestRepo(store) // 二次构造：迁移标志已置位，不再改写
-        assertEquals(first, store.getString("engine_${PID}_voice_id"))
-    }
-
-    @Test
-    fun `already encrypted values are not double migrated`() {
+    fun `legacy ciphertext values are migrated back to plaintext on construction`() {
         val store = InMemoryKeyValueStore()
         val codec = FakeCodec()
-        store.map["engine_${PID}_voice_id"] = codec.encrypt("already-enc")
-        store.map[BasePrefsConfigRepository.KEY_MIGRATED] = false
+        store.map["engine_${PID}_voice_id"] = codec.encrypt("legacy-voice")
+        store.map["engine_${PID}_api_url"] = codec.encrypt("https://legacy")
+        // 明文值不受迁移影响
+        store.map["engine_${PID}_model_id"] = "already-plain"
 
+        val repo = TestRepo(store, codec) // 构造即迁移
+
+        assertEquals("legacy-voice", store.getString("engine_${PID}_voice_id"))
+        assertEquals("https://legacy", store.getString("engine_${PID}_api_url"))
+        assertEquals("already-plain", store.getString("engine_${PID}_model_id"))
+        // 迁移后读取语义与普通明文一致
+        val loaded = repo.getConfig(PID) as TestConfig
+        assertEquals("legacy-voice", loaded.voiceId)
+        assertEquals("already-plain", loaded.modelId)
+    }
+
+    @Test
+    fun `ciphertext migration is idempotent and writes nothing when converged`() {
+        val store = InMemoryKeyValueStore()
+        val codec = FakeCodec()
+        store.map["engine_${PID}_voice_id"] = codec.encrypt("legacy-voice")
         TestRepo(store, codec)
+        val changesAfterFirst = store.changeCount
+        assertTrue(changesAfterFirst > 0)
 
-        assertEquals(codec.encrypt("already-enc"), store.getString("engine_${PID}_voice_id"))
+        TestRepo(store, codec) // 二次构造：存储已无密文、标志已清，零写盘
+        assertEquals("无变更不得写盘", changesAfterFirst, store.changeCount)
     }
 
     @Test
-    fun `migration defers when encrypt fails`() {
+    fun `undecryptable ciphertext is removed and falls back to defaults`() {
         val store = InMemoryKeyValueStore()
-        store.map["engine_${PID}_voice_id"] = "legacy-plain"
-
-        TestRepo(store, FakeCodec(throwOnEncrypt = true))
-
-        // 值保持明文，标志未置位 → 下次启动重试
-        assertEquals("legacy-plain", store.getString("engine_${PID}_voice_id"))
-        // 标志未置位（absent）：下次构造仍会重试迁移
-        assertFalse(store.map.containsKey(BasePrefsConfigRepository.KEY_MIGRATED))
-    }
-
-    // ==================== 读路径容错（密钥失效清理） ====================
-
-    @Test
-    fun `undecryptable values are removed and fall back to defaults`() {
-        val store = InMemoryKeyValueStore()
-        // FakeCodec.decrypt 先倒序还原：明文 BROKEN 对应密文后缀 NEKORB
-        store.map["engine_${PID}_voice_id"] = "enc:fake:NEKORB"
         val codec = FakeCodec(failDecryptMarkers = setOf("BROKEN"))
+        // FakeCodec.decrypt 先倒序还原：明文 BROKEN 对应密文后缀 NEKORB
+        store.map["engine_${PID}_voice_id"] = "enc:v1:NEKORB"
 
         val loaded = TestRepo(store, codec).getConfig(PID) as TestConfig
 
+        // tag 校验失败 = 密文永久不可读：移除而非保留乱码
         assertEquals("", loaded.voiceId)
         assertFalse(store.map.containsKey("engine_${PID}_voice_id"))
     }
 
-    // ==================== N4：加密写路径容错 ====================
+    @Test
+    fun `keystore unavailable defers migration and preserves ciphertext`() {
+        val store = InMemoryKeyValueStore()
+        val codec = FakeCodec(unavailable = true)
+        val ciphertext = codec.encrypt("legacy-voice")
+        store.map["engine_${PID}_voice_id"] = ciphertext
+
+        val repo = TestRepo(store, codec) // 构造期迁移延迟：密文原样保留
+
+        assertEquals("瞬时故障不得删除凭据", ciphertext, store.getString("engine_${PID}_voice_id"))
+        // 读取兜底：解码环境性失败按字段缺失处理，不崩溃、不误用密文串
+        val loaded = repo.getConfig(PID) as TestConfig
+        assertEquals("", loaded.voiceId)
+    }
 
     @Test
-    fun `save falls back to plaintext when encrypt fails`() {
+    fun `read fallback recovers once keystore becomes available`() {
         val store = InMemoryKeyValueStore()
-        val repo = TestRepo(store, FakeCodec(throwOnEncrypt = true))
+        val codec = FakeCodec()
+        store.map["engine_${PID}_voice_id"] = codec.encrypt("legacy-voice")
 
-        repo.saveConfig(PID, TestConfig(voiceId = "v1", apiUrl = "https://a"))
+        codec.unavailable = true
+        val repo = TestRepo(store, codec) // 构造期迁移延迟
+        assertEquals("", (repo.getConfig(PID) as TestConfig).voiceId)
 
-        // 保存动作不因加密失败丢失：明文落盘 + 迁移标志复位（下次启动重加密）
-        assertEquals("v1", store.getString("engine_${PID}_voice_id"))
-        assertEquals("https://a", store.getString("engine_${PID}_api_url"))
-        // 迁移标志复位为 false：下次启动由 migrateLegacyPlaintextValues 重新加密
-        assertFalse(store.getBoolean(BasePrefsConfigRepository.KEY_MIGRATED, true))
-        // 降级数据可被后续读取还原（decode 原样放行明文）
-        val loaded = TestRepo(store).getConfig(PID) as TestConfig
-        assertEquals("v1", loaded.voiceId)
+        codec.unavailable = false // Keystore 恢复：下次构造完成迁移
+        TestRepo(store, codec)
+        assertEquals("legacy-voice", store.getString("engine_${PID}_voice_id"))
+        assertEquals("legacy-voice", (repo.getConfig(PID) as TestConfig).voiceId)
+    }
+
+    @Test
+    fun `stale migration flag key is cleaned up regardless of value`() {
+        val store = InMemoryKeyValueStore()
+        // 旧加密实现 Keystore 失败降级路径会写入 false，清理不得只认 true
+        store.map[BasePrefsConfigRepository.KEY_MIGRATED] = false
+
+        TestRepo(store)
+
+        assertFalse(store.map.containsKey(BasePrefsConfigRepository.KEY_MIGRATED))
     }
 
     // ==================== 序列化兼容（历史原生类型值） ====================
