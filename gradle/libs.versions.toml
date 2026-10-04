@@ -13,7 +13,7 @@ jlayer = "1.0.1"
 navigationCompose = "2.10.2"
 #为兼容dashscope，okhttp停留在4.12.0版本
 #noinspection NewerVersionAvailable
-okhttp = "4.12.0"
+okhttp = "5.5.0"
 commons-compress = "1.28.0"
 org-json = "20260814"
 
