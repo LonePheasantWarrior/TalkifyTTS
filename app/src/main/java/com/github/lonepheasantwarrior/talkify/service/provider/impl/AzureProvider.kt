@@ -8,6 +8,7 @@ import com.github.lonepheasantwarrior.talkify.domain.model.ProviderIds
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
 import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
+import com.github.lonepheasantwarrior.talkify.service.provider.AzureDrm
 import com.github.lonepheasantwarrior.talkify.service.provider.AzureParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.Mp3StreamDecoder
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
@@ -30,7 +31,6 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
-import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -61,14 +61,16 @@ class AzureProvider : AbstractTtsProvider() {
 
     companion object {
         private const val BASE_URL = "speech.platform.bing.com/consumer/speech/synthesize/readaloud"
-        private const val TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-        const val DEFAULT_WSS_URL = "wss://$BASE_URL/edge/v1?TrustedClientToken=$TRUSTED_CLIENT_TOKEN"
+        const val DEFAULT_WSS_URL =
+            "wss://$BASE_URL/edge/v1?TrustedClientToken=${AzureDrm.TRUSTED_CLIENT_TOKEN}"
         private const val CHROMIUM_FULL_VERSION = "143.0.3650.75"
         private const val CHROMIUM_MAJOR_VERSION = "143"
-        private const val SEC_MS_GEC_VERSION = "1-$CHROMIUM_FULL_VERSION"
 
-        private const val WIN_EPOCH = 11644473600L
-        private const val S_TO_NS = 1_000_000_000L
+        /**
+         * DRM 令牌版本串。`2-` 前缀对应微软已启用的 Sec-MS-GEC v2；
+         * 版本 1 与旧版令牌会被服务端以 403 拒绝（令牌由 [AzureDrm] 生成）。
+         */
+        private const val SEC_MS_GEC_VERSION = "2-$CHROMIUM_FULL_VERSION"
 
         private const val DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural"
         private const val MAX_TEXT_LENGTH = 4096
@@ -86,21 +88,6 @@ class AzureProvider : AbstractTtsProvider() {
 
         private val SUPPORTED_LANGUAGES = arrayOf("zho", "eng", "deu", "ita", "por", "spa", "jpn", "kor", "fra", "rus")
         private val random = Random()
-
-        private fun sha256Hex(input: String): String {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val hash = digest.digest(input.toByteArray(Charsets.US_ASCII))
-            return hash.joinToString("") { "%02x".format(it).uppercase(Locale.US) }
-        }
-
-        private fun generateSecMsGec(): String {
-            val currentTimeSeconds = System.currentTimeMillis() / 1000.0
-            var ticks = currentTimeSeconds + WIN_EPOCH
-            ticks -= ticks % 300
-            ticks *= S_TO_NS / 100.0
-            val strToHash = "${ticks.toLong()}$TRUSTED_CLIENT_TOKEN"
-            return sha256Hex(strToHash)
-        }
 
         private fun generateMuid(): String {
             val bytes = ByteArray(16)
@@ -491,7 +478,7 @@ class AzureProvider : AbstractTtsProvider() {
         // 自定义 URL 可能不带查询串：无条件用 "&" 拼接会把参数沦为路径的一部分（P2-B16）
         val separator = if (currentApiUrl.contains('?')) "&" else "?"
         val url = "$currentApiUrl${separator}ConnectionId=$connectionId" +
-                "&Sec-MS-GEC=${generateSecMsGec()}&Sec-MS-GEC-Version=$SEC_MS_GEC_VERSION"
+                "&Sec-MS-GEC=${AzureDrm.generateSecMsGecV2()}&Sec-MS-GEC-Version=$SEC_MS_GEC_VERSION"
 
         val requestBuilder = Request.Builder().url(url)
         getHeadersWithMuid().forEach { (key, value) ->
