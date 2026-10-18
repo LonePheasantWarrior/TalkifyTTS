@@ -40,7 +40,13 @@ jobs:
           keyPassword=$KEY_PASSWORD
           EOF
 
+      # N19-g：匿名遥测端点与网站 ID 经环境变量注入 BuildConfig（不入库）。
+      # 需在仓库 Secrets 配置 UMAMI_ENDPOINT / UMAMI_WEBSITE_ID；缺一即构建出
+      # "未配置遥测"的包，UmamiClient.isConfigured=false、全部上报静默短路
       - name: Build release APKs
+        env:
+          UMAMI_ENDPOINT: ${{ secrets.UMAMI_ENDPOINT }}
+          UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
         run: ./gradlew assembleRelease --console=plain --no-daemon
 
       - name: Collect artifacts
