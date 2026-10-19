@@ -32,7 +32,7 @@ android {
         // 与 splits.abi.include 保持一致：universal 包收录的是通过 abiFilters 的全部 ABI
         // （splits.include 只约束独立 APK），x86 需在此排除——其引擎库仍含全量 onnxruntime
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
         // N19-g：匿名遥测端点与网站 ID 不入库（公开仓库不暴露自建服务器地址）。
