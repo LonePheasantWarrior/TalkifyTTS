@@ -4,7 +4,6 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import androidx.core.app.NotificationCompat
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationHelper.buildNotification
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.permission.PermissionChecker
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 

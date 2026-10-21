@@ -4,7 +4,6 @@ import android.media.AudioFormat
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker.PreviewAttempt
-import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_POINTS
 import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_POLL_INTERVAL_MS
 import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_WINDOW_MS
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
@@ -24,6 +23,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 语音预览播放器
@@ -385,7 +385,7 @@ class TtsPreviewPlayer(
         wavePollJob = serviceScope.launch {
             while (isActive && currentState == STATE_PLAYING) {
                 publishWaveSnapshot()
-                delay(WAVE_POLL_INTERVAL_MS)
+                delay(WAVE_POLL_INTERVAL_MS.milliseconds)
             }
         }
     }

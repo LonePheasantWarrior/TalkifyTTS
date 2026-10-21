@@ -23,7 +23,6 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.No
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TtsTelemetryTracker
-import com.github.lonepheasantwarrior.talkify.service.TalkifyTtsService.Companion.FOREGROUND_IDLE_EXIT_DELAY_MS
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory

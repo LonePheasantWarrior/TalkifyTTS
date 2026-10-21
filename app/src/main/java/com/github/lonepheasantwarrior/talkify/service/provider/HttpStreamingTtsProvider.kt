@@ -3,11 +3,13 @@ package com.github.lonepheasantwarrior.talkify.service.provider
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.service.TtsErrorCode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -37,8 +39,13 @@ import java.util.concurrent.TimeUnit
  * - [processStreamResponse]：流式响应解析（经 [emitAudio] 回传音频）
  * - [mapHttpError]：HTTP 错误响应体 → 用户可读消息
  * - [chunkMaxLength] / [getAudioConfig] 等元数据
+ *
+ * @param callbackDispatcher 监听器回调的派发器，默认主线程；
+ *   JVM 测试可注入 [Dispatchers.Unconfined] 以避免依赖 Android 主线程
  */
-abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
+abstract class HttpStreamingTtsProvider(
+    private val callbackDispatcher: CoroutineDispatcher = Dispatchers.Main
+) : AbstractTtsProvider() {
 
     /** 单块文本最大字符数 */
     protected abstract val chunkMaxLength: Int
@@ -182,7 +189,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
             } catch (e: Exception) {
                 if (!isCancelled && e !is CancellationException && isSynthesisSessionActive(session)) {
                     logError("Synthesis error", e)
-                    withContext(Dispatchers.Main) {
+                    withContext(callbackDispatcher) {
                         listener.onError(TtsErrorMessages.synthesisFailed())
                     }
                 }
@@ -220,7 +227,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
      * 全部样本错位（持续刺耳噪声）。
      */
     protected suspend fun emitAudio(audioData: ByteArray, listener: TtsSynthesisListener) {
-        val context = kotlin.coroutines.coroutineContext
+        val context = currentCoroutineContext()
         val aligned = context[PcmAlignmentElement]?.assembler?.feed(audioData) ?: audioData
         if (aligned.isEmpty()) return
 
@@ -292,7 +299,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
         )
 
         if (allSucceeded && !isCancelled && isSynthesisSessionActive(session)) {
-            withContext(Dispatchers.Main) {
+            withContext(callbackDispatcher) {
                 listener.onSynthesisCompleted()
             }
             logInfo("Synthesis completed successfully")
@@ -330,7 +337,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
 
                         val errorMessage = mapHttpError(errorBody)
                         if (isSynthesisSessionActive(session)) {
-                            withContext(Dispatchers.Main) {
+                            withContext(callbackDispatcher) {
                                 listener.onError(errorMessage)
                             }
                         }
@@ -349,7 +356,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
         } catch (e: SocketTimeoutException) {
             logError("Network timeout", e)
             if (isSynthesisSessionActive(session)) {
-                withContext(Dispatchers.Main) {
+                withContext(callbackDispatcher) {
                     listener.onError(TtsErrorMessages.networkTimeout())
                 }
             }
@@ -359,7 +366,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
             // 复位为 false，旧会话被取消的在飞请求会误报为网络错误——以会话代际为准
             if (!isCancelled && isSynthesisSessionActive(session)) {
                 logError("Network error", e)
-                withContext(Dispatchers.Main) {
+                withContext(callbackDispatcher) {
                     listener.onError(TtsErrorMessages.networkUnavailable())
                 }
             }
@@ -370,7 +377,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
         } catch (e: Exception) {
             logError("Unexpected error during synthesis", e)
             if (isSynthesisSessionActive(session)) {
-                withContext(Dispatchers.Main) {
+                withContext(callbackDispatcher) {
                     listener.onError(TtsErrorMessages.synthesisFailed())
                 }
             }

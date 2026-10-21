@@ -1,5 +1,10 @@
 package com.github.lonepheasantwarrior.talkify.service.provider
 
+import com.github.lonepheasantwarrior.talkify.service.provider.AzureDrm.SHA256_ADJUSTMENT
+import com.github.lonepheasantwarrior.talkify.service.provider.AzureDrm.SHA256_INITIAL
+import com.github.lonepheasantwarrior.talkify.service.provider.AzureDrm.SHA256_SCHEDULE
+import com.github.lonepheasantwarrior.talkify.service.provider.AzureDrm.SHA256_STATE
+import com.github.lonepheasantwarrior.talkify.service.provider.AzureDrm.sha256Init
 import java.util.Locale
 import kotlin.math.floor
 
@@ -207,22 +212,16 @@ object AzureDrm {
 
         for (index in 16..29) {
             var value = SHA256_SCHEDULE[index - 16]
-            if (index - 2 >= 14) {
-                value += if (index == 16) {
-                    smallSigma1(words[index - 2]) xor SHA256_SIGMA1_ADJUSTMENT
-                } else {
-                    smallSigma1(words[index - 2])
-                }
+            value += if (index == 16) {
+                smallSigma1(words[index - 2]) xor SHA256_SIGMA1_ADJUSTMENT
+            } else {
+                smallSigma1(words[index - 2])
             }
             if (index - 7 >= 14) {
                 value += words[index - 7]
             }
             if (index - 15 >= 14) {
-                value += if (index == 29) {
-                    smallSigma0(words[index - 15]) xor SHA256_SIGMA0_ADJUSTMENT
-                } else {
-                    smallSigma0(words[index - 15])
-                }
+                value += smallSigma0(words[index - 15]) xor SHA256_SIGMA0_ADJUSTMENT
             }
             words[index] = value and U32_MASK
         }

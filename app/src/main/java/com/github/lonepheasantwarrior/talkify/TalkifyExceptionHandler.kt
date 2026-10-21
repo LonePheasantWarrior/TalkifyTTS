@@ -1,8 +1,6 @@
 package com.github.lonepheasantwarrior.talkify
 
 import android.os.Process
-import com.github.lonepheasantwarrior.talkify.TalkifyExceptionHandler.handleRxJavaGlobalError
-import com.github.lonepheasantwarrior.talkify.TalkifyExceptionHandler.installRxJavaErrorPolicy
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger

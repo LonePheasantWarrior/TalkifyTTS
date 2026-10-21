@@ -3,20 +3,15 @@ package com.github.lonepheasantwarrior.talkify.service.provider
 import android.media.AudioFormat
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
-import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -28,19 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 验证生产代码为每个 fetch 协程注入独立的 [PcmAlignmentElement]，
  * 而不是仅验证 [PcmFrameAssembler] 自身的拼接逻辑。
  */
-@OptIn(ExperimentalCoroutinesApi::class)
 class HttpStreamingTtsProviderAlignmentTest {
-
-    @Before
-    fun setUp() {
-        // 供应商完成回调经 Dispatchers.Main 派发，JVM 单测无 Android 主线程
-        Dispatchers.setMain(Dispatchers.Unconfined)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
 
     @Test
     fun `production pipeline aligns each chunk with an isolated assembler`() {
@@ -83,7 +66,7 @@ class HttpStreamingTtsProviderAlignmentTest {
 
     private class AlignmentTestProvider(
         private val readBufferSize: Int
-    ) : HttpStreamingTtsProvider() {
+    ) : HttpStreamingTtsProvider(callbackDispatcher = Dispatchers.Unconfined) {
 
         override val chunkMaxLength: Int = 3
 

@@ -5,7 +5,6 @@ import androidx.core.content.edit
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelRegistry
 import com.github.lonepheasantwarrior.talkify.domain.model.ModelDownloadStatus
-import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager.getModelStatus
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

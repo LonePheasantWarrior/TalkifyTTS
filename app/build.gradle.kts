@@ -147,7 +147,6 @@ dependencies {
     testImplementation(libs.junit)
     // 本地 JVM 单测环境没有 Android 实现，提供真实的 org.json 以替代 android.jar 桩
     testImplementation(libs.org.json)
-    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     // ui-test-junit4 等测试依赖无独立版本号，需为 androidTest 配置单独引入 Compose BOM

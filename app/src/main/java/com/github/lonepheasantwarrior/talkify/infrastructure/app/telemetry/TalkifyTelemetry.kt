@@ -1,8 +1,5 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry.setUserEnabled
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry.trackEvent
-
 
 /**
  * Talkify 遥测服务（门面）
