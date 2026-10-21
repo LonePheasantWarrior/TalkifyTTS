@@ -203,28 +203,40 @@ class TtsPreviewPlayer(
                 playbackAttempt?.markFirstAudio(sampleRate)
 
                 try {
-                    if (audioPlayer == null) {
+                    var player = audioPlayer
+                    if (player == null) {
                         waveAudioFormat = audioFormat
                         waveBytesPerFrame = bytesPerSample(audioFormat) * channelCount
                         waveWindowFrames =
                             (sampleRate.toLong() * WAVE_WINDOW_MS / 1000L).toInt().coerceAtLeast(1)
-                        audioPlayer = TalkifyAudioPlayer(
+                        val created = TalkifyAudioPlayer(
                             sampleRate = sampleRate,
                             channelCount = channelCount,
                             audioFormat = audioFormat
                         )
-                        audioPlayer?.setErrorListener { errorMessage ->
+                        // 先挂监听再创建：创建失败的错误也要能走统一收尾
+                        audioPlayer = created
+                        created.setErrorListener { errorMessage ->
+                            // 旧场次的错误（停止后才从阻塞中返回的 play/write 异常）
+                            // 不得改写共享状态或停掉新场次
+                            if (generation != sessionGeneration ||
+                                isStopped.get() ||
+                                audioPlayer !== created
+                            ) {
+                                TtsLogger.d("Ignoring audio player error from stale session")
+                                return@setErrorListener
+                            }
                             TtsLogger.e("Audio player error: $errorMessage")
                             lastErrorMessage = errorMessage
                             stopPlayback()
                         }
-                        val created = audioPlayer?.createPlayer()
-                        if (created != true) {
+                        if (!created.createPlayer()) {
                             throw IllegalStateException("Failed to create audio player")
                         }
+                        player = created
                     }
                     appendWaveEnvelope(audioData)
-                    audioPlayer?.play(audioData)
+                    player.play(audioData)
                     ensureWavePoller()
                 } catch (e: Exception) {
                     TtsLogger.e("Audio playback error: ${e.message}", e)
@@ -242,7 +254,7 @@ class TtsPreviewPlayer(
                 serviceScope.launch {
                     if (generation != sessionGeneration) return@launch
                     val player = audioPlayer
-                    if (player != null) {
+                    val completed = if (player != null) {
                         try {
                             player.waitForPlaybackComplete(
                                 timeoutSeconds = 120,
@@ -250,10 +262,21 @@ class TtsPreviewPlayer(
                             )
                         } catch (e: Exception) {
                             TtsLogger.e("Wait playback drain error: ${e.message}", e)
+                            false
                         }
+                    } else {
+                        true
                     }
-                    // 用户已在此期间停止时 markStopped 先写终态，此处按首写生效语义为 no-op
-                    attempt?.markSuccess()
+                    // 排空期间可能已开始新场次（stop→speak）：旧协程不得再触碰共享的
+                    // playbackAttempt/audioPlayer，否则会误杀新场次（场次代数纪律）
+                    if (generation != sessionGeneration) return@launch
+                    // 用户已在此期间停止时 markStopped 先写终态，此处按首写生效语义为 no-op；
+                    // 非用户停止的排空失败（写失败/超时/播放头停滞）须先于异步收尾写错误终态
+                    if (completed) {
+                        attempt?.markSuccess()
+                    } else if (!isStopped.get()) {
+                        attempt?.markError(TtsErrorCode.ERROR_SYNTHESIS_FAILED.toString())
+                    }
                     stopPlayback()
                 }
             }
@@ -385,6 +408,9 @@ class TtsPreviewPlayer(
     }
 
     private fun stopPlayback() {
+        // 场次一旦开始收尾就不再接收音频：错误/完成回调到达后，供应商在飞
+        // 音频可能仍会迟到；若不拦截，会在 audioPlayer 已置空后重建播放器
+        isStopped.set(true)
         // 同步消费本场 attempt：后续 speak() 会立即写入新场次，
         // 异步收尾协程只允许上报已捕获的局部引用
         val attempt = playbackAttempt

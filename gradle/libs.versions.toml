@@ -16,6 +16,8 @@ navigationCompose = "2.10.2"
 okhttp = "4.12.0"
 commons-compress = "1.28.0"
 org-json = "20260814"
+# 与 androidx 传递依赖解析出的 coroutines 版本一致（有意跟随运行时版本，不单独升级）
+coroutines = "1.9.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +46,8 @@ jlayer = { group = "javazoom", name = "jlayer", version.ref = "jlayer" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 # 本地 JVM 单测用：覆盖 android.jar 中抛 Stub 异常的 org.json
 org-json = { group = "org.json", name = "json", version.ref = "org-json" }
+# 单测替换 Dispatchers.Main：供应商完成回调经 Main 派发，JVM 无 Android 主线程
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

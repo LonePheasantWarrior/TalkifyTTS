@@ -212,12 +212,21 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
      *
      * 流水线模式下写入当前块缓冲（fetch 协程挂起于背压水位），由流水线
      * 按块序 flush；首个音频块自动触发 onSynthesisStarted。
-     * 写入通道经协程上下文传递（[AudioSinkElement]），并发 fetch 天然隔离。
+     * 写入通道与帧对齐器均经协程上下文传递（[AudioSinkElement] /
+     * [PcmAlignmentElement]），并发 fetch 天然隔离。
+     *
+     * HTTP 响应体按任意字节边界分块，可能切断采样帧。此处统一经
+     * [PcmFrameAssembler] 只输出完整帧，避免下游 AudioTrack 丢弃尾字节后
+     * 全部样本错位（持续刺耳噪声）。
      */
     protected suspend fun emitAudio(audioData: ByteArray, listener: TtsSynthesisListener) {
-        val sink = kotlin.coroutines.coroutineContext[AudioSinkElement]
+        val context = kotlin.coroutines.coroutineContext
+        val aligned = context[PcmAlignmentElement]?.assembler?.feed(audioData) ?: audioData
+        if (aligned.isEmpty()) return
+
+        val sink = context[AudioSinkElement]
         if (sink != null) {
-            sink.send(audioData)
+            sink.send(aligned)
             return
         }
 
@@ -231,7 +240,7 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
         }
         val audioConfig = getAudioConfig()
         listener.onAudioAvailable(
-            audioData,
+            aligned,
             audioConfig.sampleRate,
             audioConfig.audioFormat,
             audioConfig.channelCount
@@ -253,7 +262,13 @@ abstract class HttpStreamingTtsProvider : AbstractTtsProvider() {
             chunkCount = chunks.size,
             isCancelled = { isCancelled },
             fetch = { index, sink ->
-                withContext(Dispatchers.IO + AudioSinkElement(sink)) {
+                // 每块 HTTP 响应独立成流：帧对齐器随 fetch 协程隔离，
+                // 并发预取不会互相串扰
+                withContext(
+                    Dispatchers.IO +
+                        AudioSinkElement(sink) +
+                        PcmAlignmentElement(PcmFrameAssembler(getAudioConfig().frameSizeBytes))
+                ) {
                     fetchChunk(chunks[index], index, config, params, listener, session)
                 }
             },
@@ -442,4 +457,15 @@ internal class AudioSinkElement(
     val send: suspend (ByteArray) -> Unit
 ) : kotlin.coroutines.AbstractCoroutineContextElement(AudioSinkElement) {
     companion object Key : kotlin.coroutines.CoroutineContext.Key<AudioSinkElement>
+}
+
+/**
+ * PCM 帧对齐器的协程上下文元素：
+ * 每个 fetch 协程持有独立实例，[HttpStreamingTtsProvider.emitAudio] 据此
+ * 跨网络分块拼接不足一帧的尾字节
+ */
+internal class PcmAlignmentElement(
+    val assembler: PcmFrameAssembler
+) : kotlin.coroutines.AbstractCoroutineContextElement(PcmAlignmentElement) {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<PcmAlignmentElement>
 }

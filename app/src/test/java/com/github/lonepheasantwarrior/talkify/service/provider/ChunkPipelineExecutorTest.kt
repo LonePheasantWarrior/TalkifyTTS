@@ -113,6 +113,45 @@ class ChunkPipelineExecutorTest {
     }
 
     @Test
+    fun `concurrent prefetch keeps per chunk pcm frame alignment isolated`() = runBlocking {
+        val emitted = mutableListOf<List<Byte>>()
+        val result = withTimeout(5000) {
+            // 与 HttpStreamingTtsProvider 的 PcmAlignmentElement 一致：
+            // 每个 fetch 协程持有独立对齐器，窗口内的并发预取不得共享尾字节
+            executor(window = 2, capacity = 64).execute(
+                chunkCount = 2,
+                isCancelled = { false },
+                fetch = { index, sink ->
+                    val assembler = PcmFrameAssembler(frameSizeBytes = 2)
+                    val rawChunks = if (index == 0) {
+                        listOf(byteArrayOf(1), byteArrayOf(2, 3))
+                    } else {
+                        listOf(byteArrayOf(4, 5, 6), byteArrayOf(7))
+                    }
+                    for (raw in rawChunks) {
+                        val aligned = assembler.feed(raw)
+                        if (aligned.isNotEmpty()) sink(aligned)
+                        yield()
+                    }
+                    true
+                },
+                emit = { data -> emitted.add(data.toList()) }
+            )
+        }
+
+        assertTrue(result)
+        // 块 0 的尾字节 3 不与块 1 的 4 拼接；块 1 自己从 4 开始重新对齐
+        assertEquals(
+            listOf(
+                listOf<Byte>(1, 2),
+                listOf<Byte>(4, 5),
+                listOf<Byte>(6, 7)
+            ),
+            emitted
+        )
+    }
+
+    @Test
     fun `fetch cancellation is treated as failure`() = runBlocking {
         val result = withTimeout(5000) {
             executor().execute(

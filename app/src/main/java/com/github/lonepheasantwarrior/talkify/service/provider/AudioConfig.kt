@@ -121,6 +121,15 @@ data class AudioConfig(
     }
 
     /**
+     * 单帧字节数（每采样字节数 × 声道数）
+     *
+     * AudioTrack / SynthesisCallback 以帧为单位消费；流式分块必须按此边界对齐，
+     * 否则不足一帧的尾字节会被丢弃，后续样本全部错位。
+     */
+    val frameSizeBytes: Int
+        get() = channelCount * bytesPerSample(audioFormat)
+
+    /**
      * 获取音频格式描述
      *
      * @return 格式描述字符串
@@ -134,5 +143,11 @@ data class AudioConfig(
             else -> "UNKNOWN($audioFormat)"
         }
         return "${sampleRate}Hz, $formatName, ${if (channelCount == 1) "mono" else "stereo"}"
+    }
+
+    private fun bytesPerSample(format: Int): Int = when (format) {
+        AudioFormat.ENCODING_PCM_8BIT -> 1
+        AudioFormat.ENCODING_PCM_FLOAT -> 4
+        else -> 2
     }
 }
