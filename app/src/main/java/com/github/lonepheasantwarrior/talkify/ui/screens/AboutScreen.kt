@@ -76,8 +76,6 @@ import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryController
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryDiagnostics
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryScrollObserver
@@ -109,12 +107,10 @@ fun AboutScreen(
     var showDonateSheet by remember { mutableStateOf(false) }
     var showDonateInstruction by remember { mutableStateOf<DonateChannel?>(null) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
-    var showDiagnosticsDialog by remember { mutableStateOf(false) }
 
     val githubUrl = stringResource(R.string.about_github_url)
     // 回调内取资源须用顶层 stringResource（组合期解析，配置变化安全）
     val qqClipboardLabel = stringResource(R.string.about_clipboard_qq_label)
-    val privacyPolicyUrl = stringResource(R.string.about_privacy_policy_url)
 
     val updateChecker = remember { UpdateChecker() }
     var isCheckingUpdate by remember { mutableStateOf(false) }
@@ -406,13 +402,11 @@ fun AboutScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 匿名使用统计（默认开启）与界面诊断（默认关闭）是两个独立许可；
-                    // 关闭统计会立即清空待发队列与录制缓冲，重新开启不补发旧事件
+                    // 匿名使用统计：关闭后立即停止新的上报
                     val appConfigRepository = remember {
                         com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository(context)
                     }
                     var telemetryEnabled by remember { mutableStateOf(appConfigRepository.isTelemetryEnabled()) }
-                    var diagnosticsEnabled by remember { mutableStateOf(appConfigRepository.isDiagnosticsEnabled()) }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -436,44 +430,6 @@ fun AboutScreen(
                                 TelemetryController.setTelemetryEnabled(context, checked)
                             }
                         )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.about_diagnostics_toggle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = stringResource(
-                                    if (UmamiRecorder.isAvailable) {
-                                        R.string.about_diagnostics_toggle_description
-                                    } else {
-                                        R.string.about_diagnostics_unavailable
-                                    }
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(
-                            checked = diagnosticsEnabled,
-                            enabled = UmamiRecorder.isAvailable,
-                            onCheckedChange = { checked ->
-                                diagnosticsEnabled = checked
-                                TelemetryController.setDiagnosticsEnabled(context, checked)
-                            }
-                        )
-                    }
-                    TextButton(
-                        onClick = { showDiagnosticsDialog = true },
-                        modifier = Modifier.align(Alignment.Start)
-                    ) {
-                        Text(stringResource(R.string.about_diagnostics_view))
                     }
                 }
             }
@@ -735,40 +691,8 @@ fun AboutScreen(
         }
     }
 
-    // 本地遥测诊断（用户主动查看；不含 payload、令牌或个人数据）
-    if (showDiagnosticsDialog) {
-        AlertDialog(
-            onDismissRequest = { showDiagnosticsDialog = false },
-            title = { Text(stringResource(R.string.about_diagnostics_title)) },
-            text = {
-                Text(
-                    text = TelemetryDiagnostics.format(),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState())
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showDiagnosticsDialog = false }) {
-                    Text(stringResource(R.string.about_privacy_confirm))
-                }
-            }
-        )
-    }
-
     // 匿名信息收集声明弹窗
     if (showPrivacyDialog) {
-        val privacyItems = listOf(
-            stringResource(R.string.about_privacy_item_device),
-            stringResource(R.string.about_privacy_item_network),
-            stringResource(R.string.about_privacy_item_usage),
-            stringResource(R.string.about_privacy_item_tts),
-            stringResource(R.string.about_privacy_item_session),
-            stringResource(R.string.about_privacy_item_crash)
-        )
-
         AlertDialog(
             onDismissRequest = { showPrivacyDialog = false },
             icon = {
@@ -780,78 +704,22 @@ fun AboutScreen(
                 )
             },
             title = {
-                Column {
-                    Text(
-                        text = stringResource(R.string.about_privacy_dialog_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(R.string.about_privacy_dialog_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.about_privacy_dialog_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             },
             text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    privacyItems.forEachIndexed { index, item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = "${index + 1}.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(20.dp)
-                            )
-                            Text(
-                                text = item,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // 强调不收集隐私数据
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.about_privacy_disclaimer),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = stringResource(R.string.about_privacy_dialog_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             },
             confirmButton = {
                 TextButton(onClick = { showPrivacyDialog = false }) {
                     Text(stringResource(R.string.about_privacy_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    AppActionTracker.externalLinkOpen(
-                        AppActionTracker.TARGET_PRIVACY_POLICY,
-                        AppActionTracker.URL_ABOUT
-                    )
-                    openUriSafely(uriHandler, privacyPolicyUrl)
-                }) {
-                    Text(stringResource(R.string.about_privacy_view_full))
                 }
             },
             shape = RoundedCornerShape(24.dp)

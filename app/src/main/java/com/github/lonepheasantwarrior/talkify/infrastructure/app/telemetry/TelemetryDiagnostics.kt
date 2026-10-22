@@ -6,8 +6,8 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * 遥测链路本地诊断计数器
  *
- * 只统计"发生了什么"，不保存 payload、令牌、URL 或个人数据。用于在用户主动查看时
- * 区分「用户关闭 / 构建未配置 / 远端停用 / 网络失败 / 服务端过滤 / 数据格式错误」，
+ * 只统计"发生了什么"，不保存 payload、令牌、URL 或个人数据，用于定位
+ * 「用户关闭 / 构建未配置 / 远端停用 / 网络失败 / 服务端过滤 / 数据格式错误」；
  * 自身不做任何网络上报。
  */
 object TelemetryDiagnostics {
@@ -94,31 +94,6 @@ object TelemetryDiagnostics {
         lastSuccessElapsedMs = lastSuccessElapsedMs.get(),
         lastHttpCode = lastFailureCode.get(),
     )
-
-    /** 面向用户展示的本地诊断文本（不含任何 payload/令牌/URL） */
-    fun format(): String {
-        val s = snapshot()
-        val (queueCount, queueBytes) = UmamiClient.queueSnapshot()
-        val lastSuccess = if (s.lastSuccessElapsedMs == 0L) {
-            "无"
-        } else {
-            val ageSec = (SystemClock.elapsedRealtime() - s.lastSuccessElapsedMs) / 1000
-            "${ageSec}s 前"
-        }
-        return buildString {
-            appendLine("遥测构建配置：${UmamiClient.configState.label}")
-            appendLine("用户开关：${if (TelemetryController.isTelemetryEnabled()) "开启" else "关闭"}")
-            appendLine("界面诊断：${if (TelemetryController.isDiagnosticsEnabled()) "开启" else "关闭"}")
-            appendLine("远端状态：${if (UmamiClient.isRemoteDisabled()) "已停用" else "正常"}")
-            appendLine("待发队列：$queueCount 条 / $queueBytes 字节（上限 256 条 / 512KiB）")
-            appendLine("入队：${s.enqueued}，成功：${s.sent}，最近成功：$lastSuccess")
-            appendLine("丢弃：队列满 ${s.droppedQueueFull}，过期 ${s.droppedTtl}，许可关闭 ${s.droppedPolicy}，远端停用 ${s.droppedRemoteDisabled}，发送失败 ${s.droppedSendFailed}")
-            appendLine("HTTP 错误：${s.httpErrors}（最近 ${s.lastHttpCode}）")
-            appendLine("服务端过滤：${s.filtered}，明确拒绝：${s.rejected}，远端停用响应：${s.remoteDisabled}，无效令牌：${s.invalidToken}")
-            appendLine("协议错误：${s.protocolErrors}（响应不可确认，不计成功）")
-            append("Schema 拒绝：${s.schemaRejected}")
-        }
-    }
 
     internal fun resetForTest() {
         enqueued.set(0)
