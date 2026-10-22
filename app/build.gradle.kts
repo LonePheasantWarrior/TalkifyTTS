@@ -161,10 +161,10 @@ android {
 
     defaultConfig {
         applicationId = "com.github.lonepheasantwarrior.talkify"
-        minSdk = 30
+        minSdk = 24
         targetSdk = 37
-        versionCode = 38
-        versionName = "1.0.36"
+        versionCode = 39
+        versionName = "1.0.37"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
