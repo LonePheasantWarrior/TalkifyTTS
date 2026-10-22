@@ -147,6 +147,27 @@ interface TtsProviderApi {
     fun getDefaultModelId(): String
 
     /**
+     * 本次请求实际生效的模型 ID（默认取配置值，空则回退供应商默认值）
+     *
+     * 供遥测/诊断记录真实生效值，避免同一个默认模型在不同链路表现不一致
+     */
+    fun getEffectiveModelId(config: BaseProviderConfig): String =
+        config.modelId.ifBlank { getDefaultModelId() }
+
+    /**
+     * 本次请求实际生效的音色 ID（默认取配置值）
+     *
+     * 自定义声音优先的供应商（如 OpenAI）覆写此方法，让遥测记录真实发声的标识。
+     * 遥测层会再把未知标识归类为 `custom`，不原样上送。
+     */
+    fun getEffectiveVoiceId(config: BaseProviderConfig): String = config.voiceId
+
+    /**
+     * 供应商内置模型 ID 白名单（用于遥测分类；空表示除默认模型外均视为自定义）
+     */
+    fun getKnownModelIds(): Set<String> = emptySet()
+
+    /**
      * 获取配置项标签
      *
      * 用于 UI 层显示配置项的本地化标签

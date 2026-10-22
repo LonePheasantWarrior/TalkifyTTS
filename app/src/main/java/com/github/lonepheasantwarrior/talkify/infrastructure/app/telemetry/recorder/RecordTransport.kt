@@ -4,6 +4,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recor
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_BATCH_BYTES
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_BATCH_EVENTS
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.RecordTransport.Companion.MAX_HEATMAP_EVENTS
+import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
@@ -24,7 +25,8 @@ import kotlin.random.Random
  *
  * 线程安全：内部锁保护缓冲区与计数器，可在任意线程调用
  *
- * @param cacheProvider 会话令牌来源（UmamiClient.sessionCache）
+ * @param cacheProvider 会话令牌来源；录制会话应返回绑定到创建时代际的令牌，
+ *                      会话轮换/许可关闭后返回 null（待发内容静默丢弃）
  * @param post          网络发送注入点，body 为完整 JSON 字符串
  */
 internal class RecordTransport(
@@ -64,9 +66,15 @@ internal class RecordTransport(
                 sendRecordLocked(listOf(event), nextMonotonicSecLocked())
                 return
             }
+            // 入列前按最终包体预算判断：先冲刷旧批，避免两个大事件合并后超过硬上限
+            if (recordBuffer.isNotEmpty() &&
+                bufferedRecordBytes + eventBytes + ENVELOPE_BYTES > MAX_BATCH_BYTES
+            ) {
+                flushRecordBufferLocked()
+            }
             recordBuffer.add(event)
             bufferedRecordBytes += eventBytes
-            if (recordBuffer.size >= MAX_BATCH_EVENTS || bufferedRecordBytes + ENVELOPE_BYTES > MAX_BATCH_BYTES) {
+            if (recordBuffer.size >= MAX_BATCH_EVENTS) {
                 flushRecordBufferLocked()
             }
         }
@@ -103,6 +111,15 @@ internal class RecordTransport(
             flushHeatmapLocked()
         }
     }
+
+    /** 丢弃全部缓冲且不触发任何网络发送（许可关闭/会话失效） */
+    fun discard() {
+        synchronized(lock) {
+            recordBuffer.clear()
+            heatmapBuffer.clear()
+            bufferedRecordBytes = 0
+        }
+    }
     // ==================== 内部实现 ====================
 
     private fun flushHeatmapLocked() {
@@ -132,7 +149,13 @@ internal class RecordTransport(
             .put("website", websiteId)
             .put("timestamp", timestampSec)
             .put("events", JSONArray(events))
-        post(wrap("record", payload), cache)
+        val body = wrap("record", payload)
+        // 防御性硬门禁：最终 UTF-8 包体必须落在部署上限内（入列预算已提前冲刷）
+        if (body.toByteArray(StandardCharsets.UTF_8).size > MAX_BATCH_BYTES) {
+            TtsLogger.w("record 包体超过上限，丢弃本包（${events.size} 条）")
+            return
+        }
+        post(body, cache)
     }
 
     /**

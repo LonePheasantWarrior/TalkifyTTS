@@ -8,10 +8,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationChannel
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.DeviceInfoCollector
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryController
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
 class TalkifyApplication : Application() {
@@ -28,7 +25,9 @@ class TalkifyApplication : Application() {
         TtsLogger.i(TAG) { "TalkifyApplication onCreate" }
         TalkifyAppHolder.setContext(this)
         TalkifyExceptionHandler.initialize()
-        injectTelemetrySwitch()
+        // 遥测控制器是许可、队列、会话与前后台状态的唯一写入口：
+        // 必须在进程创建时初始化，TTS 服务可在无 Activity 场景独立产生合成事件
+        TelemetryController.initialize(this)
         createNotificationChannels()
         deleteLegacyTelemetryPrefs()
         observeAppForeground()
@@ -36,38 +35,21 @@ class TalkifyApplication : Application() {
     }
 
     /**
-     * 注入用户遥测开关到遥测门面（N2 门控）
-     *
-     * 必须在 onCreate 注入而非前台观察时读取：TTS 服务可与 UI 独立工作，
-     * 合成遥测在无 Activity 的场景也会产生。注入后全部上报入口统一短路
-     */
-    private fun injectTelemetrySwitch() {
-        TalkifyTelemetry.setUserEnabled(
-            SharedPreferencesAppConfigRepository(this).isTelemetryEnabled()
-        )
-    }
-
-    /**
-     * 观察应用级前台切换，每次回到前台上报一次启动信号
+     * 观察应用级前台切换
      *
      * 不能依赖 [Application.onCreate]：TTS 前台服务常驻，进程在任务划走后仍存活，
      * 重开应用不会重建进程。[ProcessLifecycleOwner] 以可见 Activity 为准，
-     * 冷启动、划走重开、温热重进均触发 onStart，旋转屏幕等 Activity 重建不会误报
-     *
-     * 遥测门控（N2）：开关状态已注入 [TalkifyTelemetry] 门面，pageview/事件与
-     * recorder 会话在门面与 [UmamiRecorder.start] 内部统一短路，此处直接触发即可
+     * 冷启动、划走重开、温热重进均触发 onStart，旋转屏幕等 Activity 重建不会误报。
+     * 页面计数与 app_foregrounded 由 [TelemetryController] 统一负责。
      */
     private fun observeAppForeground() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                if (TalkifyTelemetry.isUserEnabled()) {
-                    reportAppOpened()
-                }
-                UmamiRecorder.start()
+                TelemetryController.onAppForeground()
             }
 
             override fun onStop(owner: LifecycleOwner) {
-                UmamiRecorder.stop()
+                TelemetryController.onAppBackground()
             }
         })
     }
@@ -106,17 +88,6 @@ class TalkifyApplication : Application() {
      */
     private fun deleteLegacyTelemetryPrefs() {
         deleteSharedPreferences("talkify_tts_telemetry")
-    }
-
-    /**
-     * 上报应用回到前台信号与匿名设备画像
-     *
-     * pageview 作为会话锚点驱动 Umami 仪表盘核心指标；app_opened 事件附带设备画像，
-     * 显示在事件（Events）区域
-     */
-    private fun reportAppOpened() {
-        TalkifyTelemetry.trackPageView()
-        TalkifyTelemetry.trackEvent("app_opened", DeviceInfoCollector.collect(this))
     }
 
     /**

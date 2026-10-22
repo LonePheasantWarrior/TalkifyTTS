@@ -52,7 +52,7 @@ interface AppConfigRepository {
     /**
      * 匿名遥测是否已启用
      *
-     * 默认开启；用户可于"关于"页随时关闭，关闭后不上报 app_opened 等匿名事件（N2）
+     * 默认开启；用户可于"关于"页随时关闭，关闭后停止新的匿名上报并清空待发队列
      */
     fun isTelemetryEnabled(): Boolean
 
@@ -60,6 +60,18 @@ interface AppConfigRepository {
      * 设置匿名遥测开关
      */
     fun setTelemetryEnabled(enabled: Boolean)
+
+    /**
+     * 界面诊断（回放/热图/采树）是否已获用户许可
+     *
+     * 独立于匿名统计，默认关闭；既有 [isTelemetryEnabled] = true 不会被迁移为已开启诊断
+     */
+    fun isDiagnosticsEnabled(): Boolean
+
+    /**
+     * 设置界面诊断许可
+     */
+    fun setDiagnosticsEnabled(enabled: Boolean)
 
     /**
      * 用户是否已跳过电池优化引导（N12）

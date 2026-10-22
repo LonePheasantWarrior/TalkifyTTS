@@ -23,13 +23,15 @@ import kotlin.math.roundToInt
 internal class HeatmapSession(
     viewportWidth: Int,
     viewportHeight: Int,
+    startUrl: String = "/",
     private val clockMs: () -> Long = System::currentTimeMillis,
 ) {
 
     private val lock = Any()
-    private var currentUrl: String = "/"
+    private var currentUrl: String = startUrl
     private var viewportWidth = max(viewportWidth, 0)
     private var viewportHeight = max(viewportHeight, 0)
+    private var containerViewportHeight = max(viewportHeight, 0)
     private var scrollTop = 0f
     private var pageHeight = max(viewportHeight, 0).toFloat()
     private var sentMaxPct = 0
@@ -39,7 +41,7 @@ internal class HeatmapSession(
         synchronized(lock) {
             currentUrl = url
             scrollTop = 0f
-            pageHeight = viewportHeight.toFloat()
+            pageHeight = effectiveViewportHeightLocked().toFloat()
             sentMaxPct = 0
             pendingMaxPct = 0
         }
@@ -49,6 +51,7 @@ internal class HeatmapSession(
         synchronized(lock) {
             viewportWidth = max(width, 0)
             viewportHeight = max(height, 0)
+            containerViewportHeight = max(height, 0)
         }
     }
 
@@ -56,14 +59,19 @@ internal class HeatmapSession(
      * 页面滚动容器位置更新（px）
      *
      * @param scrollTopPx 当前滚动位置
-     * @param maxScrollPx 最大可滚动距离，`pageH = maxScroll + viewportH`；
-     *                    0 表示容器暂不可滚动或高度未知，此时维持既有估计
+     * @param maxScrollPx 最大可滚动距离；0 表示容器暂不可滚动或高度未知
+     * @param containerViewportPx 滚动容器可视高度；0 表示未知，回退窗口高度
      */
-    fun onScrollPosition(scrollTopPx: Int, maxScrollPx: Int) {
+    fun onScrollPosition(scrollTopPx: Int, maxScrollPx: Int, containerViewportPx: Int = 0) {
         synchronized(lock) {
+            if (containerViewportPx > 0) containerViewportHeight = containerViewportPx
             scrollTop = max(scrollTopPx, 0).toFloat()
             if (maxScrollPx > 0) {
-                pageHeight = max(pageHeight, maxScrollPx.toFloat() + viewportHeight)
+                // 使用当前内容高度而非历史最大值：内容收缩后深度口径随之更新
+                pageHeight = (maxScrollPx + effectiveViewportHeightLocked()).toFloat()
+            } else if (containerViewportPx > 0) {
+                // 容器已测量但不可滚动：内容高度即视口高度（处理内容收缩到不足一屏）
+                pageHeight = effectiveViewportHeightLocked().toFloat()
             }
             pendingMaxPct = max(pendingMaxPct, computeScrollPctLocked())
         }
@@ -76,6 +84,7 @@ internal class HeatmapSession(
         // pageX 必须等于 x——把纵向 scrollTop 加到 x 会使滚动后点击点横向漂移
         val pageX = x
         val pageY = (y + scrollTop).roundToInt()
+        val viewportH = effectiveViewportHeightLocked()
         JSONObject()
             .put("type", "click")
             .put("url", currentUrl)
@@ -86,7 +95,7 @@ internal class HeatmapSession(
             .put("pageW", max(viewportWidth, pageX))
             .put("pageH", max(pageHeight.roundToInt(), pageY))
             .put("viewportW", viewportWidth)
-            .put("viewportH", viewportHeight)
+            .put("viewportH", viewportH)
             .put("timestamp", clockMs())
     }
 
@@ -97,12 +106,13 @@ internal class HeatmapSession(
      */
     fun takeDeeperScrollEvent(): JSONObject? = synchronized(lock) {
         if (pendingMaxPct <= 0 || pendingMaxPct <= sentMaxPct) return null
+        val viewportH = effectiveViewportHeightLocked()
         val event = JSONObject()
             .put("type", "scroll")
             .put("url", currentUrl)
             .put("scrollPct", pendingMaxPct)
             .put("viewportW", viewportWidth)
-            .put("viewportH", viewportHeight)
+            .put("viewportH", viewportH)
             .put("pageW", viewportWidth)
             .put("pageH", pageHeight.roundToInt())
             .put("timestamp", clockMs())
@@ -111,9 +121,13 @@ internal class HeatmapSession(
         event
     }
 
+    private fun effectiveViewportHeightLocked(): Int =
+        if (containerViewportHeight > 0) containerViewportHeight else viewportHeight
+
     private fun computeScrollPctLocked(): Int {
-        if (viewportHeight <= 0) return 0
-        val bottom = scrollTop + viewportHeight
+        val viewportH = effectiveViewportHeightLocked()
+        if (viewportH <= 0) return 0
+        val bottom = scrollTop + viewportH
         val pct = (bottom / max(1f, pageHeight) * 100f).roundToInt()
         return min(max(pct, 0), 100)
     }

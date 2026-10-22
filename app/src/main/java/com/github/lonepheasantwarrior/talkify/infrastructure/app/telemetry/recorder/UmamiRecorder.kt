@@ -1,9 +1,13 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder
 
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryController
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryDiagnostics
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiSessionState
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.readLimitedBody
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,102 +28,122 @@ import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 /**
- * Umami 录制子系统门面（会话回放 & 热图）
+ * 录制子系统门面（会话回放 & 热图）
  *
- * 将 Umami recorder.js 的录制协议翻译为安卓原生逻辑，与 [UmamiClient]
- * 共享会话令牌（`x-umami-cache`）。UI 层只依赖本门面，不得直接引用内部组件。
+ * **当前版本整体停用**（[RECORDING_IMPLEMENTATION_ENABLED] = false）：原生回放尚未通过
+ * 隐私、播放器与时间轴联调验收，客户端不发起配置探测、不采语义树、不缓存轨迹，
+ * 也不产生 `/api/record` 流量。界面诊断许可仍独立保存（默认关闭），为后续受控恢复保留。
  *
- * **启动流程**（对齐 recorder.js）：
- * 探测服务端配置 → 回放/热图各自独立采样 → 轮询等待会话令牌（100ms × 50 次）
- * → 装配录制会话。任一步不满足则整场静默放弃。
+ * 恢复顺序：先完成 U01（默认拒绝的文本策略/strict/子树脱敏）与 U09/U10 的验收，
+ * 再打开总开关；Replay 另有独立开关 [REPLAY_IMPLEMENTATION_ENABLED]。
  *
- * **生命周期**：每次应用回到前台录一场（网页等价于"每页加载一场"），
- * `maxDuration` 到期后停止产生事件；退后台冲刷并结束本场。
- *
- * **线程模型**：UI 事件回调（onClick/onScrollDelta/onPointerMove）在主线程调用，
- * 内部锁保护后转交协程；网络发送异步，绝不阻塞 UI。
- *
- * **隐私红线**：回放仅采集无障碍可见内容（文本/描述/布局），输入内容一律脱敏，
- * 详见 [ReplaySession] 与 [RrwebSnapshotBuilder]。
- *
- * 服务端配置默认采样率 0.15，验证时需在 Umami 后台将采样率调为 1。
+ * 许可边界：`stop(flush=false)` 禁止任何冲刷，定时器、在途快照、滚动防抖与轨迹缓冲
+ * 全部配对结束；录制缓冲绑定创建时的不可变会话上下文，令牌轮换后自动失效。
  */
 object UmamiRecorder {
 
     private const val TAG = "TalkifyTelemetry"
 
-    /** 会话令牌等待：100ms × 50 次 ≈ 5s（对齐 recorder.js 的 re() 重试上限） */
+    /** 录制能力总开关：未完成隐私与播放器验收前必须保持 false */
+    private const val RECORDING_IMPLEMENTATION_ENABLED = false
+
+    /** Replay 独立开关：U01/U10 验收通过前必须保持 false */
+    private const val REPLAY_IMPLEMENTATION_ENABLED = false
+
+    /** 界面诊断能力是否可用（供设置页展示；总开关关闭时为 false） */
+    val isAvailable: Boolean = RECORDING_IMPLEMENTATION_ENABLED
+
     private const val CACHE_WAIT_ATTEMPTS = 50
     private const val CACHE_WAIT_INTERVAL_MS = 100L
-
-    /** record 流冲刷周期（对齐 recorder.js 的 2s 定时器） */
     private const val RECORD_FLUSH_INTERVAL_MS = 2_000L
-
-    /** 热图流冲刷周期（对齐 recorder.js 的 5s 定时器） */
     private const val HEATMAP_FLUSH_INTERVAL_MS = 5_000L
-
-    /** 滚动深度上报防抖（对齐 recorder.js 的 400ms） */
     private const val SCROLL_DEBOUNCE_MS = 400L
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val crashGuard = CoroutineExceptionHandler { _, throwable ->
+        TtsLogger.w(TAG) { "recorder 协程异常: ${throwable.javaClass.simpleName}" }
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + crashGuard)
     private val sessionMutex = Any()
     private val recordHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .callTimeout(10, TimeUnit.SECONDS)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .build()
     }
 
     @Volatile
     private var session: RecorderSession? = null
 
-    /** start/stop 代数：使探测协程的会话装配与最新一次生命周期动作对齐 */
+    @Volatile
+    private var probeCall: Call? = null
+
+    @Volatile
     private var startGeneration = 0L
 
-    /** 当前页面路径（UI 路由映射，未通知前默认 "/"） */
     @Volatile
     private var currentUrl: String = "/"
 
     @Volatile
     private var currentTitle: String? = null
 
-    /** 最近一次通知的视口尺寸，用于去重（onSizeChanged 在每次布局都会触发） */
     @Volatile
     private var lastViewportWidth = -1
 
     @Volatile
     private var lastViewportHeight = -1
 
-    /**
-     * 应用回到前台时启动一场录制（已有进行中的会话则跳过）
-     *
-     * 受用户遥测开关门控（N2）：开关关闭时直接放弃——录制会话经 [RecordTransport]
-     * 上传 `/api/record`，确有流量，不能以"无事件上报即无流量"为由豁免
-     */
+    @Volatile
+    private var lastScrollTopPx = 0
+
+    @Volatile
+    private var lastMaxScrollPx = 0
+
     fun start() {
-        if (!TalkifyTelemetry.isUserEnabled()) return
+        if (!RECORDING_IMPLEMENTATION_ENABLED) return
+        if (!TelemetryController.isTelemetryEnabled()) return
+        if (!TelemetryController.isDiagnosticsEnabled()) return
+        if (UmamiClient.isRemoteDisabled()) return
         val generation = synchronized(sessionMutex) {
             if (session != null) return
-            // 代数递增：stop() 会使在途探测装配失效，防止"探测期间退到后台"产生僵尸录制
             ++startGeneration
         }
         scope.launch {
-            // 同步网络探测须在 IO 调度器执行：Default 池按 CPU 核数定容，长阻塞会挤占计算任务
-            val config = withContext(Dispatchers.IO) { UmamiRecorderConfig.fetch() } ?: return@launch
-            val doReplay = config.replayEnabled && sample(config.sampleRate)
+            val config = withContext(Dispatchers.IO) {
+                UmamiRecorderConfig.fetch { call -> probeCall = call }
+            } ?: return@launch
+            if (generation != startGeneration) return@launch
+            if (!TelemetryController.isTelemetryEnabled() || !TelemetryController.isDiagnosticsEnabled()) {
+                return@launch
+            }
+            val doReplay = REPLAY_IMPLEMENTATION_ENABLED && config.replayEnabled && sample(config.sampleRate)
             val doHeatmap = config.heatmapEnabled && sample(config.heatmapSampleRate)
             if (!doReplay && !doHeatmap) {
                 TtsLogger.i(TAG) { "recorder 本场未命中采样，跳过录制" }
                 return@launch
             }
-            val cache = awaitSessionCache()
-            if (cache == null) {
+            val recordSession = awaitRecordSession()
+            if (recordSession == null) {
                 TtsLogger.w(TAG) { "recorder 等待会话令牌超时，放弃本场录制" }
                 return@launch
             }
             synchronized(sessionMutex) {
                 if (session != null) return@launch
                 if (generation != startGeneration) return@launch
-                session = RecorderSession(config, currentUrl, currentTitle, doReplay, doHeatmap, ::post)
+                if (!UmamiClient.isRecordSessionCurrent(recordSession)) return@launch
+                session = RecorderSession(
+                    config = config,
+                    recordSession = recordSession,
+                    startUrl = currentUrl,
+                    startTitle = currentTitle,
+                    viewportWidth = lastViewportWidth,
+                    viewportHeight = lastViewportHeight,
+                    scrollTopPx = lastScrollTopPx,
+                    maxScrollPx = lastMaxScrollPx,
+                    doReplay = doReplay,
+                    doHeatmap = doHeatmap,
+                    post = ::post,
+                )
             }
             TtsLogger.i(TAG) {
                 "recorder 会话启动: replay=$doReplay heatmap=$doHeatmap maxDuration=${config.maxDurationMs}ms"
@@ -128,15 +152,14 @@ object UmamiRecorder {
     }
 
     /**
-     * 应用退到后台：冲刷并结束本场录制
+     * 退到后台或关闭许可：冲刷并结束本场录制
      *
-     * @param flushBufferedEvents 是否冲刷缓冲中的事件；用户关闭遥测开关时应传
-     * false 立即静默丢弃（N2）——缓冲事件虽采集于开关开启期间，但开关关闭后
-     * 不再有任何新增上传才是用户对"关闭遥测"的直觉语义
+     * @param flushBufferedEvents false 时禁止任何 flush（用户关闭统计/诊断的语义）
      */
     fun stop(flushBufferedEvents: Boolean = true) {
+        probeCall?.cancel()
+        probeCall = null
         val closing = synchronized(sessionMutex) {
-            // 使任何在途 start 装配失效（见 start 中的代数校验）
             ++startGeneration
             session.also { session = null }
         } ?: return
@@ -145,14 +168,12 @@ object UmamiRecorder {
 
     // ==================== UI 事件入口（主线程调用） ====================
 
-    /** 通知页面路径变更（应用内映射路径，如 "/about"） */
     fun onUrlChanged(url: String, title: String? = null) {
         currentUrl = url
         title?.let { currentTitle = it }
         session?.onUrlChanged(url, title)
     }
 
-    /** 通知视口尺寸变化（旋转/分屏等，窗口像素；尺寸未变时忽略） */
     fun onViewportResized(width: Int, height: Int) {
         if (width == lastViewportWidth && height == lastViewportHeight) return
         lastViewportWidth = width
@@ -160,95 +181,128 @@ object UmamiRecorder {
         session?.onViewportResized(width, height)
     }
 
-    /** 一次点击（视口内坐标，px） */
     fun onClick(x: Int, y: Int) {
         session?.onClick(x, y)
     }
 
-    /** 触摸移动采样（视口内坐标，px，内部按 50ms 节流） */
     fun onPointerMove(x: Int, y: Int) {
         session?.onPointerMove(x, y)
     }
 
     /**
-     * 页面滚动容器位置更新（px）
+     * 页面滚动容器位置更新
      *
-     * 由各页面的滚动容器观察 [androidx.compose.foundation.ScrollState] 上报，
-     * 热图据此计算精确的滚动深度百分比
+     * @param scrollTopPx 当前滚动位置
+     * @param maxScrollPx 最大可滚动距离
+     * @param containerViewportPx 滚动容器可视高度（px，缺省为 0 表示未知）
      */
-    fun onScrollPosition(scrollTopPx: Int, maxScrollPx: Int) {
-        session?.onScrollPosition(scrollTopPx, maxScrollPx)
+    fun onScrollPosition(scrollTopPx: Int, maxScrollPx: Int, containerViewportPx: Int = 0) {
+        lastScrollTopPx = scrollTopPx
+        lastMaxScrollPx = maxScrollPx
+        session?.onScrollPosition(scrollTopPx, maxScrollPx, containerViewportPx)
     }
 
     // ==================== 内部实现 ====================
 
-    private suspend fun awaitSessionCache(): String? {
+    private suspend fun awaitRecordSession(): UmamiSessionState.RecordSession? {
         repeat(CACHE_WAIT_ATTEMPTS) {
-            UmamiClient.sessionCache()?.let { return it }
+            UmamiClient.recordSession()?.let { return it }
+            if (!TelemetryController.isTelemetryEnabled() || !TelemetryController.isDiagnosticsEnabled()) {
+                return null
+            }
             delay(CACHE_WAIT_INTERVAL_MS)
         }
-        return UmamiClient.sessionCache()
+        return UmamiClient.recordSession()
     }
 
-    /** 采样判定，对齐 recorder.js 的 X()：≥1 恒真、≤0 恒假、否则随机命中 */
     private fun sample(rate: Double): Boolean = when {
         rate >= 1.0 -> true
         rate <= 0.0 -> false
         else -> Random.nextDouble() <= rate
     }
 
-    /**
-     * 单场录制会话：装配回放/热图会话与冲刷循环，到期后停止产生事件
-     */
     private class RecorderSession(
         config: UmamiRecorderConfig,
+        private val recordSession: UmamiSessionState.RecordSession,
         startUrl: String,
         startTitle: String?,
+        viewportWidth: Int,
+        viewportHeight: Int,
+        scrollTopPx: Int,
+        maxScrollPx: Int,
         doReplay: Boolean,
         doHeatmap: Boolean,
         post: (body: String, cache: String) -> Unit,
     ) {
         private val job = SupervisorJob()
-        private val sessionScope = CoroutineScope(job + Dispatchers.Default)
+        private val sessionScope = CoroutineScope(
+            job + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+                TtsLogger.w(TAG) { "recorder 会话协程异常: ${throwable.javaClass.simpleName}" }
+            }
+        )
         private val transport = RecordTransport(
             websiteId = UmamiClient.WEBSITE_ID,
-            cacheProvider = { UmamiClient.sessionCache() },
+            cacheProvider = {
+                recordSession.token.takeIf { UmamiClient.isRecordSessionCurrent(recordSession) }
+            },
             post = post,
         )
-        private val replay = if (doReplay) ReplaySession(transport) else null
+        private val replay = if (doReplay) ReplaySession(transport, strictMask = config.strictMask) else null
         private val heatmap = if (doHeatmap) {
-            val metrics = currentViewport()
-            HeatmapSession(metrics.first, metrics.second)
+            val width = if (viewportWidth > 0) viewportWidth else currentViewport().first
+            val height = if (viewportHeight > 0) viewportHeight else currentViewport().second
+            HeatmapSession(
+                viewportWidth = width,
+                viewportHeight = height,
+                startUrl = startUrl,
+            )
         } else {
             null
         }
+        @Volatile
         private var scrollDebounceJob: Job? = null
 
         @Volatile
         private var expired = false
 
+        @Volatile
+        private var closed = false
+
         init {
+            if (scrollTopPx != 0 || maxScrollPx != 0) {
+                heatmap?.onScrollPosition(scrollTopPx, maxScrollPx)
+            }
             replay?.start(startUrl, startTitle)
             sessionScope.launch {
                 while (isActive) {
+                    if (!UmamiClient.isRecordSessionCurrent(recordSession)) {
+                        close(flush = false)
+                        return@launch
+                    }
                     delay(RECORD_FLUSH_INTERVAL_MS)
                     transport.flushRecord()
                 }
             }
             sessionScope.launch {
                 while (isActive) {
+                    if (!UmamiClient.isRecordSessionCurrent(recordSession)) {
+                        close(flush = false)
+                        return@launch
+                    }
                     delay(HEATMAP_FLUSH_INTERVAL_MS)
                     transport.flushHeatmap()
                 }
             }
             sessionScope.launch {
                 delay(config.maxDurationMs)
-                expire()
+                close(flush = true)
             }
         }
 
         fun onUrlChanged(url: String, title: String?) {
             if (expired) return
+            // 先提交旧页面尚未防抖发送的最深滚动，再重置到新页面
+            heatmap?.takeDeeperScrollEvent()?.let { transport.addHeatmapEvent(it) }
             heatmap?.onUrlChanged(url)
             replay?.onUrlChanged(url, title)
         }
@@ -256,14 +310,12 @@ object UmamiRecorder {
         fun onViewportResized(width: Int, height: Int) {
             if (expired) return
             heatmap?.onViewportResized(width, height)
-            replay?.onViewportResized()
+            replay?.onViewportResized(width, height)
         }
 
         fun onClick(x: Int, y: Int) {
             if (expired) return
-            heatmap?.let {
-                transport.addHeatmapEvent(it.click(x, y))
-            }
+            heatmap?.let { transport.addHeatmapEvent(it.click(x, y)) }
             replay?.onClick(x, y)
         }
 
@@ -272,9 +324,9 @@ object UmamiRecorder {
             replay?.onPointerMove(x, y)
         }
 
-        fun onScrollPosition(scrollTopPx: Int, maxScrollPx: Int) {
+        fun onScrollPosition(scrollTopPx: Int, maxScrollPx: Int, containerViewportPx: Int) {
             if (expired) return
-            heatmap?.onScrollPosition(scrollTopPx, maxScrollPx)
+            heatmap?.onScrollPosition(scrollTopPx, maxScrollPx, containerViewportPx)
             scrollDebounceJob?.cancel()
             scrollDebounceJob = sessionScope.launch {
                 delay(SCROLL_DEBOUNCE_MS)
@@ -282,30 +334,22 @@ object UmamiRecorder {
             }
         }
 
-        /**
-         * 会话结束：停止一切任务并按 [flush] 冲刷或静默丢弃缓冲（[flush] = false 见 [UmamiRecorder.stop]）。
-         * [ReplaySession.close] 必须无条件调用——它持有独立协程作用域（checkoutJob 每 30s 采集），
-         * 不随本会话 [job] 取消；漏掉会让录制在遥测关闭后变成僵尸会话（采集照旧、缓冲无冲刷无界增长）
-         */
+        /** 结束本场：flush=false 时丢弃全部缓冲，绝不触发任何网络发送 */
         fun close(flush: Boolean = true) {
-            expired = true
+            synchronized(this) {
+                if (closed) return
+                closed = true
+                expired = true
+            }
             scrollDebounceJob?.cancel()
-            replay?.close()
+            replay?.close(flushPointers = flush)
             if (flush) {
                 heatmap?.takeDeeperScrollEvent()?.let { transport.addHeatmapEvent(it) }
                 transport.flushAll()
+            } else {
+                transport.discard()
             }
             job.cancel()
-        }
-
-        /** maxDuration 到期：停止产生事件（对齐 recorder.js 的 N 标记），冲刷在途内容 */
-        private fun expire() {
-            if (expired) return
-            expired = true
-            scrollDebounceJob?.cancel()
-            heatmap?.takeDeeperScrollEvent()?.let { transport.addHeatmapEvent(it) }
-            replay?.close()
-            transport.flushAll()
         }
 
         private fun currentViewport(): Pair<Int, Int> {
@@ -315,9 +359,14 @@ object UmamiRecorder {
     }
 
     private fun post(body: String, cache: String) {
+        // 实际网络执行前再校验一次许可与会话：入队后到执行前可能已被关闭/轮换
+        if (!TelemetryController.isTelemetryEnabled() || !TelemetryController.isDiagnosticsEnabled()) return
+        if (UmamiClient.isRemoteDisabled()) return
+        if (UmamiClient.sessionToken() != cache) return
         try {
             val request = Request.Builder()
                 .url("${UmamiClient.BASE_URL}/api/record")
+                .header("User-Agent", UmamiClient.userAgent())
                 .header("x-umami-cache", cache)
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
@@ -325,8 +374,15 @@ object UmamiRecorder {
                 override fun onResponse(call: Call, response: Response) {
                     response.use {
                         if (!it.isSuccessful) {
+                            TelemetryDiagnostics.recordHttpError(it.code)
                             TtsLogger.w(TAG) { "recorder 上报失败: HTTP ${it.code}" }
+                            return
                         }
+                        // HTTP 200 不代表入库：过滤返回 {beep:"boop"}，停用返回 {ok:false, reason}
+                        UmamiClient.handleRecordResponse(
+                            it.code,
+                            readLimitedBody(it, 16 * 1024),
+                        )
                     }
                 }
 

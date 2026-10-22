@@ -41,12 +41,24 @@ jobs:
           EOF
 
       # N19-g：匿名遥测端点与网站 ID 经环境变量注入 BuildConfig（不入库）。
-      # 需在仓库 Secrets 配置 UMAMI_ENDPOINT / UMAMI_WEBSITE_ID；缺一即构建出
-      # "未配置遥测"的包，UmamiClient.isConfigured=false、全部上报静默短路
+      # 发布策略（U13/R09）：构建脚本执行与运行时等价的严格校验；Required 模式缺配
+      # 或非法配置直接失败。摘要读取构建生成的规范化状态，而不是按 secrets 非空猜测。
+      - name: Telemetry configuration policy
+        env:
+          UMAMI_ENDPOINT: ${{ secrets.UMAMI_ENDPOINT }}
+          UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
+          TALKIFY_REQUIRE_TELEMETRY: ${{ vars.TALKIFY_REQUIRE_TELEMETRY }}
+        run: |
+          ./gradlew :app:writeTelemetryStatus --console=plain --no-daemon
+          STATUS=$(head -n 1 app/build/telemetry/telemetry-status.txt)
+          echo "$STATUS" >> "$GITHUB_STEP_SUMMARY"
+          echo "TELEMETRY_STATUS=$STATUS" >> "$GITHUB_ENV"
+
       - name: Build release APKs
         env:
           UMAMI_ENDPOINT: ${{ secrets.UMAMI_ENDPOINT }}
           UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
+          TALKIFY_REQUIRE_TELEMETRY: ${{ vars.TALKIFY_REQUIRE_TELEMETRY }}
         run: ./gradlew assembleRelease --console=plain --no-daemon
 
       - name: Collect artifacts
@@ -70,3 +82,15 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+      # R09：禁用版本把规范化状态自动写入 Release 说明，不能只依赖维护者手写
+      - name: Annotate release with telemetry status
+        if: contains(env.TELEMETRY_STATUS, 'DISABLED')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          BODY=$(gh release view "$TAG" --json body -q .body)
+          NOTES=$(mktemp)
+          printf '%s\n\n%s\n' "$TELEMETRY_STATUS" "$BODY" > "$NOTES"
+          gh release edit "$TAG" --notes-file "$NOTES"

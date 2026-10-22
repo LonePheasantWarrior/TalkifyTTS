@@ -20,8 +20,9 @@ internal data class UiSnapshot(
 /**
  * 单个 UI 节点
  *
- * [text]/[contentDescription] 均为无障碍可见内容；[editable] 节点的输入内容
- * 在捕获层已按隐私红线丢弃，序列化层不再呈现任何原文
+ * [text]/[contentDescription] 均为无障碍可见内容；[masked] 表示该节点及其整个子树
+ * 命中隐私策略（可编辑输入、strict 模式或业务声明的敏感容器），其文本在捕获层
+ * 即被丢弃，序列化层不得再呈现任何原文。
  */
 internal data class UiNode(
     val left: Int,
@@ -32,5 +33,6 @@ internal data class UiNode(
     val contentDescription: String? = null,
     val role: String? = null,
     val editable: Boolean = false,
+    val masked: Boolean = false,
     val children: List<UiNode> = emptyList(),
 )

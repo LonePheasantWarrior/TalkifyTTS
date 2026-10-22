@@ -1,5 +1,12 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.URI
 import java.util.Properties
+import java.util.UUID
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+}
 
 // 签名配置（§7.3）：优先读取 keystore.properties（已 gitignore，不入库）。
 // 文件不存在时（本地 debug / 未配置密钥的 CI）不注册签名配置，release 产物
@@ -9,9 +16,141 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
+// ==================== 遥测构建配置（严格校验与运行时等价） ====================
+// 公开仓库不暴露自建服务器地址：维护者经 local.properties 或 CI 环境变量注入。
+// 这里与 TelemetryConfigValidator 使用同一套规则；任一值非法都拒绝构建，避免
+// 打出“看起来已启用、实际全部短路”的包。
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val umamiEndpoint = (localProperties.getProperty("umami.endpoint")
+    ?: providers.environmentVariable("UMAMI_ENDPOINT").orNull ?: "").trim()
+val umamiWebsiteId = (localProperties.getProperty("umami.websiteId")
+    ?: providers.environmentVariable("UMAMI_WEBSITE_ID").orNull ?: "").trim()
+val debugUmamiEndpoint = (localProperties.getProperty("umami.debugEndpoint")
+    ?: providers.environmentVariable("UMAMI_DEBUG_ENDPOINT").orNull ?: "").trim()
+val debugUmamiWebsiteId = (localProperties.getProperty("umami.debugWebsiteId")
+    ?: providers.environmentVariable("UMAMI_DEBUG_WEBSITE_ID").orNull ?: "").trim()
+val telemetryRequired = (providers.gradleProperty("telemetryRequired").orNull
+    ?: providers.environmentVariable("TALKIFY_REQUIRE_TELEMETRY").orNull)
+    ?.equals("true", ignoreCase = true) == true
+
+val TELEMETRY_UUID_PATTERN =
+    Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+/** 返回错误说明；null 表示配置合法。空值由调用方按“未配置”处理。 */
+fun telemetryConfigError(endpoint: String, websiteId: String): String? {
+    if (endpoint.isBlank() || websiteId.isBlank()) return "endpoint 与 websiteId 必须同时提供"
+    if (endpoint.any { it.isWhitespace() || it.isISOControl() }) return "endpoint 含空白或控制字符"
+    if (!TELEMETRY_UUID_PATTERN.matches(websiteId)) return "websiteId 不是 UUID"
+    if (runCatching { UUID.fromString(websiteId) }.isFailure) return "websiteId 不是 UUID"
+    val uri = runCatching { URI(endpoint) }.getOrNull() ?: return "endpoint 不是合法 URI"
+    if (!uri.scheme.equals("https", ignoreCase = true)) return "endpoint 必须为 HTTPS"
+    if (uri.host.isNullOrBlank()) return "endpoint 缺少 host"
+    if (uri.port == 0 || uri.port > 65535) return "endpoint 端口非法"
+    if (!uri.userInfo.isNullOrEmpty()) return "endpoint 不得包含凭据"
+    if (uri.rawQuery != null) return "endpoint 不得包含 query"
+    if (uri.rawFragment != null) return "endpoint 不得包含 fragment"
+    return null
+}
+
+val releaseConfigError = if (umamiEndpoint.isBlank() && umamiWebsiteId.isBlank()) {
+    null
+} else {
+    telemetryConfigError(umamiEndpoint, umamiWebsiteId)
+}
+if (releaseConfigError != null) {
+    throw GradleException("遥测配置非法：$releaseConfigError")
+}
+if (telemetryRequired && (umamiEndpoint.isBlank() || umamiWebsiteId.isBlank())) {
+    throw GradleException("遥测配置被声明为必需（telemetryRequired=true），但 umami.endpoint / umami.websiteId 缺失")
+}
+val telemetryStatus = if (umamiEndpoint.isBlank() || umamiWebsiteId.isBlank()) {
+    "Telemetry: DISABLED (missing configuration)"
+} else {
+    "Telemetry: ENABLED (validated endpoint and website ID)"
+}
+
+val debugConfigError = if (debugUmamiEndpoint.isBlank() && debugUmamiWebsiteId.isBlank()) {
+    null
+} else {
+    telemetryConfigError(debugUmamiEndpoint, debugUmamiWebsiteId)
+}
+if (debugConfigError != null) {
+    throw GradleException("debug 遥测配置非法：$debugConfigError")
+}
+val debugTelemetryStatus = if (debugUmamiEndpoint.isBlank() || debugUmamiWebsiteId.isBlank()) {
+    "Telemetry(debug): DISABLED (missing debug configuration)"
+} else {
+    "Telemetry(debug): ENABLED (validated debug endpoint and website ID)"
+}
+
+/** 把任意配置值转义为 Java/Kotlin 字符串字面量，避免引号/反斜杠注入 BuildConfig */
+fun javaStringLiteral(value: String): String = buildString {
+    append('"')
+    value.forEach { char ->
+        when (char) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> if (char.code < 0x20) append("\\u%04x".format(char.code)) else append(char)
+        }
+    }
+    append('"')
+}
+
+val writeTelemetryStatus = tasks.register("writeTelemetryStatus") {
+    val release = telemetryStatus
+    val debug = debugTelemetryStatus
+    val output = layout.buildDirectory.file("telemetry/telemetry-status.txt")
+    inputs.property("releaseStatus", release)
+    inputs.property("debugStatus", debug)
+    outputs.file(output)
+    doLast {
+        val file = output.get().asFile
+        file.parentFile.mkdirs()
+        file.writeText("$release\n$debug\n")
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    dependsOn(writeTelemetryStatus)
+}
+
+/**
+ * 构建侧校验矩阵：与运行时单测使用同一组用例。
+ * 只验证纯函数，不读取真实配置，也不访问网络。
+ */
+val telemetryValidationResults: List<String> = run {
+    val validId = "123e4567-e89b-12d3-a456-426614174000"
+    listOf(
+        Triple("https://telemetry.example.com", validId, true),
+        Triple("https://telemetry.example.com/umami", validId, true),
+        Triple("https:///", validId, false),
+        Triple("https://example.com/%zz", validId, false),
+        Triple("https://user:pass@example.com", validId, false),
+        Triple("https://example.com?x=1", validId, false),
+        Triple("https://example.com#frag", validId, false),
+        Triple("http://example.com", validId, false),
+        Triple("https://example.com:99999", validId, false),
+        Triple("https://example.com", "------------------------------------", false),
+        Triple("https://example.com", "123e4567-e89b-12d3-a456-42661417400", false),
+    ).map { (endpoint, websiteId, expectedValid) ->
+        val actualValid = telemetryConfigError(endpoint, websiteId) == null
+        "endpoint=$endpoint websiteId=$websiteId expected=$expectedValid actual=$actualValid ok=${actualValid == expectedValid}"
+    }
+}
+
+tasks.register("verifyTelemetryConfigMatrix") {
+    val results = telemetryValidationResults
+    doLast {
+        results.forEach { line ->
+            check(line.endsWith("ok=true")) { "遥测配置校验矩阵不一致: $line" }
+        }
+    }
 }
 
 android {
@@ -35,22 +174,14 @@ android {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
-        // N19-g：匿名遥测端点与网站 ID 不入库（公开仓库不暴露自建服务器地址）。
-        // 维护者经 local.properties（umami.endpoint / umami.websiteId，已 gitignore）
-        // 或 CI 环境变量（UMAMI_ENDPOINT / UMAMI_WEBSITE_ID）注入；二者缺一即
-        // 构建出"未配置遥测"的包，UmamiClient 侧自检短路、零网络流量
-        val localProperties = Properties().apply {
-            val file = rootProject.file("local.properties")
-            if (file.exists()) file.inputStream().use { load(it) }
-        }
+        // 匿名遥测配置在文件顶部统一解析并严格校验；这里只负责注入。
         // 经 providers.environmentVariable 读取（而非 System.getenv）：configuration
-        // cache 将其追踪为输入，环境变量变化会触发重新配置，避免复用缓存条目打出旧值
-        val umamiEndpoint = localProperties.getProperty("umami.endpoint")
-            ?: providers.environmentVariable("UMAMI_ENDPOINT").orNull ?: ""
-        val umamiWebsiteId = localProperties.getProperty("umami.websiteId")
-            ?: providers.environmentVariable("UMAMI_WEBSITE_ID").orNull ?: ""
-        buildConfigField("String", "UMAMI_ENDPOINT", "\"$umamiEndpoint\"")
-        buildConfigField("String", "UMAMI_WEBSITE_ID", "\"$umamiWebsiteId\"")
+        // cache 将其追踪为输入，环境变量变化会触发重新配置，避免复用缓存条目打出旧值。
+        if (telemetryStatus.contains("DISABLED")) {
+            logger.lifecycle("提示：未注入生产 Umami 配置，release 包遥测将全部短路（发布记录须注明）")
+        }
+        buildConfigField("String", "UMAMI_ENDPOINT", javaStringLiteral(umamiEndpoint))
+        buildConfigField("String", "UMAMI_WEBSITE_ID", javaStringLiteral(umamiWebsiteId))
     }
 
     splits {
@@ -76,6 +207,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // U13：debug 联调只使用独立测试站点；未提供 debug 配置时保持空值，
+            // 绝不回退到生产 endpoint
+            buildConfigField("String", "UMAMI_ENDPOINT", javaStringLiteral(debugUmamiEndpoint))
+            buildConfigField("String", "UMAMI_WEBSITE_ID", javaStringLiteral(debugUmamiWebsiteId))
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

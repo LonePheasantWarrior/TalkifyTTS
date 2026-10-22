@@ -8,6 +8,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recor
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.POINTER_BATCH_INTERVAL_MS
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.ReplaySession.Companion.POINTER_SAMPLE_INTERVAL_MS
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,10 +40,14 @@ import org.json.JSONObject
  */
 internal class ReplaySession(
     private val transport: RecordTransport,
+    private val strictMask: Boolean = false,
     private val clockMs: () -> Long = System::currentTimeMillis,
 ) {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val crashGuard = CoroutineExceptionHandler { _, throwable ->
+        TtsLogger.w(TAG) { "回放协程异常: ${throwable.javaClass.simpleName}" }
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + crashGuard)
     private val lock = Any()
 
     @Volatile
@@ -56,7 +61,11 @@ internal class ReplaySession(
     private val pointerBuffer = mutableListOf<PointerPos>()
     private var lastPointerSampleMs = 0L
     private var snapshotInFlight = false
+
+    @Volatile
     private var checkoutJob: Job? = null
+
+    @Volatile
     private var pointerFlushJob: Job? = null
 
     private data class PointerPos(val x: Int, val y: Int, val nodeId: Int, val atMs: Long)
@@ -96,7 +105,14 @@ internal class ReplaySession(
         takeSnapshot()
     }
 
-    fun onViewportResized() = takeSnapshot()
+    fun onViewportResized(width: Int, height: Int) {
+        try {
+            transport.addRecordEvent(Rrweb.viewportResizeEvent(width, height, clockMs()))
+        } catch (e: Exception) {
+            TtsLogger.w(TAG) { "viewport-resize 事件构造失败: ${e.message}" }
+        }
+        takeSnapshot()
+    }
 
     /** 记录一次触摸移动（采样节流，仅暂存不发送） */
     fun onPointerMove(x: Int, y: Int) {
@@ -115,11 +131,11 @@ internal class ReplaySession(
         transport.addRecordEvent(Rrweb.clickEvent(nodeId, x, y, clockMs()))
     }
 
-    /** 会话结束：停止周期任务并释放协程 */
-    fun close() {
+    /** 会话结束：停止周期任务并释放协程；flushPointers=false 时丢弃未发送轨迹 */
+    fun close(flushPointers: Boolean = true) {
         checkoutJob?.cancel()
         pointerFlushJob?.cancel()
-        flushPointers()
+        if (flushPointers) flushPointers()
         scope.cancel()
     }
 
@@ -154,17 +170,19 @@ internal class ReplaySession(
     }
 
     private fun flushPointers() {
+        // 官方 recorder.js 以冲刷时刻为事件时间，并把各采样点 offset 转为负的相对时间；
+        // 若用批次起点做 offset、冲刷时刻做 timestamp，历史点会被画到未来
+        val eventTimeMs = clockMs()
         val batch = synchronized(lock) {
             if (pointerBuffer.isEmpty()) return
-            val batchStart = pointerBuffer.first().atMs
             val positions = JSONArray()
             for (pos in pointerBuffer) {
-                positions.put(Rrweb.mousePosition(pos.x, pos.y, pos.nodeId, pos.atMs - batchStart))
+                positions.put(Rrweb.mousePosition(pos.x, pos.y, pos.nodeId, pos.atMs - eventTimeMs))
             }
             pointerBuffer.clear()
             positions
         }
-        transport.addRecordEvent(Rrweb.mouseMoveEvent(batch, clockMs()))
+        transport.addRecordEvent(Rrweb.mouseMoveEvent(batch, eventTimeMs))
     }
 
     // ==================== 无障碍树捕获（主线程） ====================
@@ -180,7 +198,7 @@ internal class ReplaySession(
             val rootNode = toUiNode(rootInfo, depth = 0, counter) ?: return null
             UiSnapshot(
                 url = url,
-                title = title,
+                title = if (strictMask) null else title,
                 screenWidth = metrics.widthPixels,
                 screenHeight = metrics.heightPixels,
                 root = rootNode
@@ -198,28 +216,34 @@ internal class ReplaySession(
      * contentDescription；可编辑节点仅记录 editable 标记。带节点数与深度上限，
      * 防止异常树耗尽资源
      */
-    private fun toUiNode(info: AccessibilityNodeInfo, depth: Int, counter: IntArray): UiNode? {
+    private fun toUiNode(
+        info: AccessibilityNodeInfo,
+        depth: Int,
+        counter: IntArray,
+        maskedByAncestor: Boolean = false,
+    ): UiNode? {
         counter[0]++
         if (depth > MAX_CAPTURE_DEPTH || counter[0] > MAX_CAPTURE_NODES) return null
         val bounds = Rect()
         info.getBoundsInScreen(bounds)
-        // 隐私红线前移（N11）：可编辑节点（API Key 输入框等）文本在捕获层即丢弃，
-        // 不进入内存中的语义树；序列化层 displayText 的 editable 守卫保留为第二道防线
-        val editable = info.isEditable
+        // 隐私红线前移：可编辑节点及其子树、strict 模式下的全部节点文本在捕获层即丢弃；
+        // 序列化层 displayText 的 masked 守卫保留为第二道防线
+        val masked = maskedByAncestor || info.isEditable || strictMask
         return UiNode(
             left = bounds.left,
             top = bounds.top,
             width = bounds.width(),
             height = bounds.height(),
-            text = if (editable) null else info.text?.toString()?.takeIf { it.isNotBlank() },
-            contentDescription = if (editable) null else info.contentDescription?.toString()?.takeIf { it.isNotBlank() },
-            role = mapRole(info.className?.toString(), editable),
-            editable = editable,
+            text = if (masked) null else info.text?.toString()?.takeIf { it.isNotBlank() },
+            contentDescription = if (masked) null else info.contentDescription?.toString()?.takeIf { it.isNotBlank() },
+            role = mapRole(info.className?.toString(), info.isEditable),
+            editable = info.isEditable,
+            masked = masked,
             children = buildList {
                 for (i in 0 until info.childCount) {
                     val child = info.getChild(i) ?: continue
                     if (!child.isVisibleToUser) continue
-                    toUiNode(child, depth + 1, counter)?.let { add(it) }
+                    toUiNode(child, depth + 1, counter, masked)?.let { add(it) }
                 }
             }
         )

@@ -1,125 +1,80 @@
 package com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry
 
-
 /**
- * Talkify 遥测服务（门面）
+ * 遥测门面（业务层唯一入口）
  *
- * 作为整个应用遥测能力的**唯一入口**，所有事件上报统一经过此服务，
- * 严禁在其他位置直接引用底层实现（如 [UmamiClient]）。
+ * 业务层只依赖本门面与语义层 Tracker；许可、队列、会话与网络发送由
+ * [TelemetryController] / [UmamiClient] 统一承担。
  *
- * **分层设计**：
- * - **门面层**（本组件）：定义统一的 `trackEvent` 接口，业务层零感知底层实现
- * - **语义层**：[TtsTelemetryTracker] 集中管理 TTS 埋点的事件名与属性 schema
- * - **画像层**：[DeviceInfoCollector] 负责匿名设备信息收集（零权限）
- * - **传输层**：[UmamiClient] 封装 Umami 协议与网络发送
+ * **隐私与口径约定**：
+ * - 只允许枚举值、ID 类别、计数与时长；不得携带朗读文本、API Key、URL、代理地址
+ *   或用户自由输入（schema 层会拒绝 URL/换行/超长自由文本）
+ * - 打开页面/抽屉/弹窗不是事件：整页导航走 [ScreenTracker]，抽屉/弹窗走
+ *   [AppPageTracker.surfaceOpened]
+ * - 系统 TTS 事件使用 origin = [TelemetryOrigin.TTS_SERVICE] 与固定路径 `/tts-service`，
+ *   不伪装成主页点击
  *
- * **设计原则**：
- * - **低耦合**：业务层只依赖本门面，更换统计后端只需替换传输层，业务代码零改动
- * - **零阻塞**：上报即入队即返回，绝不阻塞调用线程
- * - **零权限**：不额外收集敏感信息，匿名设备信息由 [DeviceInfoCollector] 负责
- * - **用户开关门控**（N2）：全部上报入口统一受用户遥测开关短路——开关状态由
- *   [TalkifyApplication.onCreate] 注入（持久化默认开启）、关于页切换时经
- *   [setUserEnabled] 热生效；状态未知（进程极早路径）时按关闭处理
- *
+ * @see TelemetryController
  * @see UmamiClient
- * @see TtsTelemetryTracker
- * @see DeviceInfoCollector
  */
 object TalkifyTelemetry {
 
-    /** 用户遥测开关缓存；null = 尚未注入（按关闭处理） */
-    @Volatile
-    private var userEnabled: Boolean? = null
+    fun isUserEnabled(): Boolean = TelemetryController.isTelemetryEnabled()
 
-    /**
-     * 注入用户遥测开关状态
-     *
-     * [com.github.lonepheasantwarrior.talkify.TalkifyApplication] 启动时读取持久化
-     * 状态注入；关于页开关切换时调用以热生效（含关闭时立即停录 recorder 会话）
-     */
-    fun setUserEnabled(enabled: Boolean) {
-        userEnabled = enabled
-    }
-
-    /** 用户遥测开关当前是否开启（未注入时按关闭） */
-    fun isUserEnabled(): Boolean = userEnabled == true
-
-    /**
-     * 上报一次页面访问（Pageview）
-     *
-     * Umami 仪表盘的访客/浏览量等核心指标仅由 pageview 驱动（自定义事件不参与计算），
-     * 应在应用启动时上报一次，作为统计会话锚点；页面路由变化时也应补发（对齐
-     * script.js 的 SPA 行为）。
-     *
-     * @param url   页面路径，默认 "/"
-     * @param title 页面标题（可选，对齐 script.js 的 document.title 字段）
-     */
-    fun trackPageView(url: String = "/", title: String? = null) {
-        if (!isUserEnabled()) return
-        UmamiClient.trackPage(url, title)
+    fun trackPageView(
+        url: String = ScreenTracker.currentScreen(),
+        title: String? = null,
+        permit: CollectionPermit? = null,
+    ): Boolean {
+        val effectivePermit = permit ?: TelemetryController.capturePermit()
+        if (!permitAllowed(effectivePermit)) return false
+        return UmamiClient.trackPage(url, title, effectivePermit)
     }
 
     /**
-     * 上报一个简单事件
+     * 上报一个自定义事件
      *
-     * 使用示例：
-     * ```kotlin
-     * TalkifyTelemetry.trackEvent("settings_viewed")
-     * ```
-     *
-     * @param eventName 事件名称（建议使用 snake_case）
+     * @param eventName  已注册的事件名（见 [TelemetrySchema]）
+     * @param properties 仅 String / Int / Long；字段必须属于该事件的白名单
+     * @param url        事件发生的真实页面路径，默认取当前 screen
+     * @param origin     事件来源（ui / tts_service / download_service / startup / app / crash_repair）
+     * @param permit     异步/跨线程生产者在创建时捕获的许可；同步 UI 事件可省略
      */
-    fun trackEvent(eventName: String) {
-        if (!isUserEnabled()) return
-        UmamiClient.track(eventName, emptyMap())
-    }
-
-    /**
-     * 上报一个带自定义属性的事件
-     *
-     * 使用示例：
-     * ```kotlin
-     * TalkifyTelemetry.trackEvent("tts_synthesis", mapOf(
-     *     "provider_id" to "aliyunBailian",
-     *     "text_length" to 128
-     * ))
-     * ```
-     *
-     * @param eventName  事件名称（建议使用 snake_case）
-     * @param properties 自定义属性，仅支持 String 和 Int 类型值
-     * @param url        事件发生的页面路径（默认 "/"；如关于页事件传 "/about"，
-     *                   供仪表盘按页面拆分事件）
-     */
-    fun trackEvent(eventName: String, properties: Map<String, Any>, url: String = "/") {
-        if (!isUserEnabled()) return
-        UmamiClient.track(eventName, properties, url)
-    }
-
-    /**
-     * 以阻塞方式上报一个带自定义属性的事件
-     *
-     * 仅供**崩溃链路**使用：进程随时可能被杀死，异步入队的请求大概率无法送达。
-     * 内部仍全量容错（失败静默），调用方应在外层限时（如后台线程 + join 超时），
-     * 避免拖慢崩溃处理。其余业务一律使用 [trackEvent]。
-     *
-     * @param eventName  事件名称（建议使用 snake_case）
-     * @param properties 自定义属性，仅支持 String 和 Int 类型值
-     */
-    fun trackEventBlocking(eventName: String, properties: Map<String, Any>) {
-        if (!isUserEnabled()) return
-        UmamiClient.trackBlocking(eventName, properties)
+    fun trackEvent(
+        eventName: String,
+        properties: Map<String, Any> = emptyMap(),
+        url: String = ScreenTracker.currentScreen(),
+        origin: String = TelemetryOrigin.UI,
+        permit: CollectionPermit? = null,
+    ): Boolean {
+        val effectivePermit = permit ?: TelemetryController.capturePermit()
+        if (!permitAllowed(effectivePermit)) return false
+        val data = if (origin == TelemetryOrigin.UI && !properties.containsKey("screen")) {
+            LinkedHashMap<String, Any>(properties.size + 1).apply {
+                putAll(properties)
+                // 事件路径即其归属页面；显式传 /about 时不会因导航时序被写成其它页面
+                put(
+                    "screen",
+                    if (TelemetrySchema.isValidScreen(url)) url else ScreenTracker.currentScreen()
+                )
+            }
+        } else {
+            properties
+        }
+        return UmamiClient.track(eventName, data, url, origin, effectivePermit)
     }
 
     /**
      * 上报一次会话身份声明（Identify）
      *
-     * 为当前统计会话附加画像属性（对齐 script.js 的 `umami.identify()`），
-     * 不参与访客/浏览量等核心指标，仅与会话关联展示。
-     *
-     * @param properties 会话属性，仅支持 String 和 Int 类型值
+     * 当前工程没有业务调用；保留协议能力，使用前需按部署版本验证字段语义。
      */
-    fun identify(properties: Map<String, Any>) {
-        if (!isUserEnabled()) return
-        UmamiClient.identify(properties)
+    fun identify(properties: Map<String, Any>, permit: CollectionPermit? = null): Boolean {
+        val effectivePermit = permit ?: TelemetryController.capturePermit()
+        if (!permitAllowed(effectivePermit)) return false
+        return UmamiClient.identify(properties, effectivePermit)
     }
+
+    private fun permitAllowed(permit: CollectionPermit?): Boolean =
+        if (permit == null) isUserEnabled() else TelemetryController.isPermitCurrent(permit)
 }

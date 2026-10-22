@@ -4,6 +4,7 @@ import android.media.AudioFormat
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker.PreviewAttempt
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryIds
 import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_POLL_INTERVAL_MS
 import com.github.lonepheasantwarrior.talkify.service.TtsPreviewPlayer.Companion.WAVE_WINDOW_MS
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
@@ -156,7 +157,17 @@ class TtsPreviewPlayer(
         }
 
         playbackAttempt = AppActionTracker.beginPreviewPlayback(
-            providerId, config.modelId, config.voiceId, text.length
+            providerId,
+            TelemetryIds.model(
+                provider.getEffectiveModelId(config),
+                provider.getDefaultModelId(),
+                provider.getKnownModelIds(),
+            ),
+            TelemetryIds.voice(
+                provider.getEffectiveVoiceId(config),
+                provider::isVoiceIdCorrect,
+            ),
+            text.length
         )
 
         transition(STATE_PLAYING)

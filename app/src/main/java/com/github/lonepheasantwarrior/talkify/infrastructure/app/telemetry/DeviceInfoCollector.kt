@@ -43,21 +43,29 @@ object DeviceInfoCollector {
         collectMemoryInfo(context, info)
         collectNetworkType(context, info)
 
-        TtsLogger.i(TAG) { "设备信息收集完成: ${info.keys.joinToString(", ")}" }
-        return info
+        // 空字符串会被 schema 视为非法值并拖累整条 app_foregrounded，提前剔除
+        val sanitized = info.filterValues { value ->
+            when (value) {
+                is String -> value.isNotBlank()
+                is Int -> true
+                else -> false
+            }
+        }
+        TtsLogger.i(TAG) { "设备信息收集完成: ${sanitized.keys.joinToString(", ")}" }
+        return sanitized
     }
 
     // ==================== 设备身份 ====================
 
     private fun collectDeviceIdentity(info: MutableMap<String, Any>) {
-        info["device_model"] = Build.MODEL
-        info["device_brand"] = Build.BRAND
-        info["manufacturer"] = Build.MANUFACTURER
-        info["device_codename"] = Build.DEVICE
+        info["device_model"] = Build.MODEL.safeTelemetryValue()
+        info["device_brand"] = Build.BRAND.safeTelemetryValue()
+        info["manufacturer"] = Build.MANUFACTURER.safeTelemetryValue()
+        info["device_codename"] = Build.DEVICE.safeTelemetryValue()
 
         // SoC 平台信息（用于排查特定芯片组的兼容性问题）
         if (Build.HARDWARE.isNotBlank() && Build.HARDWARE != "unknown") {
-            info["soc_platform"] = Build.HARDWARE
+            info["soc_platform"] = Build.HARDWARE.safeTelemetryValue()
         }
     }
 
@@ -81,13 +89,17 @@ object DeviceInfoCollector {
     /**
      * 获取用户所在国家/地区代码（ISO 3166-1 alpha-2）
      *
-     * 优先级：SIM 卡注册网络国家 > 系统语言设置的国家
-     * 两种方式均无需任何权限，且仅精确到国家级，不涉及精细定位
+     * 优先级：SIM 卡注册网络国家 > 系统语言设置的国家。
+     * 注意：这是客户端自定义属性 `client_country`，不会覆盖 Umami 基于请求来源
+     * （IP/代理）解析的国家；两者含义不同，报表中不得混读。
      */
     private fun collectCountry(context: Context, info: MutableMap<String, Any>) {
-        val country = getNetworkCountry(context) ?: getLocaleCountry()
+        val networkCountry = getNetworkCountry(context)
+        val localeCountry = if (networkCountry == null) getLocaleCountry() else null
+        val country = networkCountry ?: localeCountry
         if (!country.isNullOrBlank()) {
-            info["country"] = country.uppercase()
+            info["client_country"] = country.uppercase().take(MAX_VALUE_LENGTH)
+            info["client_country_source"] = if (networkCountry != null) "sim" else "locale"
         }
     }
 
@@ -165,6 +177,14 @@ object DeviceInfoCollector {
     // ==================== 常量 ====================
 
     private const val ONE_MB = 1024L * 1024L
+
+    /** 与 TelemetrySchema 的默认字符串上限一致，避免个别超长设备字段导致整条事件被拒 */
+    private const val MAX_VALUE_LENGTH = 64
+
+    private fun String.safeTelemetryValue(): String =
+        map { if (it.isISOControl()) ' ' else it }
+            .joinToString("")
+            .take(MAX_VALUE_LENGTH)
 
     // Screen density bucket thresholds (dpi)
     private const val LDPI_MAX_DP = 120

@@ -259,17 +259,17 @@ class LocalModelDownloadService : Service() {
     private suspend fun downloadModel(modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo) {
         val modelDir = LocalModelManager.getModelDownloadedDir(modelInfo.id)
         if (modelDir == null) {
-            onDownloadFailed(modelInfo, "无法创建模型目录")
+            onDownloadFailed(modelInfo, "无法创建模型目录", "dir_create")
             return
         }
         if (!modelDir.exists() && !modelDir.mkdirs()) {
-            onDownloadFailed(modelInfo, "创建模型目录失败")
+            onDownloadFailed(modelInfo, "创建模型目录失败", "dir_create")
             return
         }
 
         // 磁盘空间预检：下载体积超出可用空间时提前失败，避免写满用户磁盘（P2-I2）
         if (!hasEnoughDiskSpace(modelDir, modelInfo.downloadSizeBytes)) {
-            onDownloadFailed(modelInfo, "磁盘空间不足，请清理后重试")
+            onDownloadFailed(modelInfo, "磁盘空间不足，请清理后重试", "disk_space")
             cleanupPartialFiles(modelDir)
             return
         }
@@ -280,7 +280,7 @@ class LocalModelDownloadService : Service() {
             modelDir.deleteRecursively()
         }
         if (!modelDir.exists() && !modelDir.mkdirs()) {
-            onDownloadFailed(modelInfo, "创建模型目录失败")
+            onDownloadFailed(modelInfo, "创建模型目录失败", "dir_create")
             return
         }
 
@@ -311,7 +311,7 @@ class LocalModelDownloadService : Service() {
                 if (isCancelled.get()) {
                     onDownloadCancelled(modelInfo, modelDir)
                 } else {
-                    onDownloadFailed(modelInfo, "文件下载失败: $fileName")
+                    onDownloadFailed(modelInfo, "文件下载失败: $fileName", "file_download")
                     cleanupPartialFiles(modelDir)
                 }
                 return
@@ -336,7 +336,7 @@ class LocalModelDownloadService : Service() {
                         if (isCancelled.get()) {
                             onDownloadCancelled(modelInfo, modelDir)
                         } else {
-                            onDownloadFailed(modelInfo, "归档资源下载失败: $archiveUrl")
+                            onDownloadFailed(modelInfo, "归档资源下载失败: $archiveUrl", "archive_download")
                             cleanupPartialFiles(modelDir)
                         }
                         return
@@ -350,7 +350,7 @@ class LocalModelDownloadService : Service() {
                         if (isCancelled.get()) {
                             onDownloadCancelled(modelInfo, modelDir)
                         } else {
-                            onDownloadFailed(modelInfo, "归档资源解压失败: $subDir")
+                            onDownloadFailed(modelInfo, "归档资源解压失败: $subDir", "archive_extract")
                             cleanupPartialFiles(modelDir)
                         }
                         return
@@ -365,7 +365,7 @@ class LocalModelDownloadService : Service() {
         // ========== 阶段切换：归档布局归一化 ==========
         if (modelInfo.archiveAssets.isNotEmpty()) {
             if (!normalizeArchiveLayout(modelDir, modelInfo)) {
-                onDownloadFailed(modelInfo, "归档解压布局异常，缺少必需文件")
+                onDownloadFailed(modelInfo, "归档解压布局异常，缺少必需文件", "archive_layout")
                 cleanupPartialFiles(modelDir)
                 return
             }
@@ -381,7 +381,7 @@ class LocalModelDownloadService : Service() {
 
         // 验证所有文件完整性（downloadFileInfo + archiveAssets 解压产物）
         if (!verifyDownloadedFiles(modelDir, urlEntries, modelInfo.requiredLocalFiles)) {
-            onDownloadFailed(modelInfo, "模型文件校验失败，部分文件不完整")
+            onDownloadFailed(modelInfo, "模型文件校验失败，部分文件不完整", "file_verify")
             cleanupPartialFiles(modelDir)
             return
         }
@@ -389,7 +389,7 @@ class LocalModelDownloadService : Service() {
         // MD5 校验（占位，后续补充真实 MD5 值后启用）
         if (modelInfo.md5.isNotBlank()) {
             if (!verifyModelIntegrity(modelDir, modelInfo)) {
-                onDownloadFailed(modelInfo, "MD5 校验失败，模型文件可能已损坏")
+                onDownloadFailed(modelInfo, "MD5 校验失败，模型文件可能已损坏", "md5_mismatch")
                 cleanupPartialFiles(modelDir)
                 return
             }
@@ -861,7 +861,8 @@ class LocalModelDownloadService : Service() {
 
     private fun onDownloadFailed(
         modelInfo: com.github.lonepheasantwarrior.talkify.domain.model.LocalModelInfo,
-        reason: String
+        reason: String,
+        failureCode: String
     ) {
         TtsLogger.e("Download failed: ${modelInfo.id}, reason: $reason", tag = TAG)
         LocalModelManager.setDownloadingModelId(null)
@@ -870,7 +871,7 @@ class LocalModelDownloadService : Service() {
             AppActionTracker.STATUS_FAILED,
             (SystemClock.elapsedRealtime() - downloadStartUptimeMs).toInt(),
             lastProgress,
-            errorReason = reason
+            failureCode = failureCode
         )
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)

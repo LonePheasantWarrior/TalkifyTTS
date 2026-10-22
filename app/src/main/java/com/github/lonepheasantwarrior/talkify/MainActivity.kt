@@ -26,7 +26,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.ScreenTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryCaptureHost
@@ -129,20 +129,21 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 观察导航路由变化，对齐 script.js 的 SPA 行为：
-     * 路由指向新页面时补发 pageview（驱动 Pages 面板），并通知 recorder
-     * 产出 url-change 事件与重拍回放快照
+     * 把 NavController 的真实路由同步给 [ScreenTracker]（pageview 的唯一责任方）
+     * 与录制子系统。页面计数去重由 ScreenTracker 统一处理：
+     * 旋转/重组不重复，温启动恢复关于页时上报关于页而非主页。
      */
     @Composable
     private fun ObserveRouteForTelemetry(navController: NavController) {
         DisposableEffect(navController) {
-            // 以附着时的当前路由初始化，避免恢复/重组时对同一页面重复上报
-            var lastUrl = telemetryRouteOf(navController.currentDestination?.route)?.first
+            val current = telemetryRouteOf(navController.currentDestination?.route)
+            current?.let {
+                ScreenTracker.onScreenChanged(it.first, it.second)
+                UmamiRecorder.onUrlChanged(it.first, it.second)
+            }
             val listener = NavController.OnDestinationChangedListener { _, destination, _ ->
                 val target = telemetryRouteOf(destination.route) ?: return@OnDestinationChangedListener
-                if (target.first == lastUrl) return@OnDestinationChangedListener
-                lastUrl = target.first
-                TalkifyTelemetry.trackPageView(target.first, target.second)
+                ScreenTracker.onScreenChanged(target.first, target.second)
                 UmamiRecorder.onUrlChanged(target.first, target.second)
             }
             navController.addOnDestinationChangedListener(listener)

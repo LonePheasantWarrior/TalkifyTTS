@@ -5,9 +5,12 @@
    2. talkify_local_model_state：模型"已下载"状态——模型文件本体在
       getExternalFilesDir，不在 Auto Backup 范围内，恢复出孤儿状态会导致
       引擎按"已下载"加载失败
+   3. talkify_crash_reports：崩溃摘要含本机栈帧，只在用户统计许可有效时
+      补报一次；不随云备份/换机迁移扩散
    See https://developer.android.com/guide/topics/data/autobackup
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="talkify_engine_configs.xml"/>
     <exclude domain="sharedpref" path="talkify_local_model_state.xml"/>
+    <exclude domain="sharedpref" path="talkify_crash_reports.xml"/>
 </full-backup-content>

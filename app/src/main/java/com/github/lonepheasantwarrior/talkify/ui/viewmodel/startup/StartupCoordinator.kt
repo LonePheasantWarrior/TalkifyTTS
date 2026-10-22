@@ -139,8 +139,11 @@ class StartupCoordinator(
             LocalModelRegistry.ALL_MODELS.any { LocalModelManager.isModelDownloaded(it.id) }
         }
         TtsLogger.i(logTag) { "Network blocked, offline capable: $offlineCapable" }
-        // 弹窗展示 = "去了哪里"，按虚拟路由上报 pageview；offline_capable 由按钮动作事件承载
-        AppPageTracker.open(AppPageTracker.PATH_NETWORK_BLOCKED, "NetworkBlocked")
+        // 弹窗打开是 surface_opened 事件；offline_capable 由按钮动作事件承载
+        AppPageTracker.surfaceOpened(
+            AppPageTracker.SURFACE_NETWORK_BLOCKED,
+            AppPageTracker.SOURCE_STARTUP
+        )
         _startupState.value = StartupState.NetworkBlocked(offlineCapable)
     }
 
@@ -153,7 +156,10 @@ class StartupCoordinator(
 
         if (!hasPermission) {
             TtsLogger.i(logTag) { "Need to request notification permission." }
-            AppPageTracker.open(AppPageTracker.PATH_NOTIFICATION_PERMISSION, "NotificationPermission")
+            AppPageTracker.surfaceOpened(
+                AppPageTracker.SURFACE_NOTIFICATION_PERMISSION,
+                AppPageTracker.SOURCE_STARTUP
+            )
             _startupState.value = StartupState.RequestingNotificationPermission
         } else {
             TtsLogger.i(logTag) { "Notification permission check passed (Granted)." }
@@ -178,7 +184,10 @@ class StartupCoordinator(
                 return
             }
             TtsLogger.i(logTag) { "Need to request battery optimization." }
-            AppPageTracker.open(AppPageTracker.PATH_BATTERY_OPTIMIZATION, "BatteryOptimization")
+            AppPageTracker.surfaceOpened(
+                AppPageTracker.SURFACE_BATTERY_OPTIMIZATION,
+                AppPageTracker.SOURCE_STARTUP
+            )
             _startupState.value = StartupState.RequestingBatteryOptimization
         } else {
             TtsLogger.i(logTag) { "Battery optimization check passed." }
@@ -212,7 +221,10 @@ class StartupCoordinator(
                 if (result is UpdateCheckResult.UpdateAvailable) {
                     TtsLogger.i(logTag) { "Update available: ${result.updateInfo.versionName}" }
                     publishIfCurrent(generation) {
-                        AppPageTracker.open(AppPageTracker.PATH_UPDATE, "Update")
+                        AppPageTracker.surfaceOpened(
+                            AppPageTracker.SURFACE_UPDATE,
+                            AppPageTracker.SOURCE_STARTUP
+                        )
                         _startupState.value = StartupState.UpdateAvailable(result.updateInfo)
                     }
                 } else {

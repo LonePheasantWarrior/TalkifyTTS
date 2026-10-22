@@ -157,4 +157,25 @@ class RrwebSnapshotBuilderTest {
         assertEquals(bodyId, result.findNodeIdAt(900, 2300))
         assertNull(result.findNodeIdAt(5000, 5000))
     }
+
+    @Test
+    fun `敏感子树中的后代文本同样不序列化`() {
+        val snapshot = UiSnapshot(
+            "/", null, 1000, 2000,
+            root = UiNode(0, 0, 1000, 2000, children = listOf(
+                UiNode(
+                    10, 10, 300, 60,
+                    text = "parent-secret",
+                    masked = true,
+                    children = listOf(
+                        // 捕获层正常会传播 masked，这里故意只标父节点，验证序列化层兜底
+                        UiNode(10, 10, 100, 20, text = "child-secret")
+                    )
+                )
+            ))
+        )
+        val json = RrwebSnapshotBuilder.build(snapshot).documentJson
+        assertTrue(!json.contains("parent-secret"))
+        assertTrue("祖先 masked 必须覆盖后代文本", !json.contains("child-secret"))
+    }
 }

@@ -98,6 +98,11 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
 
     override fun getDefaultModelId(): String = ProviderIds.OpenAI.defaultModelId
 
+    override fun getEffectiveVoiceId(config: BaseProviderConfig): String {
+        val openaiConfig = config as? OpenAIConfig ?: return config.voiceId
+        return openaiConfig.customVoiceId.trim().takeIf { it.isNotBlank() } ?: config.voiceId
+    }
+
     override fun getAudioConfig(): AudioConfig = AudioConfig.OPENAI_TTS
 
     override fun validateConfig(config: BaseProviderConfig): String? {

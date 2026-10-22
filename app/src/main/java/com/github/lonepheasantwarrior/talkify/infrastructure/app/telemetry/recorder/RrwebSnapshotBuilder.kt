@@ -91,7 +91,7 @@ internal object RrwebSnapshotBuilder {
                 bodyId
             ).apply {
                 hitRects.add(HitRect(bodyId, 0, 0, snapshot.screenWidth, snapshot.screenHeight))
-                put("childNodes", serializeChildren(snapshot.root, depth = 1))
+                put("childNodes", serializeChildren(snapshot.root, depth = 1, maskedByAncestor = false))
             }
             val html = element("html", JSONObject(), htmlId).apply {
                 put("childNodes", JSONArray().put(head).put(body))
@@ -117,19 +117,25 @@ internal object RrwebSnapshotBuilder {
          *
          * 换算规则：子元素 left/top = 绝对坐标 − 父元素绝对坐标
          */
-        private fun serializeChildren(node: UiNode, depth: Int): JSONArray {
+        private fun serializeChildren(node: UiNode, depth: Int, maskedByAncestor: Boolean): JSONArray {
             val array = JSONArray()
             if (depth > MAX_DEPTH) return array
+            val subtreeMasked = maskedByAncestor || node.masked
             for (child in node.children) {
                 if (elementCount >= MAX_ELEMENTS) break
                 val target = collapse(child) ?: continue
                 elementCount++
-                array.put(serializeElement(target, node, depth))
+                array.put(serializeElement(target, node, depth, subtreeMasked))
             }
             return array
         }
 
-        private fun serializeElement(node: UiNode, parent: UiNode, depth: Int): JSONObject {
+        private fun serializeElement(
+            node: UiNode,
+            parent: UiNode,
+            depth: Int,
+            maskedByAncestor: Boolean,
+        ): JSONObject {
             val style = buildString {
                 append("position:absolute;")
                 append("left:${node.left - parent.left}px;")
@@ -144,9 +150,9 @@ internal object RrwebSnapshotBuilder {
             val element = element("div", attributes, allocateId())
             hitRects.add(HitRect(element.optInt("id"), node.left, node.top, node.width, node.height))
             val childNodes = JSONArray()
-            displayText(node)?.let { childNodes.put(textNode(it, allocateId())) }
+            displayText(node, maskedByAncestor)?.let { childNodes.put(textNode(it, allocateId())) }
             if (depth < MAX_DEPTH) {
-                val nested = serializeChildren(node, depth + 1)
+                val nested = serializeChildren(node, depth + 1, maskedByAncestor || node.masked)
                 for (i in 0 until nested.length()) {
                     childNodes.put(nested.get(i))
                 }
@@ -176,24 +182,26 @@ internal object RrwebSnapshotBuilder {
          */
         private fun collapse(node: UiNode): UiNode? {
             var current = node
+            // 敏感子树不折叠：保留其边界，且避免穿透后丢失 masked 语义
+            if (current.masked) return current
             while (current.text == null && current.contentDescription == null && current.role == null &&
-                !current.editable && current.children.size == 1
+                !current.editable && !current.masked && current.children.size == 1
             ) {
                 current = current.children.first()
             }
             val hasContent = current.text != null || current.contentDescription != null ||
-                current.role != null || current.editable
+                current.role != null || current.editable || current.masked
             return if (hasContent || current.children.isNotEmpty()) current else null
         }
 
         /**
          * 节点展示文本
          *
-         * 可编辑节点一律返回 null（脱敏，不呈现任何输入内容）；
-         * 其余取语义文本，缺省回退 contentDescription，截断到 [MAX_TEXT_LENGTH]
+         * 命中隐私策略（祖先或自身 masked）或可编辑节点一律返回 null；其余取语义文本，
+         * 缺省回退 contentDescription，截断到 [MAX_TEXT_LENGTH]
          */
-        private fun displayText(node: UiNode): String? {
-            if (node.editable) return null
+        private fun displayText(node: UiNode, maskedByAncestor: Boolean): String? {
+            if (maskedByAncestor || node.masked || node.editable) return null
             val raw = node.text ?: node.contentDescription ?: return null
             return raw.take(MAX_TEXT_LENGTH)
         }

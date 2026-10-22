@@ -61,14 +61,24 @@ class RecordTransportTest {
     }
 
     @Test
-    fun `批量体积超限自动上报`() {
+    fun `批量体积按最终包体硬上限切批`() {
         val transport = newTransport()
         val bigEvent = JSONObject().put("k", "a".repeat(200_000))
         repeat(3) { transport.addRecordEvent(bigEvent) }
-        // 单事件不超限，累计 3 条约 600KB 超过 500KB → 第 3 条入列时触发上报
+        // 前两条约 400KB 可同批；第三条入列前先冲刷，避免合并后超过 500KB
         assertEquals(1, bodies.size)
-        assertEquals(3, payloads()[0].getJSONArray("events").length())
-        assertTrue(bodies[0].toByteArray(StandardCharsets.UTF_8).size > 500_000)
+        assertEquals(2, payloads()[0].getJSONArray("events").length())
+        assertTrue(bodies[0].toByteArray(StandardCharsets.UTF_8).size <= 500_000)
+
+        transport.flushRecord()
+        assertEquals(2, bodies.size)
+        assertEquals(1, payloads()[1].getJSONArray("events").length())
+        bodies.forEach {
+            assertTrue(
+                "最终包体 ${it.toByteArray(StandardCharsets.UTF_8).size} 超过上限",
+                it.toByteArray(StandardCharsets.UTF_8).size <= 500_000
+            )
+        }
     }
 
     @Test

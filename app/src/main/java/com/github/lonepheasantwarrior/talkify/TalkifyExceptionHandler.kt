@@ -3,11 +3,10 @@ package com.github.lonepheasantwarrior.talkify
 import android.os.Process
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.CrashReporter
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import io.reactivex.exceptions.UndeliverableException
 import io.reactivex.plugins.RxJavaPlugins
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * 全局未捕获异常处理器
@@ -40,7 +39,8 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
     override fun uncaughtException(thread: Thread, throwable: Throwable) {
         try {
             TtsLogger.e("Uncaught exception caught", throwable = throwable, tag = TAG)
-            reportCrashTelemetry(thread, throwable)
+            // 崩溃现场只写本地受限摘要（不联网、不等待），下次启动且许可有效时补报
+            CrashReporter.record(thread, throwable)
 
             val context = TalkifyAppHolder.getContext()
             if (context != null) {
@@ -54,28 +54,6 @@ object TalkifyExceptionHandler : Thread.UncaughtExceptionHandler {
             // 交还必须无条件执行：通知/遥测链路任何一环抛出都不能让崩溃线程悬挂
             previousHandler?.uncaughtException(thread, throwable)
                 ?: Process.killProcess(Process.myPid())
-        }
-    }
-
-    /**
-     * 崩溃遥测：后台线程阻塞上报，限时 2 秒
-     *
-     * 崩溃链路进程随时被杀，纯异步请求大概率无法送达，故短暂等待发送完成；
-     * 全链路 try-catch，绝不干扰原有崩溃处理
-     */
-    private fun reportCrashTelemetry(crashThread: Thread, throwable: Throwable) {
-        try {
-            val latch = CountDownLatch(1)
-            Thread({
-                try {
-                    AppActionTracker.appCrash(throwable.javaClass.name, crashThread.name)
-                } catch (_: Throwable) {
-                } finally {
-                    latch.countDown()
-                }
-            }, "talkify-crash-telemetry").start()
-            latch.await(2, TimeUnit.SECONDS)
-        } catch (_: Throwable) {
         }
     }
 

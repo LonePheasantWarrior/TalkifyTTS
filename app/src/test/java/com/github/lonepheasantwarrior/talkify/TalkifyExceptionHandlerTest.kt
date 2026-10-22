@@ -162,6 +162,18 @@ class TalkifyExceptionHandlerTest {
         assertEquals(crashThread, fakeDefaultHandler.threads.single())
     }
 
+    /** 真实未捕获线程：崩溃摘要/通知链路结束后仍必须交还前代处理器 */
+    @Test
+    fun realUncaughtThreadStillReachesPreviousHandler() {
+        TalkifyExceptionHandler.initialize()
+        val crashing = Thread({ throw IllegalStateException("real-uncaught") }, "crash-verify")
+        crashing.start()
+        crashing.join(2_000)
+
+        assertEquals(1, fakeDefaultHandler.errors.size)
+        assertEquals("real-uncaught", fakeDefaultHandler.errors.single().message)
+    }
+
     /**
      * 触发与线上一致的孤儿错误：Flowable 订阅后立即 dispose，emitter 的
      * Cancellable 抛 SocketException（dispose 掐断在途 SSE 流的等价形态）。

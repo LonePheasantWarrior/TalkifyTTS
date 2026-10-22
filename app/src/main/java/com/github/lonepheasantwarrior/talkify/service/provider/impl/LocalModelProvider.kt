@@ -175,6 +175,7 @@ class LocalModelProvider : AbstractTtsProvider() {
     override fun getProviderName(): String = ProviderIds.LocalModel.provider
     override fun getDefaultModelId(): String = ProviderIds.LocalModel.defaultModelId
     override fun getDefaultApiUrl(): String = ""  // 不使用 API 地址
+    override fun getKnownModelIds(): Set<String> = LocalModelRegistry.ALL_MODELS.map { it.id }.toSet()
 
     // ==================== 音频配置 ====================
 

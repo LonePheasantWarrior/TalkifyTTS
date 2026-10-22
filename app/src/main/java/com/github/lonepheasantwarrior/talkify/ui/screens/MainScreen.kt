@@ -90,6 +90,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.power.PowerOpti
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryIds
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.local.LocalModelManager
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AliyunBailianConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.provider.repo.AliyunBailianVoiceRepository
@@ -255,10 +256,15 @@ fun MainScreen(
     var inputText by rememberSaveable { mutableStateOf(defaultInputText) }
     val isConfigSheetOpen by viewModel.isConfigSheetOpen.collectAsStateWithLifecycle()
 
-    // 预览"播放"按钮点击埋点（含被拦截的分支，构成完整漏斗）
+    // 预览"播放"按钮点击埋点（含被拦截的分支，构成完整漏斗）；
+    // 音色先经白名单分类，避免自定义声音 ID 原样外传
     val trackPlayClick: (String) -> Unit = { outcome ->
+        val selectedVoiceId = selectedVoice?.voiceId.orEmpty()
         AppActionTracker.previewPlayClick(
-            currentProvider.id, selectedVoice?.voiceId.orEmpty(), inputText.length, outcome
+            currentProvider.id,
+            TelemetryIds.voice(selectedVoiceId, isKnown = { id -> availableVoices.any { it.voiceId == id } }),
+            inputText.length,
+            outcome
         )
     }
 
@@ -506,7 +512,12 @@ fun MainScreen(
                             availableVoices = availableVoices,
                             selectedVoice = selectedVoice,
                             onVoiceSelected = { voice ->
-                                AppActionTracker.previewVoiceSelected(currentProvider.id, voice.voiceId)
+                                AppActionTracker.previewVoiceSelected(
+                                    currentProvider.id,
+                                    TelemetryIds.voice(voice.voiceId, isKnown = { id ->
+                                        availableVoices.any { it.voiceId == id }
+                                    })
+                                )
                                 selectedVoice = voice
                             },
                             isPlaying = isPreviewPlaying,
@@ -579,9 +590,9 @@ fun MainScreen(
                                     // 本地模型：已选择模型但未下载 → 弹出下载确认对话框
                                     if (config is LocalModelConfig && config.modelId.isNotBlank()) {
                                         trackPlayClick(AppActionTracker.OUTCOME_MODEL_NEED_DOWNLOAD)
-                                        AppPageTracker.open(
-                                            AppPageTracker.PATH_MODEL_DOWNLOAD_CONFIRM,
-                                            "ModelDownloadConfirm"
+                                        AppPageTracker.surfaceOpened(
+                                            AppPageTracker.SURFACE_MODEL_DOWNLOAD_CONFIRM,
+                                            AppPageTracker.SOURCE_PREVIEW
                                         )
                                         pendingLocalModelConfig = config
                                     } else {
@@ -638,7 +649,9 @@ fun MainScreen(
                 isLocalModel = freshConfig is LocalModelConfig,
                 hasCustomApiUrl = freshConfig.apiUrl.isNotBlank() && freshConfig !is LocalModelConfig,
                 hasCustomModelId = freshConfig.modelId.isNotBlank() && freshConfig !is LocalModelConfig,
-                voiceId = freshConfig.voiceId
+                voiceId = TelemetryIds.voice(freshConfig.voiceId, isKnown = { id ->
+                    availableVoices.any { it.voiceId == id }
+                })
             )
             savedConfig = freshConfig
             configVersion++

@@ -102,6 +102,17 @@ class SharedPreferencesAppConfigRepository(
         }
     }
 
+    override fun isDiagnosticsEnabled(): Boolean {
+        // 独立许可、默认关闭：基础统计开关不会隐式开启界面采集
+        return sharedPreferences.getBoolean(KEY_DIAGNOSTICS_ENABLED, false)
+    }
+
+    override fun setDiagnosticsEnabled(enabled: Boolean) {
+        sharedPreferences.edit {
+            putBoolean(KEY_DIAGNOSTICS_ENABLED, enabled)
+        }
+    }
+
     override fun isBatteryOptimizationPromptDismissed(): Boolean {
         return sharedPreferences.getBoolean(KEY_BATTERY_PROMPT_DISMISSED, false)
     }
@@ -121,6 +132,7 @@ class SharedPreferencesAppConfigRepository(
         private const val KEY_HAS_REQUESTED_NOTIFICATION = "has_requested_notification"
         private const val KEY_HAS_OPENED_ABOUT_PAGE = "has_opened_about_page"
         private const val KEY_TELEMETRY_ENABLED = "telemetry_enabled"
+        private const val KEY_DIAGNOSTICS_ENABLED = "diagnostics_enabled"
         private const val KEY_BATTERY_PROMPT_DISMISSED = "battery_optimization_prompt_dismissed"
 
         /** 旧版 ProviderIds.value → 新版 ProviderIds.providerId 映射 */

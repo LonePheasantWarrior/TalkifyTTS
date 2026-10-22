@@ -65,7 +65,10 @@ fun ProviderSelector(
 
     Card(
         onClick = {
-            AppPageTracker.open(AppPageTracker.PATH_PROVIDER_SELECT, "ProviderSelect")
+            AppPageTracker.surfaceOpened(
+                AppPageTracker.SURFACE_PROVIDER_SELECT,
+                AppPageTracker.SOURCE_MAIN
+            )
             showBottomSheet = true
         },
         modifier = modifier.fillMaxWidth(),

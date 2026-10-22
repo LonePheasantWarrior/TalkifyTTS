@@ -75,7 +75,8 @@ import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.UpdateCheckResult
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppActionTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.AppPageTracker
-import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TalkifyTelemetry
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryController
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryDiagnostics
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.update.UpdateChecker
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
@@ -108,6 +109,7 @@ fun AboutScreen(
     var showDonateSheet by remember { mutableStateOf(false) }
     var showDonateInstruction by remember { mutableStateOf<DonateChannel?>(null) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showDiagnosticsDialog by remember { mutableStateOf(false) }
 
     val githubUrl = stringResource(R.string.about_github_url)
     // 回调内取资源须用顶层 stringResource（组合期解析，配置变化安全）
@@ -249,7 +251,10 @@ fun AboutScreen(
                             (SystemClock.elapsedRealtime() - startedAt).toInt()
                         )
                         if (result is UpdateCheckResult.UpdateAvailable) {
-                            AppPageTracker.open(AppPageTracker.PATH_UPDATE, "Update")
+                            AppPageTracker.surfaceOpened(
+                                AppPageTracker.SURFACE_UPDATE,
+                                AppPageTracker.SOURCE_MANUAL
+                            )
                         }
                         isCheckingUpdate = false
                         showUpdateResult = result
@@ -372,7 +377,10 @@ fun AboutScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        AppPageTracker.open(AppPageTracker.PATH_PRIVACY, "Privacy")
+                        AppPageTracker.surfaceOpened(
+                            AppPageTracker.SURFACE_PRIVACY,
+                            AppPageTracker.SOURCE_ABOUT
+                        )
                         showPrivacyDialog = true
                     },
                 colors = CardDefaults.cardColors(
@@ -398,12 +406,13 @@ fun AboutScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // 匿名遥测开关（默认开启）：关闭后全部上报路径短路；遥测
-                    // payload 不含朗读内容与凭据
+                    // 匿名使用统计（默认开启）与界面诊断（默认关闭）是两个独立许可；
+                    // 关闭统计会立即清空待发队列与录制缓冲，重新开启不补发旧事件
                     val appConfigRepository = remember {
                         com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository(context)
                     }
                     var telemetryEnabled by remember { mutableStateOf(appConfigRepository.isTelemetryEnabled()) }
+                    var diagnosticsEnabled by remember { mutableStateOf(appConfigRepository.isDiagnosticsEnabled()) }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -424,14 +433,47 @@ fun AboutScreen(
                             checked = telemetryEnabled,
                             onCheckedChange = { checked ->
                                 telemetryEnabled = checked
-                                appConfigRepository.setTelemetryEnabled(checked)
-                                // 开关状态热生效（N2）：门面短路 + 关闭时立即静默丢弃在途录制会话
-                                TalkifyTelemetry.setUserEnabled(checked)
-                                if (!checked) {
-                                    UmamiRecorder.stop(flushBufferedEvents = false)
-                                }
+                                TelemetryController.setTelemetryEnabled(context, checked)
                             }
                         )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.about_diagnostics_toggle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(
+                                    if (UmamiRecorder.isAvailable) {
+                                        R.string.about_diagnostics_toggle_description
+                                    } else {
+                                        R.string.about_diagnostics_unavailable
+                                    }
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = diagnosticsEnabled,
+                            enabled = UmamiRecorder.isAvailable,
+                            onCheckedChange = { checked ->
+                                diagnosticsEnabled = checked
+                                TelemetryController.setDiagnosticsEnabled(context, checked)
+                            }
+                        )
+                    }
+                    TextButton(
+                        onClick = { showDiagnosticsDialog = true },
+                        modifier = Modifier.align(Alignment.Start)
+                    ) {
+                        Text(stringResource(R.string.about_diagnostics_view))
                     }
                 }
             }
@@ -466,7 +508,10 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     FilledTonalButton(
                         onClick = {
-                            AppPageTracker.open(AppPageTracker.PATH_DONATE, "Donate")
+                            AppPageTracker.surfaceOpened(
+                                AppPageTracker.SURFACE_DONATE,
+                                AppPageTracker.SOURCE_ABOUT
+                            )
                             showDonateSheet = true
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -690,6 +735,29 @@ fun AboutScreen(
         }
     }
 
+    // 本地遥测诊断（用户主动查看；不含 payload、令牌或个人数据）
+    if (showDiagnosticsDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiagnosticsDialog = false },
+            title = { Text(stringResource(R.string.about_diagnostics_title)) },
+            text = {
+                Text(
+                    text = TelemetryDiagnostics.format(),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState())
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDiagnosticsDialog = false }) {
+                    Text(stringResource(R.string.about_privacy_confirm))
+                }
+            }
+        )
+    }
+
     // 匿名信息收集声明弹窗
     if (showPrivacyDialog) {
         val privacyItems = listOf(
@@ -697,6 +765,7 @@ fun AboutScreen(
             stringResource(R.string.about_privacy_item_network),
             stringResource(R.string.about_privacy_item_usage),
             stringResource(R.string.about_privacy_item_tts),
+            stringResource(R.string.about_privacy_item_session),
             stringResource(R.string.about_privacy_item_crash)
         )
 

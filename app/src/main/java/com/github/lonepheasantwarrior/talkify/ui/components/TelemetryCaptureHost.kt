@@ -90,10 +90,10 @@ fun TelemetryCaptureHost(
 @Composable
 fun TelemetryScrollObserver(state: ScrollState) {
     LaunchedEffect(state) {
-        snapshotFlow { state.value to state.maxValue }
+        snapshotFlow { Triple(state.value, state.maxValue, state.viewportSize) }
             .distinctUntilChanged()
-            .collect { (scrollTop, maxScroll) ->
-                UmamiRecorder.onScrollPosition(scrollTop, maxScroll)
+            .collect { (scrollTop, maxScroll, containerViewport) ->
+                UmamiRecorder.onScrollPosition(scrollTop, maxScroll, containerViewport)
             }
     }
 }

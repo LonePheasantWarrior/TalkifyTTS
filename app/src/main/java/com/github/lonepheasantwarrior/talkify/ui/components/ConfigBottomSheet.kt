@@ -94,8 +94,8 @@ fun ConfigBottomSheet(
 
     LaunchedEffect(isOpen) {
         if (isOpen) {
-            // 抽屉打开 = "去了哪里"，按虚拟路由上报 pageview（覆盖 FAB 与未配置引导等所有入口）
-            AppPageTracker.open(AppPageTracker.PATH_CONFIG, "Config")
+            // 抽屉打开是有限枚举事件，不伪装成 pageview（U07）
+            AppPageTracker.surfaceOpened(AppPageTracker.SURFACE_CONFIG, AppPageTracker.SOURCE_MAIN)
         } else if (sheetState.isVisible) {
             sheetState.hide()
         }
@@ -270,9 +270,9 @@ fun ConfigBottomSheet(
                                 // 模型未下载，显示下载确认对话框
                                 pendingModelId = modelId
                                 pendingModelDisplayName = modelInfo.displayName
-                                AppPageTracker.open(
-                                    AppPageTracker.PATH_MODEL_DOWNLOAD_CONFIRM,
-                                    "ModelDownloadConfirm"
+                                AppPageTracker.surfaceOpened(
+                                    AppPageTracker.SURFACE_MODEL_DOWNLOAD_CONFIRM,
+                                    AppPageTracker.SOURCE_CONFIG_SHEET
                                 )
                                 showDownloadDialog = true
                                 return@ConfigEditor

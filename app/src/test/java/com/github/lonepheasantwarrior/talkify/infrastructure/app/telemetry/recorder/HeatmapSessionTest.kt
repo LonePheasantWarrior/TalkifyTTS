@@ -98,4 +98,35 @@ class HeatmapSessionTest {
         assertEquals(1200, event.getInt("pageW"))
         assertEquals(3000, event.getInt("pageH"))
     }
+
+    @Test
+    fun `会话以创建时的真实页面初始化`() {
+        val session = HeatmapSession(1080, 2400, startUrl = "/about", clockMs = { nowMs })
+        assertEquals("/about", session.click(10, 20).getString("url"))
+    }
+
+    @Test
+    fun `按滚动容器高度计算深度而不是根窗口`() {
+        val session = newSession()
+        // 容器高 1200，可滚动 1900 → pageH=3100，深度=(0+1200)/3100≈39%
+        session.onScrollPosition(scrollTopPx = 0, maxScrollPx = 1900, containerViewportPx = 1200)
+        val event = session.takeDeeperScrollEvent()!!
+        assertEquals(3100, event.getInt("pageH"))
+        assertEquals(1200, event.getInt("viewportH"))
+        assertEquals(39, event.getInt("scrollPct"))
+    }
+
+    @Test
+    fun `内容收缩后页面高度随之更新`() {
+        val session = newSession()
+        session.onScrollPosition(scrollTopPx = 1200, maxScrollPx = 1900)
+        session.takeDeeperScrollEvent()
+
+        session.onScrollPosition(scrollTopPx = 300, maxScrollPx = 500)
+        val event = session.takeDeeperScrollEvent()
+        // 内容收缩后 pageH = 500 + 2400，而不是保留历史最大 4300
+        assertEquals(2900, session.click(0, 0).getInt("pageH"))
+        // 300+2400 / 2900 ≈ 93%，比先前的 84% 更深，仍会上报
+        assertEquals(93, event!!.getInt("scrollPct"))
+    }
 }
