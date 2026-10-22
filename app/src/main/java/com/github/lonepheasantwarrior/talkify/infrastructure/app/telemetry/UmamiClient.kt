@@ -4,13 +4,13 @@ import android.os.Build
 import android.os.SystemClock
 import com.github.lonepheasantwarrior.talkify.BuildConfig
 import com.github.lonepheasantwarrior.talkify.TalkifyAppHolder
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient.workerLock
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Locale

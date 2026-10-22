@@ -6,6 +6,8 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.Telem
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiClient
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.UmamiSessionState
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.readLimitedBody
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder.RECORDING_IMPLEMENTATION_ENABLED
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder.REPLAY_IMPLEMENTATION_ENABLED
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
