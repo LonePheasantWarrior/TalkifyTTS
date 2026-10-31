@@ -136,8 +136,10 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
         params: SynthesisParams
     ): Request {
         val openaiConfig = config as OpenAIConfig
-        val selectedVoice = if (openaiConfig.voiceId.isNotEmpty()) {
-            extractRealVoiceName(openaiConfig.voiceId) ?: openaiConfig.voiceId
+        // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+        val voiceSource = resolveVoiceSource(openaiConfig, params)
+        val selectedVoice = if (voiceSource.isNotEmpty()) {
+            extractRealVoiceName(voiceSource) ?: voiceSource
         } else {
             ""
         }
@@ -150,7 +152,10 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
 
         val effectiveApiUrl = openaiConfig.apiUrl.ifBlank { DEFAULT_API_URL }
         val effectiveModel = openaiConfig.modelId.ifBlank { getDefaultModelId() }
-        val instructions = buildInstructions(openaiConfig.styleInstruction, params.speechRate)
+        val instructions = buildInstructions(
+            params.styleInstructionOverride ?: openaiConfig.styleInstruction,
+            params.speechRate
+        )
         if (instructions != null) {
             logDebug("instructions: $instructions")
         }

@@ -81,8 +81,10 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
         params: SynthesisParams
     ): Request {
         val volcConfig = config as VolcengineConfig
-        val voiceId = if (volcConfig.voiceId.isNotEmpty()) {
-            extractRealVoiceName(volcConfig.voiceId) ?: volcConfig.voiceId
+        // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+        val voiceSource = resolveVoiceSource(volcConfig, params)
+        val voiceId = if (voiceSource.isNotEmpty()) {
+            extractRealVoiceName(voiceSource) ?: voiceSource
         } else {
             voiceIds.firstOrNull() ?: fallbackVoiceId
         }
