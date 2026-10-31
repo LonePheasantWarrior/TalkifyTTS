@@ -268,7 +268,11 @@ fun DialogueModeScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         FilledTonalButton(
                             onClick = {
-                                editingRule = RoleRule(id = System.currentTimeMillis())
+                                editingRule = RoleRule(
+                                    id = System.currentTimeMillis(),
+                                    name = "",
+                                    pattern = ""
+                                )
                                 editingRuleNewBinding = null
                             }
                         ) {

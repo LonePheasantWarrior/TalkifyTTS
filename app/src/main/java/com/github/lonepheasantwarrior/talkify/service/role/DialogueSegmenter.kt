@@ -68,7 +68,27 @@ object DialogueSegmenter {
                 }
             }
 
-            // 2) 开引号
+            // 2) 闭引号（必须先于开引号判断：ASCII 双引号同时是开/闭引号）
+            val top = openStack.lastOrNull()
+            val isClosing = c in CLOSE_QUOTES && top != null && OPEN_TO_CLOSE[top] == c
+            if (isClosing) {
+                if (openStack.size > 1 || readQuotes) {
+                    // 嵌套闭引号 / 要求朗读引号时保留字符
+                    buffer.append(c)
+                }
+                openStack.removeLast()
+                if (openStack.isEmpty()) {
+                    // 对话 → 旁白边界：回填占位段文本
+                    val last = segments.last()
+                    segments[segments.lastIndex] = last.copy(text = buffer.toString().trim())
+                    buffer.setLength(0)
+                    currentKind = SegmentKind.NARRATOR
+                }
+                i++
+                continue
+            }
+
+            // 3) 开引号
             val close = OPEN_TO_CLOSE[c]
             if (close != null) {
                 if (currentKind == SegmentKind.NARRATOR) {
@@ -100,30 +120,6 @@ object DialogueSegmenter {
                 continue
             }
 
-            // 3) 闭引号
-            if (c in CLOSE_QUOTES) {
-                val top = openStack.lastOrNull()
-                if (top != null && OPEN_TO_CLOSE[top] == c) {
-                    if (openStack.size > 1 || readQuotes) {
-                        // 嵌套闭引号 / 要求朗读引号时保留字符
-                        buffer.append(c)
-                    }
-                    openStack.removeLast()
-                    if (openStack.isEmpty()) {
-                        // 对话 → 旁白边界：回填占位段文本
-                        val last = segments.last()
-                        segments[segments.lastIndex] = last.copy(text = buffer.toString().trim())
-                        buffer.setLength(0)
-                        currentKind = SegmentKind.NARRATOR
-                    }
-                } else {
-                    // 与栈顶不配对的闭引号：视为普通字符（作者笔误/装饰引号）
-                    buffer.append(c)
-                }
-                i++
-                continue
-            }
-
             // 4) 普通字符
             buffer.append(c)
             i++
@@ -145,7 +141,9 @@ object DialogueSegmenter {
             segments.add(DialogueSegment(kind = SegmentKind.NARRATOR, text = remaining))
         }
 
-        return segments.filter { it.text.isNotBlank() }
+        return segments.filter { segment ->
+            segment.text.isNotBlank() && segment.text.any { it.isLetterOrDigit() }
+        }
     }
 }
 
