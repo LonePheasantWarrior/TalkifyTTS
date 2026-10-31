@@ -163,7 +163,9 @@ class TencentCloudProvider : AbstractTtsProvider() {
             return
         }
 
-        val realVoiceId = extractRealVoiceName(tencentConfig.voiceId) ?: voiceIds.firstOrNull() ?: DEFAULT_VOICE_ID.toString()
+        // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+        val voiceSource = resolveVoiceSource(tencentConfig, params)
+        val realVoiceId = extractRealVoiceName(voiceSource) ?: voiceIds.firstOrNull() ?: DEFAULT_VOICE_ID.toString()
         val sampleRate = getSampleRateForVoice(realVoiceId)
 
         logInfo("Starting synthesis: textLength=${text.length}, voiceId=$realVoiceId, sampleRate=$sampleRate, pitch=${params.pitch}, speechRate=${params.speechRate}")

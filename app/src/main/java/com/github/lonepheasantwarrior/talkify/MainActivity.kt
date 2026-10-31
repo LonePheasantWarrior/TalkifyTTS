@@ -31,6 +31,7 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recor
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryCaptureHost
 import com.github.lonepheasantwarrior.talkify.ui.screens.AboutScreen
+import com.github.lonepheasantwarrior.talkify.ui.screens.DialogueModeScreen
 import com.github.lonepheasantwarrior.talkify.ui.screens.MainScreen
 import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyTheme
 
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
 
         private const val ROUTE_MAIN = "main"
         private const val ROUTE_ABOUT = "about"
+        private const val ROUTE_DIALOGUE_MODE = "dialogueMode"
     }
 
     @OptIn(ExperimentalSharedTransitionApi::class)
@@ -109,6 +111,9 @@ class MainActivity : ComponentActivity() {
                                             SharedPreferencesAppConfigRepository(this@MainActivity)
                                                 .setAboutPageOpened(true)
                                             navController.navigate(ROUTE_ABOUT) { launchSingleTop = true } // 快速连点防堆叠（P3-16）
+                                        },
+                                        onDialogueModeClick = {
+                                            navController.navigate(ROUTE_DIALOGUE_MODE) { launchSingleTop = true }
                                         }
                                     )
                                 }
@@ -118,6 +123,11 @@ class MainActivity : ComponentActivity() {
                                         versionName = versionName,
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this
+                                    )
+                                }
+                                composable(ROUTE_DIALOGUE_MODE) {
+                                    DialogueModeScreen(
+                                        onBackClick = { navController.popBackStack() }
                                     )
                                 }
                             }
@@ -154,6 +164,7 @@ class MainActivity : ComponentActivity() {
     private fun telemetryRouteOf(route: String?): Pair<String, String?>? = when (route) {
         ROUTE_MAIN -> Pair("/", "Main")
         ROUTE_ABOUT -> Pair("/about", "About")
+        ROUTE_DIALOGUE_MODE -> Pair("/dialogueMode", "DialogueMode")
         else -> null
     }
 }

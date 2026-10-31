@@ -266,8 +266,10 @@ class LocalModelProvider : AbstractTtsProvider() {
 
                     // ZipVoice 音色 = 参考音频 + 逐字稿；音色以内置目录为准，
                     // 历史持久化的 voiceId（如已隐藏的雷军音色）不在目录内时
-                    // 透明迁移到目录默认音色，用户侧体验不变
-                    val requestedVoiceName = extractRealVoiceName(lc.voiceId) ?: lc.voiceId
+                    // 透明迁移到目录默认音色，用户侧体验不变。
+                    // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+                    val voiceSource = resolveVoiceSource(lc, params)
+                    val requestedVoiceName = extractRealVoiceName(voiceSource) ?: voiceSource
                     val bundledVoices = LocalVoiceCatalog.getVoices()
                     val voice = bundledVoices.firstOrNull { it.voiceId == requestedVoiceName }
                         ?: bundledVoices.firstOrNull()

@@ -225,6 +225,16 @@ abstract class AbstractTtsProvider : TtsProviderApi {
     }
 
     /**
+     * 解析本次请求实际生效的音色来源字符串（对话模式段级覆写优先）。
+     *
+     * 返回「未经过 extractRealVoiceName 的原始值」——各供应商按需再做
+     * `extractRealVoiceName(...) ?: value` 处理，保持与既有配置路径一致的语义。
+     */
+    protected fun resolveVoiceSource(config: BaseProviderConfig, params: SynthesisParams): String {
+        return params.voiceIdOverride?.takeIf { it.isNotBlank() } ?: config.voiceId
+    }
+
+    /**
      * 从 XML 资源加载音色 ID 列表。
      *
      * 使用 [VoiceXmlParser] 解析语音定义的 XML 资源文件，

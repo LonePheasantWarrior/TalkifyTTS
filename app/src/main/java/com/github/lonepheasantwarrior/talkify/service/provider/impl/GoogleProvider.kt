@@ -118,9 +118,13 @@ class GoogleProvider : HttpStreamingTtsProvider() {
     ): Request {
         val googleConfig = config as GoogleConfig
         val spec = specFor(googleConfig)
-        val voiceId = resolveVoiceId(googleConfig)
+        val voiceId = resolveVoiceId(googleConfig, params)
         val effectiveModel = googleConfig.modelId.ifBlank { getDefaultModelId() }
-        val style = buildStyle(googleConfig.styleInstruction, params.speechRate)
+        // 对话模式段级风格覆写优先（空串表示明确不带风格）
+        val style = buildStyle(
+            params.styleInstructionOverride ?: googleConfig.styleInstruction,
+            params.speechRate
+        )
         if (style != null) {
             logDebug("speech_metadata.style: $style")
         }
@@ -243,10 +247,12 @@ class GoogleProvider : HttpStreamingTtsProvider() {
         }
     }
 
-    /** 解析生效音色：配置音色（剥离 Android Voice 展示后缀）> 预置列表首个 > 兜底音色 */
-    private fun resolveVoiceId(config: GoogleConfig): String {
-        return if (config.voiceId.isNotEmpty()) {
-            extractRealVoiceName(config.voiceId) ?: config.voiceId
+    /** 解析生效音色：段级覆写（对话模式）> 配置音色（剥离 Android Voice 展示后缀）> 预置列表首个 > 兜底音色 */
+    private fun resolveVoiceId(config: GoogleConfig, params: SynthesisParams? = null): String {
+        // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+        val source = params?.let { resolveVoiceSource(config, it) } ?: config.voiceId
+        return if (source.isNotEmpty()) {
+            extractRealVoiceName(source) ?: source
         } else {
             voiceIds.firstOrNull() ?: fallbackVoiceId
         }
