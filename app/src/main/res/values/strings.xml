@@ -236,4 +236,42 @@
     <string name="model_status_downloading">[下载中…]</string>
     <string name="model_status_error">[错误]</string>
     <string name="model_not_downloaded">[未下载]</string>
+
+    <!-- 对话模式（Dialogue Mode） -->
+    <string name="dialogue_mode_title">对话模式</string>
+    <string name="dialogue_mode_subtitle">引号外用旁白，引号内用对话发音人</string>
+    <string name="dialogue_mode_entry_hint">配置旁白 / 对话发音人与角色规则</string>
+    <string name="dialogue_mode_enabled_hint">开启后按引号切分文本，分别用不同发音人合成后拼接</string>
+    <string name="dialogue_mode_disabled_hint">关闭后使用当前供应商的单一发音人</string>
+    <string name="dialogue_mode_not_ready">请先为旁白和对话各选择一个发音人</string>
+    <string name="narrator_voice_label">旁白发音人（引号外）</string>
+    <string name="dialogue_voice_label">对话发音人（引号内）</string>
+    <string name="voice_binding_unconfigured">未选择发音人</string>
+    <string name="voice_binding_format">%1$s · %2$s</string>
+    <string name="read_quotes_label">朗读引号本身</string>
+    <string name="read_quotes_hint">关闭时自动去除最外层引号，朗读更自然</string>
+    <string name="segment_pause_label">段间停顿</string>
+    <string name="segment_pause_value_format">%1$d ms</string>
+    <string name="role_rules_label">角色规则</string>
+    <string name="role_rules_hint">按人物名或正则把对话交给指定发音人；优先级：&lt;&lt;人物&gt;&gt; 标记 &gt; 角色规则 &gt; 默认对话</string>
+    <string name="role_rule_add">添加规则</string>
+    <string name="role_rule_edit">编辑规则</string>
+    <string name="role_rule_name_label">规则名称</string>
+    <string name="role_rule_name_placeholder">如：张三 → 低沉男声</string>
+    <string name="role_rule_pattern_label">人物名 / 正则</string>
+    <string name="role_rule_pattern_placeholder">如：张三，或 (张三|老张)</string>
+    <string name="role_rule_regex_label">按正则匹配</string>
+    <string name="role_rule_binding_label">命中后使用</string>
+    <string name="role_rule_delete">删除</string>
+    <string name="role_rule_empty">暂无规则；对话将使用默认对话发音人</string>
+    <string name="role_rule_invalid">请填写人物名并选择发音人</string>
+    <string name="binding_picker_title">选择发音人</string>
+    <string name="binding_picker_provider_step">1. 选择供应商</string>
+    <string name="binding_picker_voice_step">2. 选择音色</string>
+    <string name="binding_picker_loading">正在加载音色列表…</string>
+    <string name="binding_picker_no_voices">该供应商暂无可用音色</string>
+    <string name="binding_picker_style_label">风格指令（可选，仅部分供应商支持）</string>
+    <string name="binding_picker_confirm">确定</string>
+    <string name="binding_picker_back">返回</string>
+    <string name="dialogue_mode_style_hint">如“用沉稳的语气朗读”；留空则使用供应商默认风格</string>
 </resources>
