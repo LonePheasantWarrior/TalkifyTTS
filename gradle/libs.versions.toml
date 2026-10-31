@@ -1,5 +1,5 @@
 [versions]
-agp = "9.4.1"
+agp = "9.5.0"
 kotlin = "2.4.21"
 coreKtx = "1.19.1"
 junit = "4.13.2"
@@ -8,7 +8,7 @@ espressoCore = "3.7.0"
 lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
 composeBom = "2026.09.00"
-dashscope = "2.23.2"
+dashscope = "2.23.4"
 jlayer = "1.0.1"
 navigationCompose = "2.10.2"
 #为兼容dashscope，okhttp停留在4.12.0版本
