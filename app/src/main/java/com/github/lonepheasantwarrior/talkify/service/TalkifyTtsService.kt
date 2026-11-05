@@ -15,12 +15,15 @@ import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.DialogueModeConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProviderRegistry
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
+import com.github.lonepheasantwarrior.talkify.domain.repository.DialogueModeRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationIds
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.DataStoreDialogueModeRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryIds
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TtsTelemetryTracker
@@ -29,6 +32,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider
+import com.github.lonepheasantwarrior.talkify.service.role.DialogueSegmentResolver
+import com.github.lonepheasantwarrior.talkify.service.role.DialogueSegmenter
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -36,6 +41,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.milliseconds
@@ -96,6 +102,27 @@ class TalkifyTtsService : TextToSpeechService() {
 
     @Volatile
     private var currentConfig: BaseProviderConfig? = null
+
+    // --- 对话模式（Dialogue Mode）---
+
+    /** 对话模式配置仓储（DataStore）；读取失败时自动回退单音色路径 */
+    @Volatile
+    private var dialogueModeRepository: DialogueModeRepository? = null
+
+    /**
+     * 对话模式专用的供应商实例缓存。
+     *
+     * 旁白/对话/角色规则可指向不同供应商，若复用全局 [currentProvider]，
+     * 段间切换会反复 release + 重建（Azure 还会断开长连接）；改为按 providerId
+     * 缓存实例，跨段、跨请求复用。缓存条目在 ensureProvider 释放同 ID 全局
+     * 实例时一并释放，onDestroy 全量释放，避免悬挂引用（对齐 P1-17 语义）。
+     */
+    private val dialogueProviderCache: MutableMap<String, TtsProviderApi> =
+        java.util.concurrent.ConcurrentHashMap()
+
+    /** 当前对话段正在使用的供应商（onStop/onDestroy 时用于停止在途合成） */
+    @Volatile
+    private var currentDialogueSegmentProvider: TtsProviderApi? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -359,6 +386,9 @@ class TalkifyTtsService : TextToSpeechService() {
 
             TtsLogger.i("Provider changed from $currentProviderId to $providerId, reinitializing")
             currentProvider?.release()
+            // 对话模式缓存中同 ID 的实例一并释放：同一供应商不允许两个存活实例
+            // （Azure 各持一条 WebSocket、本地引擎各自加载模型），避免资源翻倍
+            currentProviderId?.let { oldId -> dialogueProviderCache.remove(oldId)?.release() }
             currentProvider = TtsProviderFactory.createProvider(providerId)
 
             if (currentProvider == null) {
@@ -734,6 +764,19 @@ class TalkifyTtsService : TextToSpeechService() {
                 language = request.language
             )
 
+            // 3.5 对话模式：开启且旁白/对话都已绑定发音人时，走「本地切分 → 逐段合成」路径；
+            // 配置缺失/读取失败一律回退原有单音色路径，不影响既有行为
+            val activeDialogueConfig = runCatching { getDialogueModeRepository().getConfig() }
+                .onFailure {
+                    TtsLogger.w("DialogueMode: 配置读取失败，回退单音色路径: ${it.message}")
+                }
+                .getOrNull()
+                ?.takeIf { it.enabled && it.isReady }
+            val useDialogueMode = activeDialogueConfig != null
+            if (useDialogueMode) {
+                TtsLogger.d("DialogueMode: enabled, segments will be synthesized per binding")
+            }
+
             // 4. 初始化音频参数并通知系统开始
             var audioInitialized = false
             val frameworkFailed = AtomicBoolean(false)
@@ -743,7 +786,16 @@ class TalkifyTtsService : TextToSpeechService() {
 
             // 5. 执行合成 (使用协程挂起)
             attempt.markSynthesisStarted()
-            val result = withTimeoutOrNull(120_000L.milliseconds) {
+            val result = if (activeDialogueConfig != null) {
+                synthesizeWithDialogueMode(
+                    text = text,
+                    baseParams = params,
+                    dialogueConfig = activeDialogueConfig,
+                    callback = callback,
+                    attempt = attempt
+                )
+            } else {
+                withTimeoutOrNull(120_000L.milliseconds) {
                 suspendCancellableCoroutine { continuation ->
                     activeContinuation = continuation
 
@@ -823,6 +875,7 @@ class TalkifyTtsService : TextToSpeechService() {
                     })
                 }
             }
+            } // else：单音色路径
 
             // 6. 处理结果
             if (result == null) {
@@ -830,6 +883,7 @@ class TalkifyTtsService : TextToSpeechService() {
                 TtsLogger.e("Synthesis timed out")
                 attempt.markTimeout()
                 try { provider.stop() } catch (_: Exception) {}
+                try { currentDialogueSegmentProvider?.stop() } catch (_: Exception) {}
                 callback.error(TextToSpeech.ERROR_NETWORK_TIMEOUT)
                 TalkifyNotificationHelper.sendSystemNotification(
                     this@TalkifyTtsService,
@@ -881,12 +935,220 @@ class TalkifyTtsService : TextToSpeechService() {
             // 7. 统一清理资源与终态上报（每场恰好一次）
             attempt.report()
             activeContinuation = null
+            currentDialogueSegmentProvider = null
             scheduleForegroundIdleExit()
             releaseWifiLock()
             releaseWakeLock()
         }
     }
 
+    // ==================== 对话模式（Dialogue Mode）====================
+
+    /** 懒加载对话模式配置仓储（DataStore） */
+    private fun getDialogueModeRepository(): DialogueModeRepository {
+        dialogueModeRepository?.let { return it }
+        return synchronized(this) {
+            dialogueModeRepository ?: DataStoreDialogueModeRepository(applicationContext)
+                .also { dialogueModeRepository = it }
+        }
+    }
+
+    /**
+     * 获取对话模式用的供应商实例（按 providerId 缓存，跨段/跨请求复用）。
+     *
+     * 与全局 [currentProvider] 相互独立：对话模式的段可指向任意已注册供应商，
+     * 缓存实例在 ensureProvider 释放同 ID 全局实例时一并释放、onDestroy 全量释放。
+     */
+    private fun getDialogueProvider(providerId: String): TtsProviderApi? {
+        if (!TtsProviderRegistry.contains(providerId)) return null
+        dialogueProviderCache[providerId]?.let { return it }
+        val provider = TtsProviderFactory.createProvider(providerId) ?: return null
+        dialogueProviderCache[providerId] = provider
+        return provider
+    }
+
+    /**
+     * 对话模式合成主流程：
+     * 1. [DialogueSegmenter] 本地按引号切分（不依赖模型识别角色）
+     * 2. [DialogueSegmentResolver] 解析每段发音人（显式标记 > 角色规则 > 默认对话 > 默认旁白）
+     * 3. 逐段调用对应供应商合成，音频按顺序写入同一条系统回调（callback.start 只调一次）
+     * 4. 段间可选插入静音停顿
+     *
+     * 返回值语义与单音色路径一致：[TtsErrorCode.SUCCESS] / 错误码 / null(超时)。
+     * 每段独立 120s 超时；取消（onStop）经 continuation 取消传播，由外层统一标记 cancelled。
+     */
+    private suspend fun synthesizeWithDialogueMode(
+        text: String,
+        baseParams: SynthesisParams,
+        dialogueConfig: DialogueModeConfig,
+        callback: SynthesisCallback,
+        attempt: TtsTelemetryTracker.Attempt
+    ): Int? {
+        // 1) 本地切分 + 发音人解析
+        var resolved = DialogueSegmentResolver.resolve(
+            DialogueSegmenter.segment(text, dialogueConfig.readQuotes),
+            dialogueConfig
+        )
+        if (resolved.isEmpty()) {
+            // 全文为空白/纯标点：等同空文本，直接成功返回
+            return TtsErrorCode.SUCCESS
+        }
+        TtsLogger.i("DialogueMode: ${resolved.size} segments " +
+                "(${resolved.joinToString { "${it.segment.kind.name.lowercase()}/${it.binding.providerId}" }})")
+
+        // 2) 音频参数一致性预检：SynthesisCallback.start 只能声明一次，
+        //    混用不同采样率的供应商会导致变速/杂音——不一致时统一回退旁白发音人
+        val involved = resolved.map { it.binding.providerId }.distinct()
+        val signatures = involved.mapNotNull { pid ->
+            getDialogueProvider(pid)?.getAudioConfig()
+                ?.let { pid to Triple(it.sampleRate, it.audioFormat, it.channelCount) }
+        }
+        if (signatures.map { it.second }.distinct().size > 1) {
+            TtsLogger.w("DialogueMode: 供应商音频参数不一致" +
+                    "（${signatures.joinToString { "${it.first}=${it.second}" }}），本次统一使用旁白发音人")
+            resolved = resolved.map { it.copy(binding = dialogueConfig.narrator) }
+        }
+
+        val audioInitialized = AtomicBoolean(false)
+        val frameworkFailed = AtomicBoolean(false)
+        val startedSampleRate = AtomicInteger(0)
+
+        for ((index, item) in resolved.withIndex()) {
+            val providerId = item.binding.providerId
+            val provider = getDialogueProvider(providerId)
+            if (provider == null) {
+                TtsLogger.e("DialogueMode: provider unavailable - $providerId")
+                attempt.markError("dialogue_no_provider", TtsTelemetryTracker.STAGE_PREPARATION)
+                return TtsErrorCode.ERROR_NO_PROVIDER
+            }
+            val segmentConfig = getProviderConfigRepository(providerId)?.getConfig(providerId)
+            if (segmentConfig == null || !provider.isConfigured(segmentConfig)) {
+                TtsLogger.e("DialogueMode: provider not configured - $providerId")
+                attempt.markError("dialogue_not_configured", TtsTelemetryTracker.STAGE_PREPARATION)
+                return TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED
+            }
+
+            // 段级参数：音色与风格覆写优先于供应商配置
+            val segmentParams = baseParams.copy(
+                voiceIdOverride = item.binding.voiceId,
+                styleInstructionOverride = item.binding.styleInstruction
+            )
+
+            currentDialogueSegmentProvider = provider
+            val segmentResult = withTimeoutOrNull(120_000L.milliseconds) {
+                suspendCancellableCoroutine { continuation ->
+                    activeContinuation = continuation
+
+                    provider.synthesize(
+                        item.segment.text,
+                        segmentParams,
+                        segmentConfig,
+                        object : TtsSynthesisListener {
+                            override fun onSynthesisStarted() {
+                                TtsLogger.d("DialogueMode: segment $index started")
+                            }
+
+                            override fun onAudioAvailable(
+                                audioData: ByteArray,
+                                sampleRate: Int,
+                                audioFormat: Int,
+                                channelCount: Int
+                            ) {
+                                if (!continuation.isActive) return
+                                if (frameworkFailed.get()) return
+
+                                // 首段音频到达时初始化系统回调（整场只 start 一次）
+                                if (audioInitialized.compareAndSet(false, true)) {
+                                    startedSampleRate.set(sampleRate)
+                                    val startResult = callback.start(sampleRate, audioFormat, channelCount)
+                                    if (startResult != TextToSpeech.SUCCESS) {
+                                        frameworkFailed.set(true)
+                                        attempt.markFrameworkFailure("start_$startResult")
+                                        return
+                                    }
+                                    attempt.markFirstAudio(sampleRate)
+                                }
+
+                                var offset = 0
+                                while (offset < audioData.size) {
+                                    val chunkSize = minOf(4096, audioData.size - offset)
+                                    val writeResult = callback.audioAvailable(audioData, offset, chunkSize)
+                                    if (writeResult != TextToSpeech.SUCCESS) {
+                                        frameworkFailed.set(true)
+                                        attempt.markFrameworkFailure("audio_$writeResult")
+                                        break
+                                    }
+                                    attempt.recordAudioDelivered(chunkSize)
+                                    offset += chunkSize
+                                }
+                            }
+
+                            override fun onSynthesisCompleted() {
+                                TtsLogger.d("DialogueMode: segment $index completed")
+                                attempt.markProviderCompleted()
+                                if (continuation.isActive) {
+                                    try {
+                                        continuation.resume(TtsErrorCode.SUCCESS)
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                            }
+
+                            override fun onError(error: String) {
+                                TtsLogger.e("DialogueMode: segment $index error: $error")
+                                if (continuation.isActive) {
+                                    try {
+                                        continuation.resume(TtsErrorCode.inferErrorCodeFromMessage(error))
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+            activeContinuation = null
+
+            if (segmentResult == null) {
+                // 段超时：停止该段供应商，按整体超时上报
+                runCatching { provider.stop() }
+                return null
+            }
+            if (segmentResult != TtsErrorCode.SUCCESS) {
+                return segmentResult
+            }
+            if (frameworkFailed.get()) {
+                // 框架拒收（callback.start/audioAvailable 失败）：音频流已不可用，终止
+                return TtsErrorCode.ERROR_GENERIC
+            }
+
+            // 段间停顿（可选）：在已初始化的音频流上追加静音 PCM（16bit 单声道）
+            val pauseMs = dialogueConfig.pauseMs
+            if (pauseMs > 0 && index < resolved.lastIndex &&
+                audioInitialized.get() && !frameworkFailed.get()
+            ) {
+                val rate = startedSampleRate.get()
+                if (rate > 0) {
+                    val silence = ByteArray(rate * pauseMs / 1000 * 2)
+                    var offset = 0
+                    while (offset < silence.size) {
+                        val chunkSize = minOf(4096, silence.size - offset)
+                        if (callback.audioAvailable(silence, offset, chunkSize) != TextToSpeech.SUCCESS) {
+                            frameworkFailed.set(true)
+                            break
+                        }
+                        attempt.recordAudioDelivered(chunkSize)
+                        offset += chunkSize
+                    }
+                }
+            }
+        }
+
+        if (frameworkFailed.get()) {
+            return TtsErrorCode.ERROR_GENERIC
+        }
+        return TtsErrorCode.SUCCESS
+    }
 
     /**
      * 取消在途合成的挂起点
@@ -918,6 +1180,19 @@ class TalkifyTtsService : TextToSpeechService() {
         } catch (e: Exception) {
             TtsLogger.e("Unexpected error during provider stop", e)
         }
+        // 对话模式：停止在途段供应商并全量释放段供应商缓存
+        try {
+            currentDialogueSegmentProvider?.stop()
+        } catch (_: Exception) {
+        }
+        currentDialogueSegmentProvider = null
+        dialogueProviderCache.values.forEach { provider ->
+            try {
+                provider.release()
+            } catch (_: Exception) {
+            }
+        }
+        dialogueProviderCache.clear()
         try {
             currentProvider?.release()
         } catch (e: DeadObjectException) {
@@ -963,6 +1238,12 @@ class TalkifyTtsService : TextToSpeechService() {
         } catch (e: Exception) {
             TtsLogger.e("Unexpected error during provider stop in onStop", e)
         }
+        // 对话模式：停止在途段供应商（缓存实例保留，供下一次请求复用）
+        try {
+            currentDialogueSegmentProvider?.stop()
+        } catch (_: Exception) {
+        }
+        currentDialogueSegmentProvider = null
         // 后台 TTS 空闲/服务停止时冲刷未满窗口；不依赖 Activity 的 onStop
         TtsTelemetryTracker.flushMetrics()
     }

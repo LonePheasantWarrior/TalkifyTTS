@@ -81,13 +81,16 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
         params: SynthesisParams
     ): Request {
         val mimoConfig = config as XiaomiConfig
-        val voiceId = if (mimoConfig.voiceId.isNotEmpty()) {
-            extractRealVoiceName(mimoConfig.voiceId) ?: mimoConfig.voiceId
+        // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+        val voiceSource = resolveVoiceSource(mimoConfig, params)
+        val voiceId = if (voiceSource.isNotEmpty()) {
+            extractRealVoiceName(voiceSource) ?: voiceSource
         } else {
             voiceIds.firstOrNull() ?: fallbackVoiceId
         }
 
         val effectiveVoice = resolveVoiceForLanguage(voiceId, params.language)
+        val effectiveStyle = params.styleInstructionOverride ?: mimoConfig.styleInstruction
 
         // 构建请求体 - 小米 MiMo v2.5 Speech Synthesis 格式
         // v2.5 API 支持 user role 用于风格指令（自然语言描述朗读风格、语气等）
@@ -96,10 +99,10 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
             put("model", effectiveModel)
             put("messages", JSONArray().apply {
                 // user role: 可选的风格指令（v2.5 新特性）
-                if (mimoConfig.styleInstruction.isNotBlank()) {
+                if (effectiveStyle.isNotBlank()) {
                     put(JSONObject().apply {
                         put("role", "user")
-                        put("content", mimoConfig.styleInstruction)
+                        put("content", effectiveStyle)
                     })
                 }
                 // assistant role: 实际合成文本（必需，v2.5 API 当前仅支持一个 assistant 消息）

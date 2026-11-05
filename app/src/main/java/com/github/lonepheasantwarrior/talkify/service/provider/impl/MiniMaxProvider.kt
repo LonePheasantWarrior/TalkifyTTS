@@ -314,8 +314,10 @@ class MiniMaxProvider : AbstractTtsProvider() {
     ) : WebSocketListener() {
 
         private val voiceId: String by lazy {
-            if (config.voiceId.isNotEmpty()) {
-                extractRealVoiceName(config.voiceId) ?: config.voiceId
+            // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+            val voiceSource = resolveVoiceSource(config, params)
+            if (voiceSource.isNotEmpty()) {
+                extractRealVoiceName(voiceSource) ?: voiceSource
             } else {
                 resolveVoiceForLanguage(config.voiceId, params.language)
             }

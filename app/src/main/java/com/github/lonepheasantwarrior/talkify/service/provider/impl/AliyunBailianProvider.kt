@@ -331,8 +331,10 @@ class AliyunBailianProvider : AbstractTtsProvider() {
     private fun buildConversationParam(
         text: String, params: SynthesisParams, config: AliyunBailianConfig
     ): MultiModalConversationParam {
-        val voice = if (config.voiceId.isNotEmpty()) {
-            parseVoice(config.voiceId)
+        // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+        val voiceSource = resolveVoiceSource(config, params)
+        val voice = if (voiceSource.isNotEmpty()) {
+            parseVoice(voiceSource)
         } else {
             logWarning("Voice ID not configured, using default CHERRY")
             AudioParameters.Voice.CHERRY

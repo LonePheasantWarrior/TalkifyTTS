@@ -281,6 +281,8 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
+    // 对话模式配置持久化（DataStore Preferences）
+    implementation(libs.androidx.datastore.preferences)
     testImplementation(libs.junit)
     // 本地 JVM 单测环境没有 Android 实现，提供真实的 org.json 以替代 android.jar 桩
     testImplementation(libs.org.json)

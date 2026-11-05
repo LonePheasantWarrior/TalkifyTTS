@@ -15,13 +15,20 @@ import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
  * @param volume 音量，范围 [0.0, 1.0]，1.0 为默认值（最大音量）
  * @param audioFormat 音频格式（如 AudioFormat.ENCODING_PCM_16BIT）
  * @param language 语言类型（如 "Chinese", "English" 等，null 表示使用供应商默认值）
+ * @param voiceIdOverride 对话模式段级音色覆写：非空时优先于供应商配置的 voiceId，
+ *                        为 null/空白时回退配置值（正常单音色路径不受影响）
+ * @param styleInstructionOverride 对话模式段级风格指令覆写：非 null 时优先于供应商配置的
+ *                        styleInstruction（空串表示「明确不带风格」）；仅对支持风格指令的
+ *                        供应商（小米 MiMo / OpenAI / Google Gemini）生效，其余供应商忽略
  */
 data class SynthesisParams(
     val pitch: Float = 100.0f,
     val speechRate: Float = 100.0f,
     val volume: Float = 1.0f,
     val audioFormat: Int = AudioFormat.ENCODING_PCM_16BIT,
-    val language: String? = null
+    val language: String? = null,
+    val voiceIdOverride: String? = null,
+    val styleInstructionOverride: String? = null
 )
 
 /**

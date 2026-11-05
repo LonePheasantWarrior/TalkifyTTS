@@ -377,7 +377,8 @@ class AzureProvider : AbstractTtsProvider() {
             // 1. 获取或复用持久化 WebSocket 连接
             val (webSocket, wsListener) = getOrCreateConnection(pipedOutputStream, pipeClosed)
 
-            val voice = config.voiceId.ifEmpty { DEFAULT_VOICE }
+            // 对话模式段级覆写优先于供应商配置（正常单音色路径不受影响）
+            val voice = resolveVoiceSource(config, params).ifEmpty { DEFAULT_VOICE }
             val rate = AzureParamMapper.convertRate(params.speechRate)
             val volume = AzureParamMapper.convertVolume(params.volume)
             val pitch = AzureParamMapper.convertPitch(params.pitch)
