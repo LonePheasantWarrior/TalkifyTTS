@@ -19,6 +19,7 @@
 
     <!-- 语音预览 -->
     <string name="voice_preview">语音预览</string>
+    <string name="voice_preview_single_voice">单音色试听</string>
     <string name="input_text_label">输入要合成的文本</string>
     <string name="input_text_placeholder">在这里输入文本…</string>
     <string name="select_voice">选择声音</string>
@@ -73,6 +74,225 @@
     <string name="save_success">配置保存成功</string>
     <string name="save_failed">配置保存失败</string>
     <string name="config_not_saved">配置尚未保存，是否放弃？</string>
+
+    <!-- 多角色朗读 -->
+    <string name="multirole_fallback_settings_unreadable">多角色配置暂时不可读，已回退单音色朗读；请前往多角色设置检查或修复。</string>
+    <string name="multirole_fallback_provider_unavailable">多角色方案绑定的供应商或模型不可用，已回退单音色朗读；请前往多角色设置修复。</string>
+    <string name="multirole_fallback_voice_incompatible">多角色方案的音色不可用或输出格式不一致，已回退单音色朗读；请前往多角色设置修复。</string>
+    <string name="multirole_fallback_single_voice">多角色设置无效，已回退单音色朗读；请前往多角色设置修复。</string>
+    <string name="multirole_error_synthesis_failed">多角色朗读合成失败，请检查供应商配置或稍后重试。</string>
+    <string name="multirole_error_audio_format">朗读音色的音频格式不一致，已停止合成；请在多角色设置中检查音色兼容性。</string>
+
+    <!-- 多角色朗读：入口与页面 -->
+    <string name="multirole_title">多角色朗读</string>
+    <string name="cd_multirole_button_enabled">多角色朗读已开启，打开多角色朗读设置</string>
+    <string name="cd_multirole_button_disabled">多角色朗读已关闭，打开多角色朗读设置</string>
+    <string name="cd_multirole_button_loading">多角色朗读设置加载中，打开多角色朗读设置</string>
+    <string name="cd_multirole_button_error">多角色朗读设置异常，打开多角色朗读设置</string>
+    <string name="multirole_home_banner">多角色使用：%1$s · %2$s</string>
+    <string name="multirole_home_banner_content">角色与旁白音色由该方案决定，主界面的普通音色不参与多角色朗读。</string>
+    <string name="multirole_switch_title">多角色朗读</string>
+    <string name="multirole_switch_summary">根据台词附近的人物名称切换声音；无法确定时使用默认角色。</string>
+    <string name="multirole_current_profile">当前方案</string>
+    <string name="multirole_no_profile">尚未创建方案</string>
+    <string name="multirole_profile_meta">使用 %1$s · %2$d 个角色</string>
+    <string name="multirole_profile_meta_no_voice">使用 %1$s · 待配置音色</string>
+    <string name="multirole_switch_profile">切换方案</string>
+    <string name="multirole_narrator_voice">旁白音色</string>
+    <string name="multirole_default_role_voice">默认角色音色</string>
+    <string name="multirole_voice_unset">未选择</string>
+    <string name="multirole_change_voice">更换</string>
+    <string name="multirole_roles">角色</string>
+    <string name="multirole_add_role">添加</string>
+    <string name="multirole_roles_empty">尚未添加具名角色；所有台词会使用默认角色。</string>
+    <string name="multirole_role_aliases">别名：%1$s</string>
+    <string name="multirole_role_no_alias">无别名</string>
+    <string name="multirole_delimiters">台词符号</string>
+    <string name="multirole_preview_section">试一段文本</string>
+    <string name="multirole_help_section">如何匹配</string>
+    <string name="multirole_first_use_title">用不同声音朗读旁白与台词</string>
+    <string name="multirole_first_use_body">先创建一个方案并选择供应商与音色。Talkify 只在本地根据台词符号和人物名称做保守匹配；线索不足或冲突时使用默认角色，继续完整朗读。不会调用大模型。</string>
+    <string name="multirole_create_first_profile">创建方案</string>
+    <string name="multirole_open_provider_settings">去供应商设置</string>
+    <string name="multirole_loading">正在加载多角色设置…</string>
+    <string name="multirole_enabled_message">多角色朗读已开启；下一段朗读生效。</string>
+
+    <!-- 多角色朗读：方案管理 -->
+    <string name="multirole_profiles_title">角色方案</string>
+    <string name="multirole_create_profile">新建方案</string>
+    <string name="multirole_copy_profile">复制方案</string>
+    <string name="multirole_rename_profile">重命名方案</string>
+    <string name="multirole_delete_profile">删除方案</string>
+    <string name="multirole_profile_created">方案已创建；请检查音色并手动开启多角色朗读。</string>
+    <string name="multirole_profile_copied">方案已复制。</string>
+    <string name="multirole_profile_deleted">方案已删除。</string>
+    <string name="multirole_copy_default_name">%1$s 副本</string>
+    <string name="multirole_delete_profile_title">删除「%1$s」？</string>
+    <string name="multirole_delete_profile_message">删除后无法恢复。若这是当前生效方案，多角色朗读会同时关闭，且不会自动选择其他方案。</string>
+    <string name="multirole_delete_active_profile_note">这是当前生效方案；删除会同时关闭多角色朗读。</string>
+    <string name="multirole_profile_name_label">方案名称</string>
+    <string name="multirole_provider_label">供应商</string>
+    <string name="multirole_provider_immutable">已创建方案的供应商不可直接修改；请复制为新方案。</string>
+    <string name="multirole_provider_locked">已创建方案的供应商不可直接修改；如需更换，请复制为新方案并重新选择音色。</string>
+    <string name="multirole_provider_unsupported_azure">Azure 的音频由 MP3 解码得到，真实采样率随音色变化，当前版本暂不支持多角色。请选择其他供应商。</string>
+    <string name="multirole_copy_provider_changed_hint">更换供应商会保留角色名称与别名，但清空旁白、默认角色及所有人物音色，需要重新配置。</string>
+    <string name="multirole_current_tag">当前</string>
+    <string name="multirole_select_profile_title">切换方案</string>
+    <string name="multirole_select_profile_disabled_hint">启用状态下切换到无效方案会被拒绝，并保留上一个有效方案。</string>
+
+    <!-- 多角色朗读：角色编辑 -->
+    <string name="multirole_add_role_title">添加角色</string>
+    <string name="multirole_edit_role_title">编辑角色</string>
+    <string name="multirole_role_name_label">角色名称</string>
+    <string name="multirole_role_aliases_label">别名（每行一个，可选）</string>
+    <string name="multirole_role_aliases_hint">最多 10 个别名；角色名称与别名在方案内按归一化规则唯一。</string>
+    <string name="multirole_role_voice_label">角色音色</string>
+    <string name="multirole_delete_role_title">删除角色「%1$s」？</string>
+    <string name="multirole_delete_role_message">删除后，原本分配给该角色的台词可能改用默认角色朗读。</string>
+    <string name="multirole_delete">删除</string>
+
+    <!-- 多角色朗读：台词符号 -->
+    <string name="multirole_delimiter_title">台词符号</string>
+    <string name="multirole_delimiter_hint">至少启用一对符号；同一字符不能同时用于不同的启用符号对（开闭相同的对称符号除外）。</string>
+    <string name="multirole_delimiter_presets">预设符号</string>
+    <string name="multirole_delimiter_custom">自定义符号</string>
+    <string name="multirole_delimiter_custom_open">开符号</string>
+    <string name="multirole_delimiter_custom_close">闭符号</string>
+    <string name="multirole_delimiter_custom_hint">各输入一个 Unicode 字符；允许开闭相同。此符号对与预设冲突时无法保存。</string>
+    <string name="multirole_delimiter_add_custom">添加自定义符号对</string>
+    <string name="multirole_delimiter_remove">移除</string>
+
+    <!-- 多角色朗读：音色选择 -->
+    <string name="multirole_voice_search">搜索音色</string>
+    <string name="multirole_voice_loading">正在加载音色…</string>
+    <string name="multirole_voice_empty">该供应商暂无可用音色；请先完成供应商配置或下载本地模型。</string>
+    <string name="multirole_voice_failed">音色加载失败，请检查供应商配置后重试。</string>
+    <string name="multirole_retry">重试</string>
+    <string name="multirole_voice_preview">试听</string>
+    <string name="multirole_voice_preview_stop">停止试听</string>
+
+    <string name="multirole_default_role_hint">默认角色用于没有明确线索或前后线索冲突的台词。</string>
+    <string name="multirole_delimiter_system_note">【】在某些作品中是系统提示；是否作为台词符号由你决定。</string>
+    <string name="multirole_preview_disclaimer">预览只代表本地解析结果；不同阅读器提交文本的切分方式可能不同。</string>
+    <string name="multirole_help_session">切换方案或开关后，若阅读软件仍显示旧音色，请在阅读软件中重新选择 Talkify 或重启其 TTS 会话。</string>
+    <string name="multirole_voice_custom_current">自定义声音（当前配置）</string>
+    <string name="multirole_voice_preview_failed">音色试听失败，请检查供应商配置。</string>
+    <string name="multirole_voice_format_note">输出格式未知或不一致的音色会在开启时被拒绝；这是为避免不同采样率 PCM 被连续播放。</string>
+    <string name="multirole_create_delimiter_note">默认启用“ ”、「 」与英文双引号；创建后可修改。</string>
+    <!-- 多角色朗读：试听与分析 -->
+    <string name="multirole_test_text_hint">粘贴一段短文本，或使用内置示例。</string>
+    <string name="multirole_use_sample">使用示例</string>
+    <string name="multirole_analyze">分析</string>
+    <string name="multirole_analysis_result">分段结果</string>
+    <string name="multirole_analysis_empty">暂无分析结果。</string>
+    <string name="multirole_analysis_narration">旁白</string>
+    <string name="multirole_analysis_default_role">默认角色</string>
+    <string name="multirole_analysis_reason_left">左侧说话标签</string>
+    <string name="multirole_analysis_reason_right">右侧说话标签</string>
+    <string name="multirole_analysis_reason_both">前后标签一致</string>
+    <string name="multirole_analysis_reason_conflict">前后线索冲突</string>
+    <string name="multirole_analysis_reason_none">未找到明确说话人</string>
+    <string name="multirole_analysis_unclosed">有未闭合符号，本次剩余文本按旁白处理。</string>
+    <string name="multirole_analysis_limit">文本超过解析资源上限，已回退旁白原文。</string>
+    <string name="multirole_preview_play">试听</string>
+    <string name="multirole_preview_stop">停止</string>
+    <string name="multirole_preview_need_profile">请先创建并选择一个方案。</string>
+    <string name="multirole_preview_no_text">没有可朗读的文本。</string>
+    <string name="multirole_preview_provider_unavailable">方案绑定的供应商未配置或不可用。</string>
+    <string name="multirole_preview_profile_invalid">方案音色或输出格式无效，请先修复。</string>
+    <string name="multirole_preview_timeout">试听合成超时，请重试。</string>
+    <string name="multirole_preview_no_audio">供应商未返回音频，试听失败。</string>
+    <string name="multirole_preview_playback_failed">试听播放失败，请重试。</string>
+    <string name="multirole_preview_failed">试听失败，请检查供应商配置。</string>
+    <string name="multirole_preview_not_persisted">试听原文只保存在内存中，不会写入配置或上报。</string>
+
+    <!-- 多角色朗读：帮助 -->
+    <string name="multirole_help_title">如何匹配</string>
+    <string name="multirole_help_summary">查看可识别的说话标签、回退规则、符号与费用说明</string>
+    <string name="multirole_help_content">### 工作方式
+
+Talkify 在本地按你启用的台词符号找出最外层台词，再只分析紧邻台词的旁白片段中的说话标签。它不调用大模型，也不推断代词、说话顺序或性别。
+
+### 能识别的例子
+
+- `张三说：“你好。”` → 前置标签，张三
+- `“你好。”张三说。` → 后置标签，张三
+- `Alice said, "Go."` / `"Go," said Alice.` → 英文标签，忽略大小写
+- `张三对李四说：“走。”` → 张三说话；李四只是受话人
+
+### 会回退的例子
+
+- `“听我的。”`：没有明确线索 → 默认角色
+- `他对张三说：“走。”`：主语是代词 → 默认角色
+- `张三看了看李四：“走吧。”`：没有说话动词 → 默认角色
+- 前后标签指向不同角色：冲突 → 默认角色
+
+### 符号与分段
+
+- 引号可能被用于引用、书名或反语；如果误判，请调整启用的符号。
+- 未闭合的最外层符号之后整段按旁白处理。
+- 阅读软件通常按段落提交文本，但系统 API 不保证每次请求都是完整段落；每个请求独立解析，不携带跨请求状态。
+
+### 费用与停顿
+
+角色切换会把原文分成多段依次请求供应商，可能增加请求次数、首包停顿和云服务费用。第一版不插入额外静音，也不做跨供应商混音。
+
+### 限制
+
+- 一个方案只绑定一个供应商；已创建方案的供应商不可直接修改，需复制后重新选择。
+- 音色的输出 PCM 格式必须已知且一致；格式未知的供应商（如当前 Azure MP3 解码路径）暂不支持多角色。
+- 系统音色名称不会覆盖方案音色；开启多角色后，语言/语速/音调仍沿用系统请求。
+- 换机后需要重新设置方案；配置不进入云备份。</string>
+
+    <!-- 多角色朗读：校验/修复/通用 -->
+    <string name="multirole_save_failed">多角色配置保存失败，原配置保持不变。</string>
+    <string name="multirole_reset_done">多角色配置已重置；普通单音色朗读不受影响。</string>
+    <string name="multirole_storage_corrupt_title">多角色配置无法读取</string>
+    <string name="multirole_storage_corrupt_message">配置文件已损坏或来自更高版本。Talkify 不会覆盖原文件，当前回退普通单音色朗读。你可以先导出/保留数据，再在此显式重置多角色配置。</string>
+    <string name="multirole_reset_confirm_title">重置多角色配置？</string>
+    <string name="multirole_reset_confirm_message">这会删除全部角色方案与音色选择，无法撤销。普通单音色供应商配置不会受影响。</string>
+    <string name="multirole_reset">重置多角色配置</string>
+    <string name="multirole_repair_title">需要修复</string>
+    <string name="multirole_repair_message">当前方案未通过校验，已回退普通单音色朗读。修复后才能重新启用：</string>
+    <string name="multirole_issue_profile_count">方案数量超过上限（最多 20 个）。</string>
+    <string name="multirole_issue_profile_name_empty">方案名称不能为空。</string>
+    <string name="multirole_issue_profile_name_duplicate">方案名称不能重复。</string>
+    <string name="multirole_issue_profile_name_too_long">方案名称过长。</string>
+    <string name="multirole_issue_active_profile_missing">当前生效方案不存在，请重新选择或关闭功能。</string>
+    <string name="multirole_issue_profile_not_found">找不到该方案。</string>
+    <string name="multirole_issue_role_count">具名角色数量超过上限（最多 100 个）。</string>
+    <string name="multirole_issue_role_name_empty">角色名称不能为空。</string>
+    <string name="multirole_issue_role_name_too_long">角色名称过长。</string>
+    <string name="multirole_issue_alias_count">单个角色的别名超过上限（最多 10 个）。</string>
+    <string name="multirole_issue_alias_empty">别名不能为空。</string>
+    <string name="multirole_issue_alias_too_long">别名过长。</string>
+    <string name="multirole_issue_name_duplicate">角色名称或别名在方案内重复。</string>
+    <string name="multirole_issue_name_reserved">不能使用“旁白”或“默认角色”作为具名角色。</string>
+    <string name="multirole_issue_voice_missing">旁白、默认角色或具名角色缺少音色。</string>
+    <string name="multirole_issue_delimiter_none">至少启用一对台词符号。</string>
+    <string name="multirole_issue_delimiter_too_many">启用的台词符号对超过 16 对。</string>
+    <string name="multirole_issue_delimiter_invalid">台词符号不是有效的单码点字符。</string>
+    <string name="multirole_issue_delimiter_duplicate">存在重复的台词符号对。</string>
+    <string name="multirole_issue_delimiter_conflict">同一字符被用于不同的启用符号对。</string>
+    <string name="multirole_issue_provider_unknown">方案绑定的供应商不存在。</string>
+    <string name="multirole_issue_provider_not_configured">方案绑定的供应商未完成配置。</string>
+    <string name="multirole_issue_voice_unavailable">方案中的音色已不可用。</string>
+    <string name="multirole_issue_output_format_unknown">音色的输出格式无法可靠确认，暂不支持多角色。</string>
+    <string name="multirole_issue_output_format_mismatch">方案中的音色输出格式不一致，无法连续播放；请选择相同采样率的音色。</string>
+    <string name="multirole_issue_model_not_ready">本地模型尚未下载或不可用。</string>
+    <string name="multirole_issue_enabled_requires_valid">当前方案未通过校验，无法开启多角色朗读。</string>
+    <string name="multirole_issue_generic">配置未通过校验。</string>
+    <string name="multirole_select_voice">选择音色</string>
+    <string name="multirole_dialog_cancel">取消</string>
+    <string name="multirole_dialog_delete">删除</string>
+    <string name="multirole_dialog_save">保存</string>
+    <string name="multirole_dialog_create">创建</string>
+    <string name="multirole_dialog_copy">复制</string>
+    <string name="multirole_dialog_rename">重命名</string>
+    <string name="multirole_close">关闭</string>
+    <string name="cd_multirole_back">返回主界面</string>
+    <string name="cd_multirole_more_actions">更多方案操作</string>
+    <string name="cd_multirole_role_more">角色操作</string>
 
     <!-- 错误提示 -->
     <string name="error_voice_load_failed">加载声音列表失败</string>

@@ -25,6 +25,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.ScreenTracker
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.recorder.UmamiRecorder
@@ -32,7 +33,9 @@ import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.ui.components.TelemetryCaptureHost
 import com.github.lonepheasantwarrior.talkify.ui.screens.AboutScreen
 import com.github.lonepheasantwarrior.talkify.ui.screens.MainScreen
+import com.github.lonepheasantwarrior.talkify.ui.screens.MultiRoleScreen
 import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyTheme
+import com.github.lonepheasantwarrior.talkify.ui.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -41,6 +44,7 @@ class MainActivity : ComponentActivity() {
 
         private const val ROUTE_MAIN = "main"
         private const val ROUTE_ABOUT = "about"
+        private const val ROUTE_MULTIROLE = "multirole"
     }
 
     @OptIn(ExperimentalSharedTransitionApi::class)
@@ -64,6 +68,8 @@ class MainActivity : ComponentActivity() {
                     info.versionName ?: "1.0.0"
                 }
                 val navController = rememberNavController()
+                // Activity 级 ViewModel：从多角色页返回后可直接打开供应商设置抽屉
+                val mainViewModel: MainViewModel = viewModel()
 
                 ObserveRouteForTelemetry(navController)
 
@@ -102,6 +108,7 @@ class MainActivity : ComponentActivity() {
                                 composable(ROUTE_MAIN) {
                                     MainScreen(
                                         modifier = Modifier.fillMaxSize(),
+                                        viewModel = mainViewModel,
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this,
                                         onAboutClick = {
@@ -109,7 +116,23 @@ class MainActivity : ComponentActivity() {
                                             SharedPreferencesAppConfigRepository(this@MainActivity)
                                                 .setAboutPageOpened(true)
                                             navController.navigate(ROUTE_ABOUT) { launchSingleTop = true } // 快速连点防堆叠（P3-16）
+                                        },
+                                        onMultiRoleClick = {
+                                            // 进入多角色页前停止首页单音色试听，避免两个播放器叠加
+                                            mainViewModel.stopPreview()
+                                            navController.navigate(ROUTE_MULTIROLE) {
+                                                launchSingleTop = true
+                                            }
                                         }
+                                    )
+                                }
+                                composable(ROUTE_MULTIROLE) {
+                                    MultiRoleScreen(
+                                        onBack = { navController.popBackStack() },
+                                        onOpenProviderSettings = {
+                                            navController.popBackStack(ROUTE_MAIN, inclusive = false)
+                                            mainViewModel.openConfigSheet()
+                                        },
                                     )
                                 }
                                 composable(ROUTE_ABOUT) {
@@ -154,6 +177,7 @@ class MainActivity : ComponentActivity() {
     private fun telemetryRouteOf(route: String?): Pair<String, String?>? = when (route) {
         ROUTE_MAIN -> Pair("/", "Main")
         ROUTE_ABOUT -> Pair("/about", "About")
+        ROUTE_MULTIROLE -> Pair("/multirole", "MultiRole")
         else -> null
     }
 }

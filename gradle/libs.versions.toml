@@ -16,6 +16,7 @@ navigationCompose = "2.10.2"
 okhttp = "4.12.0"
 commons-compress = "1.28.0"
 org-json = "20260814"
+datastore = "1.1.7"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +45,8 @@ jlayer = { group = "javazoom", name = "jlayer", version.ref = "jlayer" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 # 本地 JVM 单测用：覆盖 android.jar 中抛 Stub 异常的 org.json
 org-json = { group = "org.json", name = "json", version.ref = "org-json" }
+# 多角色配置：需要事务性读改写与失败反馈，单独使用 Preferences DataStore
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

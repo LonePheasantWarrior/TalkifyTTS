@@ -331,12 +331,13 @@ class AliyunBailianProvider : AbstractTtsProvider() {
     private fun buildConversationParam(
         text: String, params: SynthesisParams, config: AliyunBailianConfig
     ): MultiModalConversationParam {
-        val voice = if (config.voiceId.isNotEmpty()) {
-            parseVoice(config.voiceId)
+        val configuredVoice = if (config.voiceId.isNotEmpty()) {
+            config.voiceId
         } else {
             logWarning("Voice ID not configured, using default CHERRY")
-            AudioParameters.Voice.CHERRY
+            AudioParameters.Voice.CHERRY.value
         }
+        val voice = parseVoice(resolveRequestVoiceId(configuredVoice, params))
 
         val languageType = convertToQwenLanguageType(params.language)
 

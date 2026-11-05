@@ -67,7 +67,8 @@ fun VoicePreview(
     modifier: Modifier = Modifier,
     waveform: FloatArray = FloatArray(0),
     onPlayClick: () -> Unit,
-    onStopClick: () -> Unit
+    onStopClick: () -> Unit,
+    titleRes: Int = R.string.voice_preview,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -81,7 +82,7 @@ fun VoicePreview(
                 .padding(16.dp)
         ) {
             Text(
-                text = stringResource(R.string.voice_preview),
+                text = stringResource(titleRes),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )

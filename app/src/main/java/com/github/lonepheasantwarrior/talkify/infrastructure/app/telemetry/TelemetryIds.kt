@@ -44,6 +44,13 @@ object TelemetryIds {
             if (char.isLetterOrDigit() || char == '_' || char == '$' || char == '.') char else '_'
         }.joinToString("").trimEnd('.').ifBlank { "java.lang.Throwable" }
 
+    /**
+     * 多角色请求没有单一“生效音色”。使用 unknown/unknown 而不是伪装成某个
+     * 角色声音或旁白声音，避免报表把多角色请求算进单音色口径。
+     */
+    fun multiRoleVoice(): ClassifiedId =
+        ClassifiedId(CATEGORY_UNKNOWN, CATEGORY_UNKNOWN)
+
     fun voice(
         rawVoiceId: String?,
         isKnown: (String) -> Boolean,

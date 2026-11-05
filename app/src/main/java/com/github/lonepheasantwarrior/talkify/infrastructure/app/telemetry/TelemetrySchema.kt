@@ -417,6 +417,7 @@ internal object TelemetrySchema {
                 "synthesis_ms" to DURATION_MS,
                 "first_audio_ms" to DURATION_MS,
                 "sample_rate" to NumberRule(0, 384_000),
+                "multi_role" to FlagRule,
             ),
             origins = setOf(TelemetryOrigin.TTS_SERVICE),
         ),

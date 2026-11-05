@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.RemoteException
+import android.os.SystemClock
 import android.speech.tts.SynthesisCallback
 import android.speech.tts.SynthesisRequest
 import android.speech.tts.TextToSpeech
@@ -17,61 +18,65 @@ import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.LocalModelConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProviderRegistry
+import com.github.lonepheasantwarrior.talkify.domain.model.multirole.MultiRoleState
+import com.github.lonepheasantwarrior.talkify.domain.model.multirole.ReadingProfile
+import com.github.lonepheasantwarrior.talkify.domain.multirole.SegmentKind
+import com.github.lonepheasantwarrior.talkify.domain.model.multirole.MultiRoleValidator
+import com.github.lonepheasantwarrior.talkify.domain.multirole.AnalyzedSegment
+import com.github.lonepheasantwarrior.talkify.domain.multirole.MultiRoleParser
+import com.github.lonepheasantwarrior.talkify.domain.multirole.PlanWarnings
+import com.github.lonepheasantwarrior.talkify.domain.multirole.SpeechPlan
+import com.github.lonepheasantwarrior.talkify.domain.multirole.SpeechSegment
 import com.github.lonepheasantwarrior.talkify.domain.repository.AppConfigRepository
+import com.github.lonepheasantwarrior.talkify.domain.repository.MultiRoleRepository
 import com.github.lonepheasantwarrior.talkify.domain.repository.ProviderConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.NotificationIds
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.MultiRoleRepositoryProvider
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TelemetryIds
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.telemetry.TtsTelemetryTracker
+import com.github.lonepheasantwarrior.talkify.service.delivery.SynthesisCallbackConsumer
+import com.github.lonepheasantwarrior.talkify.service.delivery.SynthesisDeliveryBridge
+import com.github.lonepheasantwarrior.talkify.service.multirole.EffectiveTtsTargetResolver
+import com.github.lonepheasantwarrior.talkify.service.multirole.MultiRoleRuntimeValidator
+import com.github.lonepheasantwarrior.talkify.service.multirole.SpeechPlanExecutor
+import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderApi
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
-import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider
-import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.coroutines.resume
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Talkify TTS 服务
  *
  * 实现 [TextToSpeechService]，作为系统 TTS 框架与本应用供应商之间的桥梁。
- * 负责：
- * 1. 根据用户选择的供应商 ID 获取对应的合成供应商
- * 2. 获取用户配置的供应商设置
- * 3. 委托供应商执行实际的语音合成
  *
- * 并发模型（与实现保持一致）：
- * - 系统框架经单个 SynthThread 串行分发 onSynthesizeText，本服务在请求内
- *   runBlocking 同步等待合成结果，单请求上限 120s（[processRequestSynchronously]）
- * - 语言/音色探测回调（onIsLanguageAvailable 等）由 binder 线程池并发调用，
- *   与 SynthThread 共享的供应商生命周期字段经 [providerLifecycleLock] 串行化
- *   （选择 + 创建 + 替换收敛在 [ensureProvider] 锁内）
- * - 合成期间经 startForeground 提升优先级并持有 WakeLock/WifiLock，
- *   请求结束进入空闲延迟退出前台，避免逐句通知闪烁
+ * 本版本在保留单音色外部行为的前提下，把交付层重构为：
+ * - 供应商回调线程经 [SynthesisDeliveryBridge] 有界入队；
+ * - `onSynthesizeText` 所在线程串行消费并调用 [SynthesisCallback]；
+ * - 单音色与多角色共用 [SpeechPlanExecutor]，多角色逐段设置 `voiceOverride`；
+ * - 所有系统发现入口（语言/音色/CHECK 数据）使用同一个生效配置解析器。
  *
- * @property isStopped 服务停止标志，使用 AtomicBoolean 保证线程安全
- * @property activeContinuation 在途合成的挂起点，onStop/onDestroy 经其取消阻塞中的请求
- * @property wakeLock 电源唤醒锁，防止合成过程中设备休眠
- * @property appConfigRepository 应用配置仓储，管理全局应用设置
- * @property currentProvider 当前活动的 TTS 供应商实例
- * @property currentProviderId 当前供应商的唯一标识符
- * @property currentConfig 当前供应商的配置信息
+ * 供应商生命周期使用引用计数池：并发 discovery 与合成切换不会被
+ * release 掉另一个线程正在使用的实例。
  */
 class TalkifyTtsService : TextToSpeechService() {
 
-    private var isStopped = AtomicBoolean(false)
-
-    @Volatile
-    private var activeContinuation: CancellableContinuation<Int?>? = null
+    private val isStopped = AtomicBoolean(false)
 
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -80,8 +85,6 @@ class TalkifyTtsService : TextToSpeechService() {
         wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "Talkify:WifiLock")
     }
 
-    // 以下生命周期字段在主线程（onCreate/onDestroy）、SynthThread（onSynthesizeText）
-    // 与 binder 线程（onIsLanguageAvailable/onGetLanguage 等）间共享，须保证可见性
     @Volatile
     private var isForegroundServiceRunning = false
 
@@ -89,64 +92,40 @@ class TalkifyTtsService : TextToSpeechService() {
     private var appConfigRepository: AppConfigRepository? = null
 
     @Volatile
-    private var currentProvider: TtsProviderApi? = null
+    private var multiRoleRepository: MultiRoleRepository? = null
 
     @Volatile
-    private var currentProviderId: String? = null
+    private var activeRequest: ActiveRequest? = null
+
+    /** onStop/onDestroy 递增；用于关闭“准备阶段尚未登记 activeRequest”的取消窗口 */
+    private val stopGeneration = java.util.concurrent.atomic.AtomicLong(0)
 
     @Volatile
-    private var currentConfig: BaseProviderConfig? = null
+    private var preferredProviderId: String? = null
+
+    /** 最近一次回退/错误通知时间，避免连续段落刷屏 */
+    private val lastNoticeAt = HashMap<String, Long>()
 
     override fun onCreate() {
         super.onCreate()
         TtsLogger.i("TalkifyTtsService onCreate")
         initializeWakeLock()
         initializeRepositories()
-        val providerInitSuccess = initializeProvider()
-        TtsLogger.d("Provider initialization result: $providerInitSuccess")
+        initializePreferredProvider()
         warmUpLocalModelEngineIfApplicable()
     }
 
-    /**
-     * 本地模型供应商场景下异步预热引擎
-     *
-     * ZipVoice 引擎首次初始化需加载约 200MB 模型（秒级），在服务创建时
-     * （客户端刚绑定、通常尚未发起朗读）提前加载，消除首次朗读的首音延迟。
-     */
-    private fun warmUpLocalModelEngineIfApplicable() {
-        val provider = currentProvider as? LocalModelProvider ?: return
-        val modelId = (currentConfig as? LocalModelConfig)?.modelId
-            ?.takeIf { it.isNotBlank() }
-            ?: provider.getDefaultModelId()
-        try {
-            provider.warmUp(modelId)
-        } catch (e: Exception) {
-            // 预热失败静默忽略：首次合成时仍会走正常初始化路径
-            TtsLogger.w("Local engine warm-up skipped: ${e.message}")
-        }
-    }
+    // ==================== 生命周期/通知 ====================
 
-    /**
-     * 初始化 WakeLock
-     *
-     * 用于防止在语音合成过程中设备进入休眠状态
-     * 设置为部分唤醒锁，最长持有 10 分钟
-     */
     private fun initializeWakeLock() {
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "Talkify:TtsServiceWakeLock"
-        ).apply {
-            setReferenceCounted(false)
-        }
+        ).apply { setReferenceCounted(false) }
         TtsLogger.d("WakeLock initialized")
     }
 
-    /**
-     * 获取 WifiLock
-     * 确保在合成期间 WiFi 保持高性能模式
-     */
     private fun acquireWifiLock() {
         try {
             if (!wifiLock.isHeld) {
@@ -158,9 +137,6 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
-    /**
-     * 释放 WifiLock
-     */
     private fun releaseWifiLock() {
         try {
             if (wifiLock.isHeld) {
@@ -172,87 +148,6 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
-    /**
-     * 提升为前台服务
-     *
-     * 如果服务尚未处于前台状态，则 startForeground 并显示常驻通知
-     * 使用 [TalkifyNotificationHelper.buildForegroundWithNotification] 构建通知
-     *
-     * 注意：Android 12+ 限制了后台启动前台服务，当第三方应用在后台调用 TTS 时
-     * 可能抛出 ForegroundServiceStartNotAllowedException，此时我们会静默降级为非前台服务
-     */
-    private fun enterForegroundState() {
-        if (!isForegroundServiceRunning) {
-            // 新请求到来：撤销此前排定的空闲退出，避免刚退出又立即进入造成通知闪烁
-            foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    startForeground(
-                        NotificationIds.TTS_PLAYBACK,
-                        TalkifyNotificationHelper.buildForegroundWithNotification(this),
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-                    )
-                } else {
-                    startForeground(NotificationIds.TTS_PLAYBACK, TalkifyNotificationHelper.buildForegroundWithNotification(this))
-                }
-                isForegroundServiceRunning = true
-                TtsLogger.d("Foreground service started")
-            } catch (e: Exception) {
-                // Android 12+ 可能抛出 ForegroundServiceStartNotAllowedException
-                // 当第三方应用在后台调用 TTS 服务时，系统禁止启动前台服务
-                // 此时我们静默处理，继续以非前台服务模式运行
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    e is android.app.ForegroundServiceStartNotAllowedException) {
-                    TtsLogger.w("Cannot start foreground service from background, continuing without foreground status")
-                } else {
-                    TtsLogger.w("Failed to start foreground service: ${e.message}")
-                    TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_foreground_service_failed))
-                }
-                // 标记为未运行前台服务，但允许继续执行 TTS 合成
-                isForegroundServiceRunning = false
-            }
-        }
-    }
-
-    /**
-     * 退出前台状态
-     *
-     * 移除前台服务状态和关联的通知
-     */
-    private fun exitForegroundState() {
-        if (isForegroundServiceRunning) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            isForegroundServiceRunning = false
-            TtsLogger.d("Foreground service stopped")
-        }
-    }
-
-    /**
-     * 空闲延迟退出前台
-     *
-     * 每次合成请求结束后调用（TTS 请求由系统串行调度，无并发请求）。
-     * 不立即退出：连续朗读场景下逐句 startForeground/stopForeground 会让通知
-     * 每句闪烁一次；改为最后一句结束后延迟 [FOREGROUND_IDLE_EXIT_DELAY_MS]
-     * 再退出（P3-2），期间新请求到来则由 [enterForegroundState] 撤销排定任务
-     */
-    private fun scheduleForegroundIdleExit() {
-        // N19-e：服务已销毁（onDestroy 置位 isStopped）后不再投递延迟任务——
-        // 否则已销毁实例被多持 10s 并幽灵回调 stopForeground
-        if (isStopped.get()) return
-        foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
-        foregroundIdleHandler.postDelayed(exitForegroundRunnable, FOREGROUND_IDLE_EXIT_DELAY_MS)
-    }
-
-    private val foregroundIdleHandler = Handler(Looper.getMainLooper())
-
-    private val exitForegroundRunnable = Runnable { exitForegroundState() }
-
-    /**
-     * 获取 WakeLock
-     *
-     * 如果 WakeLock 未持有，则尝试获取
-     * 最长持有 10 分钟
-     */
     private fun acquireWakeLock() {
         wakeLock?.let {
             if (!it.isHeld) {
@@ -262,11 +157,6 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
-    /**
-     * 释放 WakeLock
-     *
-     * 如果 WakeLock 已持有，则释放它
-     */
     private fun releaseWakeLock() {
         wakeLock?.let {
             if (it.isHeld) {
@@ -276,32 +166,80 @@ class TalkifyTtsService : TextToSpeechService() {
         }
     }
 
-
-    /**
-     * 在空闲时退出前台的延迟
-     */
-    private companion object {
-        const val FOREGROUND_IDLE_EXIT_DELAY_MS = 10_000L
+    private fun enterForegroundState() {
+        if (!isForegroundServiceRunning) {
+            foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    startForeground(
+                        NotificationIds.TTS_PLAYBACK,
+                        TalkifyNotificationHelper.buildForegroundWithNotification(this),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                } else {
+                    startForeground(
+                        NotificationIds.TTS_PLAYBACK,
+                        TalkifyNotificationHelper.buildForegroundWithNotification(this)
+                    )
+                }
+                isForegroundServiceRunning = true
+                TtsLogger.d("Foreground service started")
+            } catch (e: Exception) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    e is android.app.ForegroundServiceStartNotAllowedException
+                ) {
+                    TtsLogger.w("Cannot start foreground service from background, continuing without foreground status")
+                } else {
+                    TtsLogger.w("Failed to start foreground service: ${e.message}")
+                    TalkifyNotificationHelper.sendSystemNotification(
+                        this, getString(R.string.tts_error_foreground_service_failed)
+                    )
+                }
+                isForegroundServiceRunning = false
+            }
+        }
     }
 
-    /**
-     * 供应商配置仓储映射表
-     * 根据供应商 ID 获取对应的配置仓储
-     *
-     * 读写来自多个 binder/Synth 线程，使用 ConcurrentHashMap 保证线程安全
-     */
-    private val providerConfigRepositoryMap: MutableMap<String, ProviderConfigRepository> =
-        java.util.concurrent.ConcurrentHashMap()
+    private fun exitForegroundState() {
+        if (isForegroundServiceRunning) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            isForegroundServiceRunning = false
+            TtsLogger.d("Foreground service stopped")
+        }
+    }
 
-    /**
-     * 获取指定供应商的配置仓储
-     *
-     * 根据供应商 ID 动态创建或获取对应的配置仓储实例
-     * 支持多供应商配置隔离存储
-     *
-     * @param providerId 供应商唯一标识符
-     * @return 对应供应商的配置仓储实例
-     */
+    private fun scheduleForegroundIdleExit() {
+        if (isStopped.get()) return
+        foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
+        foregroundIdleHandler.postDelayed(exitForegroundRunnable, FOREGROUND_IDLE_EXIT_DELAY_MS)
+    }
+
+    private val foregroundIdleHandler = Handler(Looper.getMainLooper())
+    private val exitForegroundRunnable = Runnable { exitForegroundState() }
+
+    /** 去重后的系统通知（同一 key 60s 内只发一次） */
+    private fun notifyOnce(key: String, message: String) {
+        synchronized(lastNoticeAt) {
+            val now = SystemClock.elapsedRealtime()
+            val last = lastNoticeAt[key]
+            if (last != null && now - last < NOTICE_DEDUPE_MS) return
+            lastNoticeAt[key] = now
+        }
+        TalkifyNotificationHelper.sendSystemNotification(this, message)
+    }
+
+    private companion object {
+        const val FOREGROUND_IDLE_EXIT_DELAY_MS = 10_000L
+        const val NOTICE_DEDUPE_MS = 60_000L
+        const val REQUEST_TIMEOUT_MS = 120_000L
+        const val MULTI_ROLE_READ_TIMEOUT_MS = 400L
+    }
+
+    // ==================== 仓储 ====================
+
+    private val providerConfigRepositoryMap: MutableMap<String, ProviderConfigRepository> =
+        ConcurrentHashMap()
+
     private fun getProviderConfigRepository(providerId: String): ProviderConfigRepository? {
         providerConfigRepositoryMap[providerId]?.let { return it }
         val repository = TtsProviderFactory.createConfigRepository(providerId, applicationContext)
@@ -313,175 +251,399 @@ class TalkifyTtsService : TextToSpeechService() {
         return repository
     }
 
-    /**
-     * 初始化仓储
-     *
-     * 创建应用配置仓储的实例
-     * 供应商配置仓储采用延迟初始化策略，根据实际使用的供应商动态创建
-     */
+    private fun getConfig(providerId: String): BaseProviderConfig? =
+        getProviderConfigRepository(providerId)?.getConfig(providerId)
+
     private fun initializeRepositories() {
         TtsLogger.d("Initializing repositories")
         try {
             appConfigRepository = SharedPreferencesAppConfigRepository(applicationContext)
-            // 供应商配置仓储不再在这里统一初始化
-            // 而是在 getProviderConfigRepository() 中根据供应商 ID 动态创建
+            multiRoleRepository = MultiRoleRepositoryProvider.get(applicationContext)
             TtsLogger.i("Repositories initialized successfully")
         } catch (e: Exception) {
             TtsLogger.e("Failed to initialize repositories", e)
-            TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_init_failed))
+            notifyOnce("init_failed", getString(R.string.tts_error_init_failed))
         }
     }
 
-    /**
-     * 供应商生命周期锁
-     *
-     * "选择 + 创建 + 释放 + 替换"必须在锁内完成：语言/音色探测回调由 binder
-     * 线程池并发进入（AOSP 不保证单线程），与 SynthThread 共享以下字段，
-     * 无锁时并发线程可能双重创建/释放，或 release 掉另一线程正在使用的实例（P1-17）。
-     * 字段保留 @Volatile 供锁外读优化。
-     */
-    private val providerLifecycleLock = Any()
+    private fun mainProviderId(): String =
+        appConfigRepository?.getSelectedProviderId() ?: TtsProviderRegistry.defaultProvider.id
 
     /**
-     * 确保指定供应商已创建（幂等）
+     * 请求/发现入口读取多角色配置的不可变快照。
      *
-     * 供 binder 探测路径、onCreate 与每次合成请求共同调用：
-     * - 供应商未变且实例存活：快速返回，不做磁盘读
-     * - 供应商变更或上次创建失败：在锁内释放旧实例并创建新实例
-     *
-     * @return 供应商是否就绪
+     * DataStore 是唯一数据源；这里只做有界同步等待（合成线程/ binder 线程不可无限阻塞）。
+     * 超时返回 null，由调用方按“设置不可读”回退，不维护自行失效的进程内缓存。
      */
-    private fun ensureProvider(providerId: String): Boolean {
-        synchronized(providerLifecycleLock) {
-            if (currentProviderId == providerId && currentProvider != null) {
-                return true
+    private fun readMultiRoleStateBlocking(): MultiRoleState? {
+        val repository = multiRoleRepository ?: return null
+        return try {
+            runBlocking {
+                withTimeoutOrNull(MULTI_ROLE_READ_TIMEOUT_MS.milliseconds) {
+                    repository.snapshot()
+                }
             }
+        } catch (_: CancellationException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-            TtsLogger.i("Provider changed from $currentProviderId to $providerId, reinitializing")
-            currentProvider?.release()
-            currentProvider = TtsProviderFactory.createProvider(providerId)
+    // ==================== 供应商池 ====================
 
-            if (currentProvider == null) {
-                // P1-5：创建失败必须清空 currentProviderId。若保留 providerId，
-                // 后续调用因 "currentProviderId == providerId" 跳过重建，
-                // 所有合成只能报 "provider not ready"，只能重启服务恢复
-                currentProviderId = null
-                TtsLogger.e("Failed to create provider: $providerId")
-                TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_provider_init_failed))
-                return false
+    private class ProviderEntry(
+        val id: String,
+        val provider: TtsProviderApi,
+    ) {
+        var refs: Int = 0
+        var retired: Boolean = false
+        var released: Boolean = false
+    }
+
+    private class ProviderLease(val entry: ProviderEntry) {
+        val provider: TtsProviderApi get() = entry.provider
+    }
+
+    private val providerLock = Any()
+    private val providerEntries = HashMap<String, ProviderEntry>()
+
+    private fun acquireProvider(providerId: String): ProviderLease? {
+        synchronized(providerLock) {
+            val existing = providerEntries[providerId]
+            if (existing != null) {
+                existing.refs++
+                return ProviderLease(existing)
             }
-            currentProviderId = providerId
-
-            // 供应商切换后强制丢弃配置仓储缓存，避免读到旧供应商的遗留配置
-            providerConfigRepositoryMap.remove(providerId)
-
             if (TtsProviderRegistry.getProvider(providerId) == null) {
                 TtsLogger.e("Provider not found in registry: $providerId")
-                TalkifyNotificationHelper.sendSystemNotification(this, getString(R.string.tts_error_provider_not_found))
-                return false
+                return null
             }
+            val provider = TtsProviderFactory.createProvider(providerId) ?: return null
+            val entry = ProviderEntry(providerId, provider)
+            entry.refs = 1
+            providerEntries[providerId] = entry
+            return ProviderLease(entry)
+        }
+    }
 
-            // 仅在创建路径加载配置；快速路径不读磁盘（binder 探测高频调用）
-            currentConfig = getProviderConfigRepository(providerId)?.getConfig(providerId)
-            TtsLogger.d("Provider initialized: ${currentProvider?.getProviderName()}")
-            return true
+    private fun releaseProvider(lease: ProviderLease) {
+        val toRelease: ProviderEntry?
+        synchronized(providerLock) {
+            val entry = lease.entry
+            if (entry.refs > 0) entry.refs--
+            toRelease = if (entry.refs == 0 && (entry.retired || entry.id != preferredProviderId)) {
+                providerEntries.remove(entry.id)
+                entry.released = true
+                entry
+            } else {
+                null
+            }
+        }
+        toRelease?.let { releaseEntry(it) }
+    }
+
+    private fun markPreferred(providerId: String) {
+        val toRelease = ArrayList<ProviderEntry>()
+        synchronized(providerLock) {
+            preferredProviderId = providerId
+            val iterator = providerEntries.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next().value
+                if (entry.id != providerId && entry.refs == 0) {
+                    iterator.remove()
+                    entry.released = true
+                    toRelease += entry
+                }
+            }
+        }
+        toRelease.forEach { releaseEntry(it) }
+    }
+
+    private fun releaseEntry(entry: ProviderEntry) {
+        if (entry.released && entry.refs > 0) return
+        try {
+            entry.provider.stop()
+        } catch (_: Exception) {
+        }
+        try {
+            entry.provider.release()
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun releaseAllProviders() {
+        val toRelease = ArrayList<ProviderEntry>()
+        synchronized(providerLock) {
+            val iterator = providerEntries.entries.iterator()
+            while (iterator.hasNext()) {
+                val entry = iterator.next().value
+                if (entry.refs == 0) {
+                    iterator.remove()
+                    entry.released = true
+                    toRelease += entry
+                } else {
+                    entry.retired = true
+                }
+            }
+        }
+        toRelease.forEach { releaseEntry(it) }
+    }
+
+    private fun initializePreferredProvider() {
+        val base = EffectiveTtsTargetResolver.resolve(mainProviderId(), readMultiRoleStateBlocking())
+        val lease = acquireProvider(base.providerId) ?: run {
+            TtsLogger.e("Failed to create provider: ${base.providerId}")
+            return
+        }
+        try {
+            markPreferred(base.providerId)
+            TtsLogger.i("Preferred provider initialized: ${base.providerId}")
+        } finally {
+            releaseProvider(lease)
+        }
+    }
+
+    private fun warmUpLocalModelEngineIfApplicable() {
+        val base = EffectiveTtsTargetResolver.resolve(mainProviderId(), readMultiRoleStateBlocking())
+        val lease = acquireProvider(base.providerId) ?: return
+        try {
+            val provider = lease.provider as? LocalModelProvider ?: return
+            val config = getConfig(base.providerId) as? LocalModelConfig
+            val modelId = config?.modelId?.takeIf { it.isNotBlank() }
+                ?: provider.getDefaultModelId()
+            try {
+                provider.warmUp(modelId)
+            } catch (e: Exception) {
+                TtsLogger.w("Local engine warm-up skipped: ${e.message}")
+            }
+        } finally {
+            releaseProvider(lease)
+        }
+    }
+
+    // ==================== 生效配置解析 ====================
+
+    private data class DiscoveryTarget(
+        val provider: TtsProviderApi,
+        val config: BaseProviderConfig?,
+        val profile: ReadingProfile?,
+    )
+
+    private data class RequestTarget(
+        val providerId: String,
+        val lease: ProviderLease?,
+        val config: BaseProviderConfig?,
+        val profile: ReadingProfile?,
+        val settings: com.github.lonepheasantwarrior.talkify.domain.model.multirole.MultiRoleSettings?,
+        val audioConfig: AudioConfig?,
+        val fallback: EffectiveTtsTargetResolver.Fallback?,
+    )
+
+    private fun withDiscoveryTarget(
+        block: (DiscoveryTarget) -> Unit,
+    ) {
+        try {
+            val base = EffectiveTtsTargetResolver.resolve(mainProviderId(), readMultiRoleStateBlocking())
+            var lease: ProviderLease? = null
+            var profile: ReadingProfile? = null
+            var config: BaseProviderConfig? = null
+            try {
+                if (base.profile != null) {
+                    val candidate = acquireProvider(base.profile.providerId)
+                    val candidateConfig = getConfig(base.profile.providerId)
+                    val runtime = if (candidate != null) {
+                        try {
+                            MultiRoleRuntimeValidator.validateWithProvider(
+                                base.profile, candidate.provider, candidateConfig
+                            )
+                        } catch (_: Exception) {
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                    if (candidate != null && runtime?.ok == true) {
+                        lease = candidate
+                        profile = base.profile
+                        config = candidateConfig
+                        markPreferred(base.profile.providerId)
+                    } else {
+                        candidate?.let { releaseProvider(it) }
+                    }
+                }
+                if (lease == null) {
+                    val mainId = mainProviderId()
+                    val mainLease = acquireProvider(mainId) ?: return
+                    lease = mainLease
+                    config = getConfig(mainId)
+                    markPreferred(mainId)
+                }
+                block(DiscoveryTarget(lease.provider, config, profile))
+            } finally {
+                lease?.let { releaseProvider(it) }
+            }
+        } catch (e: Exception) {
+            // binder 探测线程上的供应商/配置异常不能导致整个 TTS 引擎崩溃
+            TtsLogger.e("Discovery target failed: ${e.javaClass.simpleName}", e)
         }
     }
 
     /**
-     * 初始化 TTS 供应商
-     *
-     * 读取用户选择的供应商 ID 并经 [ensureProvider] 创建对应实例、加载配置。
-     * 调用频率低（onCreate 与 provider 未就绪时的探测路径），故每次刷新 currentConfig
-     *
-     * @return 初始化是否成功
+     * 请求入口：先选方案绑定供应商并完整校验；不满足时回退主界面普通供应商单音色。
+     * 主界面供应商未配置但方案供应商就绪时，方案优先成立（文档第 7.1 节）。
      */
-    private fun initializeProvider(): Boolean {
-        if (appConfigRepository == null) {
-            initializeRepositories()
+    private fun acquireRequestTarget(): RequestTarget {
+        val base = EffectiveTtsTargetResolver.resolve(mainProviderId(), readMultiRoleStateBlocking())
+        val profile = base.profile
+        if (profile == null) {
+            base.fallback?.let { notifyFallbackOnce(it) }
+            return acquireSingleTarget(base.providerId, base)
         }
 
-        val selectedProviderId = appConfigRepository?.getSelectedProviderId()
-        val providerId = selectedProviderId ?: run {
-            TtsLogger.w("No selected provider found, using default")
-            TtsProviderRegistry.defaultProvider.id
+        val profileLease = try {
+            acquireProvider(profile.providerId)
+        } catch (e: Exception) {
+            TtsLogger.e("Failed to acquire profile provider: ${e.javaClass.simpleName}", e)
+            null
         }
-
-        TtsLogger.d("Initializing provider: $providerId")
-
-        if (!ensureProvider(providerId)) {
-            return false
+        if (profileLease == null) {
+            val fallback = EffectiveTtsTargetResolver.Fallback(
+                EffectiveTtsTargetResolver.FallbackReason.PROVIDER_UNKNOWN
+            )
+            notifyFallbackOnce(fallback)
+            return acquireSingleTarget(mainProviderId(), base, fallback)
         }
-
-        currentConfig = getProviderConfigRepository(providerId)?.getConfig(providerId)
-        return true
+        val config = try {
+            getConfig(profile.providerId)
+        } catch (e: Exception) {
+            TtsLogger.e("Failed to read profile config: ${e.javaClass.simpleName}", e)
+            null
+        }
+        val runtime = try {
+            MultiRoleRuntimeValidator.validateWithProvider(
+                profile, profileLease.provider, config
+            )
+        } catch (e: Exception) {
+            TtsLogger.e("Profile runtime validation failed: ${e.javaClass.simpleName}", e)
+            null
+        }
+        if (runtime == null || !runtime.ok) {
+            releaseProvider(profileLease)
+            val issue = runtime?.issues?.firstOrNull()
+            val fallback = issue?.let {
+                EffectiveTtsTargetResolver.Fallback(
+                    EffectiveTtsTargetResolver.fallbackReasonFor(it), it
+                )
+            } ?: EffectiveTtsTargetResolver.Fallback(
+                EffectiveTtsTargetResolver.FallbackReason.PROFILE_INVALID
+            )
+            notifyFallbackOnce(fallback)
+            return acquireSingleTarget(mainProviderId(), base, fallback)
+        }
+        markPreferred(profile.providerId)
+        return RequestTarget(
+            providerId = profile.providerId,
+            lease = profileLease,
+            config = config,
+            profile = profile,
+            settings = base.settings,
+            audioConfig = runtime.audioConfig,
+            fallback = null,
+        )
     }
+
+    private fun acquireSingleTarget(
+        providerId: String,
+        base: EffectiveTtsTargetResolver.Target,
+        fallback: EffectiveTtsTargetResolver.Fallback? = base.fallback,
+    ): RequestTarget {
+        val lease = try {
+            acquireProvider(providerId)
+        } catch (e: Exception) {
+            TtsLogger.e("Failed to acquire single provider: ${e.javaClass.simpleName}", e)
+            null
+        }
+        if (lease != null) markPreferred(providerId)
+        val config = try {
+            getConfig(providerId)
+        } catch (e: Exception) {
+            TtsLogger.e("Failed to read single config: ${e.javaClass.simpleName}", e)
+            null
+        }
+        return RequestTarget(
+            providerId = providerId,
+            lease = lease,
+            config = config,
+            profile = null,
+            settings = base.settings,
+            audioConfig = null,
+            fallback = fallback,
+        )
+    }
+
+    private fun notifyFallbackOnce(fallback: EffectiveTtsTargetResolver.Fallback) {
+        val key = "fallback_${fallback.reason.name}"
+        val message = when (fallback.reason) {
+            EffectiveTtsTargetResolver.FallbackReason.SETTINGS_UNREADABLE ->
+                getString(R.string.multirole_fallback_settings_unreadable)
+            EffectiveTtsTargetResolver.FallbackReason.PROVIDER_NOT_CONFIGURED,
+            EffectiveTtsTargetResolver.FallbackReason.MODEL_NOT_READY ->
+                getString(R.string.multirole_fallback_provider_unavailable)
+            EffectiveTtsTargetResolver.FallbackReason.VOICE_UNAVAILABLE,
+            EffectiveTtsTargetResolver.FallbackReason.OUTPUT_FORMAT_UNKNOWN,
+            EffectiveTtsTargetResolver.FallbackReason.OUTPUT_FORMAT_MISMATCH ->
+                getString(R.string.multirole_fallback_voice_incompatible)
+            else -> getString(R.string.multirole_fallback_single_voice)
+        }
+        notifyOnce(key, message)
+    }
+
+    // ==================== 语言/音色发现 ====================
 
     override fun onIsLanguageAvailable(
         lang: String?,
         country: String?,
-        variant: String?
+        variant: String?,
     ): Int {
         val locale = buildLocaleSafely(lang, country, variant)
         if (locale == null) {
             TtsLogger.w("onIsLanguageAvailable: invalid locale tags [lang: $lang, country: $country, variant: $variant]")
             return TextToSpeech.LANG_NOT_SUPPORTED
         }
-
         if (isLanguageSupported(locale.language)) {
-            TtsLogger.d("onIsLanguageAvailable: TextToSpeech.LANG_AVAILABLE [lang: $lang, country: $country, variant: $variant]")
             return TextToSpeech.LANG_AVAILABLE
         }
-        TtsLogger.w("onIsLanguageAvailable: not support language [${locale.language}]")
         return TextToSpeech.LANG_NOT_SUPPORTED
     }
 
-    /**
-     * 检查并兼容多种 ISO 639 格式的语言代码
-     * 支持范围: "zh", "en", "de", "it", "pt", "es", "ja", "ko", "fr", "ru"
-     */
     fun isLanguageSupported(lang: String?): Boolean {
         if (lang == null) return false
-
-        if (currentProvider == null) {
-            initializeProvider()
+        var supported = false
+        withDiscoveryTarget { target ->
+            supported = target.provider.getSupportedLanguages().contains(lang)
         }
-
-        return currentProvider?.getSupportedLanguages()?.contains(lang) ?: false
+        return supported
     }
 
     override fun onLoadLanguage(
         lang: String?,
         country: String?,
-        variant: String?
+        variant: String?,
     ): Int {
         val locale = buildLocaleSafely(lang, country, variant)
-        if (locale == null) {
-            TtsLogger.w("onLoadLanguage: invalid locale tags [lang: $lang, country: $country, variant: $variant]")
-            return TextToSpeech.LANG_NOT_SUPPORTED
-        }
-
-        if (isLanguageSupported(locale.language)) {
-            return if (!country.isNullOrBlank()) {
-                TtsLogger.d("onLoadLanguage: LANG_COUNTRY_AVAILABLE. lang: $lang, country: $country, variant: $variant")
+        if (locale == null) return TextToSpeech.LANG_NOT_SUPPORTED
+        return if (isLanguageSupported(locale.language)) {
+            if (!country.isNullOrBlank()) {
                 TextToSpeech.LANG_COUNTRY_AVAILABLE
             } else {
-                TtsLogger.d("onLoadLanguage: LANG_AVAILABLE (no country). lang: $lang")
                 TextToSpeech.LANG_AVAILABLE
             }
+        } else {
+            TextToSpeech.LANG_NOT_SUPPORTED
         }
-        TtsLogger.w("onLoadLanguage: not support language [${locale.language}]")
-        return TextToSpeech.LANG_NOT_SUPPORTED
     }
 
-    /**
-     * 由客户端传入的语言/国家/变体标签构建 Locale。
-     *
-     * 参数来自任意第三方 TTS 客户端，格式不受信任：[Locale.Builder] 的
-     * setLanguage/setRegion/setVariant 遇到非法输入会抛 IllformedLocaleException
-     * （RuntimeException），在 binder 线程上未捕获将导致整个引擎被系统禁用。
-     * 因此全程捕获并返回 null（调用方按不支持处理）。
-     */
     private fun buildLocaleSafely(lang: String?, country: String?, variant: String?): Locale? {
         if (lang == null) return null
         return try {
@@ -497,374 +659,322 @@ class TalkifyTtsService : TextToSpeechService() {
                     .setRegion(convertToValidRegionCode(country))
                     .build()
 
-                else -> Locale.Builder()
-                    .setLanguage(lang)
-                    .build()
+                else -> Locale.Builder().setLanguage(lang).build()
             }
         } catch (_: RuntimeException) {
             null
         }
     }
 
-    /**
-     * ISO 3166-1 alpha-3 → alpha-2 全量映射（懒构建，仅构建一次）
-     *
-     * AOSP 客户端调用 isLanguageAvailable 时传 `loc.getISO3Country()`（三字母码），
-     * 而 [Locale.Builder.setRegion] 只接受两字母或数字 UN M.49 码；此前仅硬编码
-     * 7 国，zh-TW/pt-BR 等常见 locale 直接抛 IllformedLocaleException 被吞为
-     * LANG_NOT_SUPPORTED（P1-4）。
-     */
     private val iso3ToIso2Region: Map<String, String> by lazy {
         buildMap {
             for (iso2 in Locale.getISOCountries()) {
-                // 少数历史代码（如 AN）无 ISO3 对应，getISO3Country 返回空串，跳过
                 val iso3 = Locale.Builder().setRegion(iso2).build().isO3Country
                 if (iso3.isNotEmpty()) put(iso3, iso2)
             }
         }
     }
 
-    /**
-     * 转换国家代码为 [Locale.Builder] 接受的有效区域码
-     *
-     * 两字母 ISO 3166-1 alpha-2 与数字 UN M.49 码原样放行；三字母 alpha-3 码
-     * 经全量映射转换为两字母；无法识别的输入原样返回，由
-     * [buildLocaleSafely] 的异常捕获统一按不支持处理
-     *
-     * @param country 原始国家代码（来自任意第三方客户端，格式不受信任）
-     * @return 标准化后的区域码
-     */
     private fun convertToValidRegionCode(country: String): String {
         val normalized = country.uppercase(Locale.US)
-        if (normalized.length != 3) {
-            return normalized
-        }
+        if (normalized.length != 3) return normalized
         return iso3ToIso2Region[normalized] ?: normalized
     }
 
     override fun onGetLanguage(): Array<String> {
-        val provider = currentProvider
-        if (provider == null) {
-            TtsLogger.w("onGetLanguage: no provider available")
-            return emptyArray()
+        var result: Array<String> = emptyArray()
+        withDiscoveryTarget { target ->
+            val config = target.config
+            if (config != null && target.provider.isConfigured(config)) {
+                result = target.provider.getDefaultLanguage()
+            }
         }
-
-        if (!provider.isConfigured(currentConfig)) {
-            TtsLogger.w("onGetLanguage: provider not configured")
-            return emptyArray()
-        }
-
-        val defaultLanguage = provider.getDefaultLanguage()
-        TtsLogger.d("onGetLanguage: return ${defaultLanguage.contentToString()}")
-        return defaultLanguage
+        return result
     }
 
     override fun onGetVoices(): List<Voice> {
-        TtsLogger.d("onGetVoices: requested")
-        // 框架契约要求非空返回：provider 未就绪时回退空列表，避免 binder 序列化 NPE
-        return currentProvider?.getSupportedVoices().orEmpty()
+        var voices: List<Voice> = emptyList()
+        withDiscoveryTarget { target ->
+            voices = target.provider.getSupportedVoices()
+        }
+        return voices
     }
 
     override fun onGetDefaultVoiceNameFor(
         lang: String?,
         country: String?,
-        variant: String?
+        variant: String?,
     ): String? {
-        TtsLogger.d("onGetDefaultVoiceNameFor: lang: $lang, country: $country, variant: $variant")
-        var currentVoiceId: String? = null
-        val config = currentConfig
-        if (config != null && config.voiceId.isNotBlank()) {
-            currentVoiceId = config.voiceId
+        var voiceName: String? = null
+        withDiscoveryTarget { target ->
+            val currentVoiceId = target.profile?.narratorVoice?.voiceId
+                ?: target.config?.voiceId?.takeIf { it.isNotBlank() }
+            voiceName = target.provider.getDefaultVoiceId(
+                lang, country, variant, currentVoiceId
+            )
         }
-        val defaultVoiceName = currentProvider?.getDefaultVoiceId(lang, country, variant, currentVoiceId)
-        TtsLogger.d("onGetDefaultVoiceNameFor: defaultVoiceName: $defaultVoiceName")
-        return defaultVoiceName
+        return voiceName
     }
 
-    /**
-     * 检查声音 ID 是否正确
-     *
-     * 验证指定的声音 ID 是否被当前供应商支持
-     *
-     * @param voiceId 声音 ID
-     * @return TextToSpeech.SUCCESS 或 TextToSpeech.ERROR
-     */
     private fun isVoiceIdCorrect(voiceId: String?): Int {
-        if (currentProvider == null) {
-            initializeProvider()
+        var correct = false
+        withDiscoveryTarget { target ->
+            correct = target.provider.isVoiceIdCorrect(voiceId)
         }
-
-        return if (currentProvider?.isVoiceIdCorrect(voiceId) == true) {
-            TextToSpeech.SUCCESS
-        } else {
-            TextToSpeech.ERROR
-        }
+        return if (correct) TextToSpeech.SUCCESS else TextToSpeech.ERROR
     }
 
-    override fun onIsValidVoiceName(voiceName: String?): Int {
-        TtsLogger.d("onIsValidVoiceName: voiceName [$voiceName]")
-        val returnSignal = isVoiceIdCorrect(voiceName)
-        TtsLogger.d("onIsValidVoiceName: return [$returnSignal]")
-        return returnSignal
-    }
+    override fun onIsValidVoiceName(voiceName: String?): Int = isVoiceIdCorrect(voiceName)
 
-    override fun onLoadVoice(voiceName: String?): Int {
-        TtsLogger.d("onLoadVoice: voiceName [$voiceName]")
-        val returnSignal = isVoiceIdCorrect(voiceName)
-        TtsLogger.d("onLoadVoice: return [$returnSignal]")
-        return returnSignal
-    }
+    override fun onLoadVoice(voiceName: String?): Int = isVoiceIdCorrect(voiceName)
+
+    // ==================== 合成入口 ====================
 
     override fun onSynthesizeText(
         request: SynthesisRequest?,
-        callback: SynthesisCallback?
+        callback: SynthesisCallback?,
     ) {
         if (request == null || callback == null) {
             TtsLogger.e("onSynthesizeText: null request or callback")
             return
         }
-
-        // 惰性求值：release 下 d() 被门控后字符串不再求值，用户朗读原文不进系统日志（P1-13）
-        TtsLogger.d { "onSynthesizeText: queuing text: ${request.charSequenceText}" }
         processRequestSynchronously(request, callback)
     }
 
-    /**
-     * 同步处理合成请求 (修复版)
-     *
-     * 直接在当前线程阻塞等待合成结果，符合 Android TTS Service 标准生命周期。
-     * 修复了死锁隐患，并增加了 WifiLock 以保证网络流式传输的稳定性。
-     */
     private fun processRequestSynchronously(
         request: SynthesisRequest,
-        callback: SynthesisCallback
+        callback: SynthesisCallback,
     ) = runBlocking {
         val text = request.charSequenceText?.toString()
-        // 请求入口即建立 attempt：未配置、供应商创建失败、初始化慢等前置失败也进入分母；
-        // 空文本单独归为 ignored，不计入成功率分母
-        val selectedProviderId = appConfigRepository?.getSelectedProviderId()
-            ?: TtsProviderRegistry.defaultProvider.id
-        val attempt = TtsTelemetryTracker.begin(selectedProviderId, text?.length ?: 0)
+        val startNanos = System.nanoTime()
+        val generationAtStart = stopGeneration.get()
+
+        if (isStopped.get()) {
+            reportCallbackError(callback, TextToSpeech.ERROR_INVALID_REQUEST)
+            return@runBlocking
+        }
+        if (text.isNullOrBlank()) {
+            val attempt = TtsTelemetryTracker.begin(mainProviderId(), 0)
+            attempt.markIgnored("empty_text")
+            attempt.report()
+            callback.done()
+            return@runBlocking
+        }
+
+        val target = try {
+            acquireRequestTarget()
+        } catch (e: Exception) {
+            // 配置/供应商校验异常按单音色可用性失败处理，不能让 SynthThread 崩溃
+            TtsLogger.e("Resolve request target failed: ${e.javaClass.simpleName}", e)
+            RequestTarget(
+                providerId = mainProviderId(),
+                lease = null,
+                config = null,
+                profile = null,
+                settings = null,
+                audioConfig = null,
+                fallback = null,
+            )
+        }
+        val attempt = TtsTelemetryTracker.begin(target.providerId, text.length)
+        if (target.profile != null) attempt.markMultiRole()
+        val cancelled = AtomicBoolean(false)
+        var provider: TtsProviderApi? = null
+        var bridge: SynthesisDeliveryBridge? = null
+        var requestScope: CoroutineScope? = null
+        var producer: Job? = null
+        var finalStatus: SynthesisCallbackConsumer.Status? = null
 
         try {
-            // 1. 基础校验
-            if (isStopped.get()) {
-                attempt.markCancelled("stopped_before_start")
-                callback.error(TextToSpeech.ERROR_INVALID_REQUEST)
-                return@runBlocking
-            }
-            if (text.isNullOrBlank()) {
-                attempt.markIgnored("empty_text")
-                callback.done()
-                return@runBlocking
-            }
             attempt.updateTextLength(text.length)
             attempt.markPreparationStarted()
 
-            // 2. 获取双重锁：WakeLock (CPU) + WifiLock (网络)
             acquireWakeLock()
             acquireWifiLock()
-
-            // 提升前台优先级，防止被系统查杀
             enterForegroundState()
 
-            // 3. 准备供应商与配置
-            // 每次合成前重新读取配置，确保获取最新的供应商选择；
-            // 变更检测与创建收敛在 ensureProvider 的生命周期锁内（P1-5/P1-17）
-            if (!ensureProvider(selectedProviderId)) {
+            val lease = target.lease
+            val providerInstance = lease?.provider
+            if (lease == null || providerInstance == null) {
                 attempt.markError("no_provider", TtsTelemetryTracker.STAGE_PREPARATION)
-                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
+                reportCallbackError(callback, TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
+                notifyOnce("no_provider", getString(R.string.tts_error_provider_not_ready))
                 return@runBlocking
             }
-
-            val providerId = currentProviderId
-            val provider = currentProvider
-            if (providerId == null || provider == null) {
-                TtsLogger.e("processRequestSynchronously: provider not ready")
-                attempt.markError("provider_not_ready", TtsTelemetryTracker.STAGE_PREPARATION)
-                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
-                TalkifyNotificationHelper.sendSystemNotification(
-                    this@TalkifyTtsService,
-                    getString(R.string.tts_error_provider_not_ready)
-                )
-                return@runBlocking
-            }
-
-            val config = getProviderConfigRepository(providerId)?.getConfig(providerId)
+            provider = providerInstance
+            val config = target.config
             if (config == null) {
-                TtsLogger.e("processRequestSynchronously: config repository unavailable for $providerId")
                 attempt.markError("config_unavailable", TtsTelemetryTracker.STAGE_PREPARATION)
-                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
+                reportCallbackError(callback, TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_NO_PROVIDER))
                 return@runBlocking
             }
-            if (!provider.isConfigured(config)) {
-                TtsLogger.e("processRequestSynchronously: config not ready")
+            if (!providerInstance.isConfigured(config)) {
                 attempt.markError("not_configured", TtsTelemetryTracker.STAGE_PREPARATION)
-                callback.error(TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED))
-                TalkifyNotificationHelper.sendSystemNotification(
-                    this@TalkifyTtsService,
-                    getString(R.string.tts_error_config_not_ready)
-                )
+                reportCallbackError(callback, TtsErrorCode.toAndroidError(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED))
+                notifyOnce("not_configured", getString(R.string.tts_error_config_not_ready))
                 return@runBlocking
             }
-            // request.voiceName 为 Java 框架类平台类型（String!）：客户端仅 setLanguage
-            // 未 setVoice 时为 null，必须用 isNullOrEmpty 判空而非 isNotBlank（P0-1）
-            if (config.voiceId.isNotBlank() && !request.voiceName.isNullOrEmpty()) {
+
+            if (generationAtStart != stopGeneration.get()) {
+                attempt.markCancelled("stopped_before_start")
+                callback.done()
+                return@runBlocking
+            }
+
+            val profile = target.profile
+            val plan = if (profile != null) {
+                MultiRoleParser.parse(text, profile).plan
+            } else {
+                singleVoicePlan(text)
+            }
+            if (!plan.hasReadableContent || plan.segments.isEmpty()) {
+                attempt.markError("no_readable_text", TtsTelemetryTracker.STAGE_SYNTHESIS)
+                reportCallbackError(callback, TextToSpeech.ERROR_SYNTHESIS)
+                return@runBlocking
+            }
+
+            if (profile == null && config.voiceId.isNotBlank() && !request.voiceName.isNullOrEmpty()) {
                 if (config.voiceId != request.voiceName) {
-                    TtsLogger.w("Synthesize: SynthesisRequest.voiceName: ${request.voiceName}, ProviderConfig.voiceId: ${config.voiceId}")
+                    TtsLogger.w("Synthesize: request voice differs from configured voice (ignored)")
                 }
             }
 
-            // 生效元信息由供应商解析（OpenAI 自定义声音优先），未知标识在遥测层归为 custom
-            attempt.updateMetadata(
-                TelemetryIds.model(
-                    provider.getEffectiveModelId(config),
-                    provider.getDefaultModelId(),
-                    provider.getKnownModelIds(),
-                ),
-                TelemetryIds.voice(
-                    provider.getEffectiveVoiceId(config),
-                    provider::isVoiceIdCorrect,
-                ),
+            val model = TelemetryIds.model(
+                providerInstance.getEffectiveModelId(config),
+                providerInstance.getDefaultModelId(),
+                providerInstance.getKnownModelIds(),
             )
+            val voice = if (profile != null) {
+                // 多角色没有单一“生效音色”；不伪装成某个角色声音
+                TelemetryIds.multiRoleVoice()
+            } else {
+                TelemetryIds.voice(
+                    providerInstance.getEffectiveVoiceId(config),
+                    providerInstance::isVoiceIdCorrect,
+                )
+            }
+            attempt.updateMetadata(model, voice)
 
             val params = SynthesisParams(
                 pitch = request.pitch.toFloat(),
                 speechRate = request.speechRate.toFloat(),
-                language = request.language
+                language = request.language,
             )
+            val expectedAudioConfig = target.audioConfig
 
-            // 4. 初始化音频参数并通知系统开始
-            var audioInitialized = false
-            val frameworkFailed = AtomicBoolean(false)
-
-            // 合成错误消息：provider 回调线程写、下方读取，用 AtomicReference 保证可见性
-            val synthesisErrorMessage = AtomicReference<String?>(null)
-
-            // 5. 执行合成 (使用协程挂起)
             attempt.markSynthesisStarted()
-            val result = withTimeoutOrNull(120_000L.milliseconds) {
-                suspendCancellableCoroutine { continuation ->
-                    activeContinuation = continuation
-
-                    provider.synthesize(text, params, config, object : TtsSynthesisListener {
-                        override fun onSynthesisStarted() {
-                            TtsLogger.d("Synthesis started callback")
-                        }
-
-                        override fun onAudioAvailable(
-                            audioData: ByteArray,
-                            sampleRate: Int,
-                            audioFormat: Int,
-                            channelCount: Int
-                        ) {
-                            // onStop 取消 continuation 后、provider 的 native 合成退出前，
-                            // 残留回调可能继续产出音频（且新请求会重置 provider 的取消标志），
-                            // 按 continuation 存活性丢弃过期音频，避免写给已废弃的请求
-                            if (!continuation.isActive) {
-                                TtsLogger.d("onAudioAvailable: request cancelled, dropping stale audio")
-                                return
-                            }
-                            if (frameworkFailed.get()) return
-
-                            // 在收到第一个音频数据时初始化系统回调；start 失败按框架交付失败归类
-                            if (!audioInitialized) {
-                                val startResult = callback.start(sampleRate, audioFormat, channelCount)
-                                if (startResult != TextToSpeech.SUCCESS) {
-                                    frameworkFailed.set(true)
-                                    attempt.markFrameworkFailure("start_$startResult")
-                                    return
-                                }
-                                audioInitialized = true
-                                attempt.markFirstAudio(sampleRate)
-                            }
-
-                            // 直接以 offset 分块写出，避免每 4KB 一次数组拷贝；
-                            // audioAvailable 返回非 SUCCESS 时保留失败阶段并停止后续写入
-                            val maxChunkSize = 4096
-                            var offset = 0
-                            while (offset < audioData.size) {
-                                val chunkSize = minOf(maxChunkSize, audioData.size - offset)
-                                val writeResult = callback.audioAvailable(audioData, offset, chunkSize)
-                                if (writeResult != TextToSpeech.SUCCESS) {
-                                    frameworkFailed.set(true)
-                                    attempt.markFrameworkFailure("audio_$writeResult")
-                                    break
-                                }
-                                attempt.recordAudioDelivered(chunkSize)
-                                offset += chunkSize
-                            }
-                        }
-
-                        override fun onSynthesisCompleted() {
-                            TtsLogger.d("Synthesis completed")
-                            attempt.markProviderCompleted()
-                            if (continuation.isActive) {
-                                try {
-                                    continuation.resume(TtsErrorCode.SUCCESS)
-                                } catch (e: Exception) {
-                                    TtsLogger.d("Resuming continuation failed: ${e.message}")
-                                }
-                            }
-                        }
-
-                        override fun onError(error: String) {
-                            TtsLogger.e("Synthesis error: $error")
-                            synthesisErrorMessage.set(error)
-                            val errorCode = TtsErrorCode.inferErrorCodeFromMessage(error)
-                            if (continuation.isActive) {
-                                try {
-                                    continuation.resume(errorCode)
-                                } catch (e: Exception) {
-                                    TtsLogger.d("Resuming continuation failed: ${e.message}")
-                                }
-                            }
-                        }
-                    })
-                }
+            val deliveryBridge = SynthesisDeliveryBridge()
+            bridge = deliveryBridge
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            requestScope = scope
+            val executor = SpeechPlanExecutor(scope)
+            val producerJob = executor.start(
+                SpeechPlanExecutor.Config(
+                    provider = providerInstance,
+                    providerConfig = config,
+                    params = params,
+                    plan = plan,
+                    bridge = deliveryBridge,
+                    expectedAudioConfig = expectedAudioConfig,
+                    timeoutMs = REQUEST_TIMEOUT_MS,
+                ),
+                isCancelled = { cancelled.get() || isStopped.get() },
+            )
+            producer = producerJob
+            val active = ActiveRequest(
+                bridge = deliveryBridge,
+                producer = producerJob,
+                scope = scope,
+                provider = providerInstance,
+                cancelled = cancelled,
+            )
+            activeRequest = active
+            if (isStopped.get() || generationAtStart != stopGeneration.get()) {
+                active.cancel()
             }
 
-            // 6. 处理结果
-            if (result == null) {
-                // 等待超时
-                TtsLogger.e("Synthesis timed out")
-                attempt.markTimeout()
-                try { provider.stop() } catch (_: Exception) {}
-                callback.error(TextToSpeech.ERROR_NETWORK_TIMEOUT)
-                TalkifyNotificationHelper.sendSystemNotification(
-                    this@TalkifyTtsService,
-                    TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_NETWORK_TIMEOUT)
-                )
-            } else if (result != TtsErrorCode.SUCCESS) {
-                // 发生错误
-                attempt.markError(result.toString(), TtsTelemetryTracker.STAGE_SYNTHESIS)
-                callback.error(TtsErrorCode.toAndroidError(result))
-                TalkifyNotificationHelper.sendSystemNotification(
-                    this@TalkifyTtsService,
-                    TtsErrorCode.getErrorMessage(result, synthesisErrorMessage.get())
-                )
-            } else if (frameworkFailed.get() || !attempt.hasAudio()) {
-                // 供应商完成但零有效音频 / 框架拒收：不能按成功上报
-                attempt.markSuccess()
-                callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            } else {
-                // 正常完成：done() 也失败时按框架交付失败归类
-                val doneResult = callback.done()
-                if (doneResult != TextToSpeech.SUCCESS) {
-                    attempt.markFrameworkFailure("done_$doneResult")
-                    callback.error(TextToSpeech.ERROR_SYNTHESIS)
-                }
-                attempt.markSuccess()
-            }
+            val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+            val remainingMs = (REQUEST_TIMEOUT_MS - elapsedMs).coerceAtLeast(0)
+            val result = SynthesisCallbackConsumer(callback).deliver(
+                deliveryBridge,
+                remainingMs,
+                isCancelled = { cancelled.get() || isStopped.get() },
+            )
+            finalStatus = result.status
+            if (result.providerCompleted) attempt.markProviderCompleted()
+            result.firstSampleRate?.let { attempt.markFirstAudio(it) }
+            attempt.recordAudioDelivered(result.audioBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
 
+            when (result.status) {
+                SynthesisCallbackConsumer.Status.SUCCESS -> {
+                    val doneResult = callback.done()
+                    if (doneResult != TextToSpeech.SUCCESS) {
+                        // 框架已进入终态，不再补报 error()（Android 契约）
+                        attempt.markFrameworkFailure("done_$doneResult")
+                        attempt.markSuccess()
+                    } else {
+                        attempt.markSuccess()
+                    }
+                }
+
+                SynthesisCallbackConsumer.Status.TIMEOUT -> {
+                    attempt.markTimeout()
+                    stopProviderQuietly(providerInstance)
+                    reportCallbackError(callback, TextToSpeech.ERROR_NETWORK_TIMEOUT)
+                    notifyOnce(
+                        "request_timeout",
+                        TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_NETWORK_TIMEOUT)
+                    )
+                }
+
+                SynthesisCallbackConsumer.Status.ERROR -> {
+                    attempt.markError("synthesis_error", TtsTelemetryTracker.STAGE_SYNTHESIS)
+                    stopProviderQuietly(providerInstance)
+                    reportCallbackError(callback, TextToSpeech.ERROR_SYNTHESIS)
+                    val message = if (profile != null) {
+                        getString(R.string.multirole_error_synthesis_failed)
+                    } else {
+                        TtsErrorCode.getErrorMessage(
+                            TtsErrorCode.inferErrorCodeFromMessage(result.errorMessage.orEmpty()),
+                            result.errorMessage,
+                        )
+                    }
+                    notifyOnce("synthesis_error", message)
+                }
+
+                SynthesisCallbackConsumer.Status.FORMAT_MISMATCH -> {
+                    attempt.markError("audio_format_mismatch", TtsTelemetryTracker.STAGE_SYNTHESIS)
+                    stopProviderQuietly(providerInstance)
+                    reportCallbackError(callback, TextToSpeech.ERROR_SYNTHESIS)
+                    notifyOnce(
+                        "format_mismatch",
+                        getString(R.string.multirole_error_audio_format)
+                    )
+                }
+
+                SynthesisCallbackConsumer.Status.NO_AUDIO -> {
+                    attempt.markError("empty_audio", TtsTelemetryTracker.STAGE_SYNTHESIS)
+                    stopProviderQuietly(providerInstance)
+                    reportCallbackError(callback, TextToSpeech.ERROR_SYNTHESIS)
+                }
+
+                SynthesisCallbackConsumer.Status.FRAMEWORK_REJECTED -> {
+                    attempt.markFrameworkFailure(
+                        result.frameworkDetail ?: "framework_rejected"
+                    )
+                    attempt.markSuccess()
+                    stopProviderQuietly(providerInstance)
+                    reportCallbackError(callback, TextToSpeech.ERROR_SYNTHESIS)
+                }
+
+                SynthesisCallbackConsumer.Status.CANCELLED -> {
+                    attempt.markCancelled()
+                }
+            }
         } catch (_: InterruptedException) {
             TtsLogger.w("Synthesis interrupted")
             attempt.markError("InterruptedException")
-            callback.error(TextToSpeech.ERROR_SERVICE)
-            TalkifyNotificationHelper.sendSystemNotification(
-                this@TalkifyTtsService,
-                TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_GENERIC, "Synthesis interrupted")
-            )
+            reportCallbackError(callback, TextToSpeech.ERROR_SERVICE)
             Thread.currentThread().interrupt()
         } catch (_: CancellationException) {
             TtsLogger.i("Synthesis cancelled")
@@ -872,98 +982,124 @@ class TalkifyTtsService : TextToSpeechService() {
         } catch (e: Exception) {
             TtsLogger.e("Critical error in processRequestSynchronously", e)
             attempt.markError(e.javaClass.simpleName)
-            callback.error(TextToSpeech.ERROR_SYNTHESIS)
-            TalkifyNotificationHelper.sendSystemNotification(
-                this@TalkifyTtsService,
-                TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_UNKNOWN, e.message)
-            )
+            reportCallbackError(callback, TextToSpeech.ERROR_SYNTHESIS)
+            notifyOnce("critical_error", getString(R.string.multirole_error_synthesis_failed))
         } finally {
-            // 7. 统一清理资源与终态上报（每场恰好一次）
+            cancelled.set(true)
+            val currentActive = activeRequest
+            if (currentActive != null) {
+                currentActive.cancel()
+            }
+            activeRequest = null
+            bridge?.cancel()
+            producer?.cancel()
+            requestScope?.cancel()
+            if (finalStatus != SynthesisCallbackConsumer.Status.SUCCESS) {
+                provider?.let { stopProviderQuietly(it) }
+            }
+            target.lease?.let { releaseProvider(it) }
             attempt.report()
-            activeContinuation = null
             scheduleForegroundIdleExit()
             releaseWifiLock()
             releaseWakeLock()
         }
     }
 
-
     /**
-     * 取消在途合成的挂起点
-     *
-     * onStop 与 onDestroy 共用：不取消时 runBlocking 阻塞的 SynthThread 会
-     * 持续等待到合成完成或 120s 超时，onDestroy 场景下还会向已销毁的服务
-     * 回调"网络超时"并发出误导性通知（P1-18）
+     * 框架已进入终态（STOPPED/ERROR/done）后不得再回调 error()；
+     * hasFinished() 是框架提供的唯一可靠终态查询。
      */
-    private fun cancelActiveSynthesis() {
-        val continuation = activeContinuation
-        if (continuation != null && continuation.isActive) {
-            TtsLogger.d("cancelActiveSynthesis: cancelling active continuation")
-            continuation.cancel()
+    private fun reportCallbackError(callback: SynthesisCallback, errorCode: Int) {
+        try {
+            if (!callback.hasFinished()) callback.error(errorCode)
+        } catch (_: Exception) {
+            // 框架 binder 已断开：回调失败不能拖垮合成线程
         }
-        activeContinuation = null
+    }
+
+    private fun singleVoicePlan(text: String): SpeechPlan {
+        val analysis = if (text.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(
+                AnalyzedSegment(
+                    start = 0,
+                    endExclusive = text.length,
+                    kind = SegmentKind.NARRATION,
+                    roleId = null,
+                    roleName = null,
+                    defaultRole = false,
+                    voiceId = "",
+                    reason = null,
+                )
+            )
+        }
+        val segments = if (text.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(SpeechSegment(0, text.length, SegmentKind.NARRATION, null, ""))
+        }
+        return SpeechPlan(
+            text = text,
+            segments = segments,
+            analysis = analysis,
+            warnings = PlanWarnings(),
+            hasReadableContent = MultiRoleValidator.hasReadableContent(text),
+        )
+    }
+
+    private fun stopProviderQuietly(provider: TtsProviderApi) {
+        try {
+            provider.stop()
+        } catch (_: Exception) {
+        }
+    }
+
+    private class ActiveRequest(
+        val bridge: SynthesisDeliveryBridge,
+        val producer: Job,
+        val scope: CoroutineScope,
+        val provider: TtsProviderApi,
+        val cancelled: AtomicBoolean,
+    ) {
+        fun cancel() {
+            cancelled.set(true)
+            bridge.cancel()
+            producer.cancel()
+            scope.cancel()
+            try {
+                provider.stop()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun cancelActiveSynthesis() {
+        activeRequest?.cancel()
+        activeRequest = null
     }
 
     override fun onDestroy() {
         TtsLogger.i("TalkifyTtsService onDestroy")
         isStopped.set(true)
+        stopGeneration.incrementAndGet()
         cancelActiveSynthesis()
-        try {
-            currentProvider?.stop()
-        } catch (e: DeadObjectException) {
-            // 先捕获子类 DeadObjectException 再捕获父类 RemoteException，否则本分支不可达（P1-18）
-            TtsLogger.w("Provider connection lost during stop, service is being destroyed: ${e.message}")
-        } catch (e: RemoteException) {
-            TtsLogger.w("Remote exception during provider stop, service may be disconnecting: ${e.message}")
-        } catch (e: Exception) {
-            TtsLogger.e("Unexpected error during provider stop", e)
-        }
-        try {
-            currentProvider?.release()
-        } catch (e: DeadObjectException) {
-            TtsLogger.w("Provider connection lost during release: ${e.message}")
-        } catch (e: RemoteException) {
-            TtsLogger.w("Remote exception during provider release: ${e.message}")
-        } catch (e: Exception) {
-            TtsLogger.e("Unexpected error during provider release", e)
-        }
-        currentProvider = null
-        currentConfig = null
-        currentProviderId = null
+        releaseAllProviders()
+        appConfigRepository = null
+        multiRoleRepository = null
         foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
-        // 与合成 finally 成对补齐 WifiLock 释放，消除"销毁与在途 finally 之间"的泄漏窗口（P1-18）
         releaseWifiLock()
         releaseWakeLock()
         exitForegroundState()
-        // N19-e：最后防线——在飞 finally 若在 isStopped 置位前已通过 scheduleForegroundIdleExit
-        // 的校验，其 postDelayed 可能落在上方 removeCallbacks 之后，销毁路径末尾再补一次移除
         foregroundIdleHandler.removeCallbacks(exitForegroundRunnable)
-        // 后台服务退出前受控冲刷未满窗口；定时到期任务已覆盖长期驻留场景
         TtsTelemetryTracker.flushMetrics()
         super.onDestroy()
     }
 
-    /**
-     * 服务停止回调
-     *
-     * 当系统请求服务停止时调用
-     * 释放正在进行的合成操作和播放器资源
-     */
     override fun onStop() {
         TtsLogger.d("onStop called")
-
+        stopGeneration.incrementAndGet()
         cancelActiveSynthesis()
-
-        try {
-            currentProvider?.stop()
-        } catch (e: DeadObjectException) {
-            TtsLogger.w("Provider connection lost during onStop: ${e.message}")
-        } catch (e: RemoteException) {
-            TtsLogger.w("Remote exception during provider stop in onStop: ${e.message}")
-        } catch (e: Exception) {
-            TtsLogger.e("Unexpected error during provider stop in onStop", e)
-        }
-        // 后台 TTS 空闲/服务停止时冲刷未满窗口；不依赖 Activity 的 onStop
         TtsTelemetryTracker.flushMetrics()
     }
 }

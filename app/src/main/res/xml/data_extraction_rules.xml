@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?><!--
    数据迁移/提取规则（API 31+）。
-   云备份与设备间迁移（D2D）均排除供应商凭据与本地模型状态，理由见 backup_rules.xml。
+   云备份与设备间迁移（D2D）均排除供应商凭据、本地模型状态与多角色方案
+   （人物名称/别名属阅读偏好），理由见 backup_rules.xml。
    See https://developer.android.com/about/versions/12/backup-restore#xml-changes
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <exclude domain="file" path="datastore/talkify_multirole.preferences_pb"/>
         <exclude domain="sharedpref" path="talkify_engine_configs.xml"/>
         <exclude domain="sharedpref" path="talkify_local_model_state.xml"/>
         <exclude domain="sharedpref" path="talkify_crash_reports.xml"/>
     </cloud-backup>
     <device-transfer>
+        <exclude domain="file" path="datastore/talkify_multirole.preferences_pb"/>
         <exclude domain="sharedpref" path="talkify_engine_configs.xml"/>
         <exclude domain="sharedpref" path="talkify_local_model_state.xml"/>
         <exclude domain="sharedpref" path="talkify_crash_reports.xml"/>

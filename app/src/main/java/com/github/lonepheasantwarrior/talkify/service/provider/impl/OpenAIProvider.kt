@@ -13,6 +13,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.ProxyParseResult
 import com.github.lonepheasantwarrior.talkify.service.provider.ProxySettings
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import com.github.lonepheasantwarrior.talkify.service.provider.toMaskedString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -98,9 +100,27 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
 
     override fun getDefaultModelId(): String = ProviderIds.OpenAI.defaultModelId
 
-    override fun getEffectiveVoiceId(config: BaseProviderConfig): String {
+    override fun getEffectiveVoiceId(
+        config: BaseProviderConfig,
+        voiceOverride: String?,
+    ): String {
+        if (!voiceOverride.isNullOrBlank()) return voiceOverride
         val openaiConfig = config as? OpenAIConfig ?: return config.voiceId
         return openaiConfig.customVoiceId.trim().takeIf { it.isNotBlank() } ?: config.voiceId
+    }
+
+    /**
+     * OpenAI 兼容平台的自定义声音 ID 无需预置白名单即可请求；只要请求级覆盖
+     * 非空就视为可覆盖。输出格式由 `response_format=pcm` 固定。
+     */
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability {
+        if (voiceId.isBlank()) {
+            return VoiceOutputCapability.Unsupported(VoiceCapabilityReason.VOICE_UNSUPPORTED)
+        }
+        return VoiceOutputCapability.Known(AudioConfig.OPENAI_TTS)
     }
 
     override fun getAudioConfig(): AudioConfig = AudioConfig.OPENAI_TTS
@@ -141,12 +161,16 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
         } else {
             ""
         }
-        val voiceId = OpenAIVoiceResolver.resolve(
-            customVoiceId = openaiConfig.customVoiceId,
-            selectedVoiceId = selectedVoice,
-            presetVoiceIds = voiceIds,
-            fallbackVoiceId = fallbackVoiceId
-        )
+        // 多角色请求级覆盖必须优先于 customVoiceId（普通单音色仍维持原优先级）
+        val voiceId = params.voiceOverride
+            ?.takeIf { it.isNotBlank() }
+            ?.let { extractRealVoiceName(it) ?: it }
+            ?: OpenAIVoiceResolver.resolve(
+                customVoiceId = openaiConfig.customVoiceId,
+                selectedVoiceId = selectedVoice,
+                presetVoiceIds = voiceIds,
+                fallbackVoiceId = fallbackVoiceId
+            )
 
         val effectiveApiUrl = openaiConfig.apiUrl.ifBlank { DEFAULT_API_URL }
         val effectiveModel = openaiConfig.modelId.ifBlank { getDefaultModelId() }
@@ -166,10 +190,8 @@ class OpenAIProvider : HttpStreamingTtsProvider() {
             .header("Content-Type", "application/json")
             .build()
 
-        // 打印请求详情（Headers 脱敏处理仅用于日志显示，实际发送的是原始值）
         logDebug("HTTP Request URL: ${request.url}")
         logDebug("HTTP Request Headers (masked for log): ${request.headers.toMaskedString()}")
-        logDebug("HTTP Request Body: ${requestBody.toString(2)}")
 
         return request
     }

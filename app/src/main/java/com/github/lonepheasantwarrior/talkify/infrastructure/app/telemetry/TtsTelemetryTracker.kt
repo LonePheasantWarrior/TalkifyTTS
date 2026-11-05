@@ -142,8 +142,19 @@ object TtsTelemetryTracker {
         private var voiceId: TelemetryIds.ClassifiedId =
             TelemetryIds.ClassifiedId(TelemetryIds.CATEGORY_UNKNOWN, TelemetryIds.CATEGORY_UNKNOWN)
 
+        @Volatile
+        private var multiRole: Boolean = false
+
         fun updateTextLength(length: Int) {
             textLength = length.coerceAtLeast(0)
+        }
+
+        /**
+         * 标记本次请求经过多角色顺序计划；只上报布尔维度，不上报角色名/别名/原文。
+         * 多角色请求的 voice 元信息为 unknown/unknown（没有单一“生效音色”）。
+         */
+        fun markMultiRole() {
+            multiRole = true
         }
 
         /** 由供应商/配置解析出的实际生效元信息（已按隐私策略分类） */
@@ -311,6 +322,7 @@ object TtsTelemetryTracker {
                 "provider_completed" to if (providerCompleted) 1 else 0,
                 "sampled" to if (status == STATUS_SUCCESS) 1 else 0,
             )
+            if (multiRole) properties["multi_role"] = 1
             if (status != STATUS_SUCCESS) {
                 properties["failure_stage"] = failureStage ?: currentStage()
             }

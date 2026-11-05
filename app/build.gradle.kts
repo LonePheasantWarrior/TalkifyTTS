@@ -268,6 +268,8 @@ androidComponents {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    // 多角色方案使用独立 DataStore（单个版本化 JSON，事务内读改写）
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     // 应用级前后台监听（ProcessLifecycleOwner），供遥测在每次回到前台时上报启动信号
     implementation(libs.androidx.lifecycle.process)

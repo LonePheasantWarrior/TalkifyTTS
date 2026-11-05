@@ -15,13 +15,16 @@ import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
  * @param volume 音量，范围 [0.0, 1.0]，1.0 为默认值（最大音量）
  * @param audioFormat 音频格式（如 AudioFormat.ENCODING_PCM_16BIT）
  * @param language 语言类型（如 "Chinese", "English" 等，null 表示使用供应商默认值）
+ * @param voiceOverride 请求级音色覆盖：null 表示既有单音色解析逻辑；非空表示本段
+ *   必须使用指定声音，不得读取或修改持久配置。多角色计划逐段设置该值。
  */
 data class SynthesisParams(
     val pitch: Float = 100.0f,
     val speechRate: Float = 100.0f,
     val volume: Float = 1.0f,
     val audioFormat: Int = AudioFormat.ENCODING_PCM_16BIT,
-    val language: String? = null
+    val language: String? = null,
+    val voiceOverride: String? = null,
 )
 
 /**
@@ -155,12 +158,27 @@ interface TtsProviderApi {
         config.modelId.ifBlank { getDefaultModelId() }
 
     /**
-     * 本次请求实际生效的音色 ID（默认取配置值）
+     * 本次请求实际生效的音色 ID。
      *
+     * [voiceOverride] 非空时优先于持久配置（多角色逐段音色）；默认取配置值。
      * 自定义声音优先的供应商（如 OpenAI）覆写此方法，让遥测记录真实发声的标识。
      * 遥测层会再把未知标识归类为 `custom`，不原样上送。
      */
-    fun getEffectiveVoiceId(config: BaseProviderConfig): String = config.voiceId
+    fun getEffectiveVoiceId(
+        config: BaseProviderConfig,
+        voiceOverride: String? = null,
+    ): String = voiceOverride?.takeIf { it.isNotBlank() } ?: config.voiceId
+
+    /**
+     * 查询「具体配置 + 具体音色」可靠的输出 PCM 格式与请求级覆盖能力。
+     *
+     * 默认 `Unknown`：未知即不参与多角色，禁止把 [getAudioConfig] 的默认值
+     * 当作某个具体音色的保证。供应商完成真实请求/解码验证后可返回 `Known`。
+     */
+    fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability = VoiceOutputCapability.Unknown
 
     /**
      * 供应商内置模型 ID 白名单（用于遥测分类；空表示除默认模型外均视为自定义）
@@ -178,6 +196,28 @@ interface TtsProviderApi {
      * @return 配置项的本地化标签，若供应商不支持该配置项则返回 null
      */
     fun getConfigLabel(configKey: String, context: android.content.Context): String?
+}
+
+/**
+ * 具体音色的输出能力。多角色要求计划中所有音色都 `Known` 且格式完全一致。
+ */
+sealed interface VoiceOutputCapability {
+
+    /** 该音色可被请求级覆盖，且输出 PCM 格式可靠已知。 */
+    data class Known(val audioConfig: AudioConfig) : VoiceOutputCapability
+
+    /** 供应商/音色不支持多角色请求级覆盖，或格式无法可靠确认。 */
+    data class Unsupported(val reason: VoiceCapabilityReason) : VoiceOutputCapability
+
+    /** 尚未适配/无法判断；与 Unsupported 一样不能启动多角色。 */
+    data object Unknown : VoiceOutputCapability
+}
+
+enum class VoiceCapabilityReason {
+    VOICE_UNSUPPORTED,
+    OUTPUT_FORMAT_UNKNOWN,
+    OUTPUT_FORMAT_VARIES,
+    PROVIDER_UNSUPPORTED,
 }
 
 /**

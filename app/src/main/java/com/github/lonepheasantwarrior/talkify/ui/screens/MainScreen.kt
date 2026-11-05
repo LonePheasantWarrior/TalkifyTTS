@@ -12,6 +12,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,10 +26,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -119,6 +122,7 @@ fun MainScreen(
     modifier: Modifier = Modifier,
     viewModel: MainViewModel = viewModel(),
     onAboutClick: () -> Unit = {},
+    onMultiRoleClick: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null
 ) {
@@ -131,6 +135,9 @@ fun MainScreen(
     // --- 启动流程状态管理 ---
     val startupState by viewModel.startupState.collectAsStateWithLifecycle()
     val isDefaultProvider by viewModel.isDefaultProvider.collectAsStateWithLifecycle()
+    val multiRoleState by viewModel.multiRoleState.collectAsStateWithLifecycle()
+    val multiRoleActiveProfile = multiRoleState?.settings?.activeProfile()
+    val multiRoleEnabled = multiRoleState?.settings?.enabled == true && multiRoleActiveProfile != null
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -307,15 +314,56 @@ fun MainScreen(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.openConfigSheet() },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = stringResource(R.string.cd_settings_button)
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val multiRoleDescription = when {
+                    multiRoleState == null -> stringResource(R.string.cd_multirole_button_loading)
+                    multiRoleState?.failure != null -> stringResource(R.string.cd_multirole_button_error)
+                    multiRoleEnabled -> stringResource(R.string.cd_multirole_button_enabled)
+                    else -> stringResource(R.string.cd_multirole_button_disabled)
+                }
+                FloatingActionButton(
+                    onClick = onMultiRoleClick,
+                    containerColor = when {
+                        multiRoleState?.failure != null -> MaterialTheme.colorScheme.errorContainer
+                        multiRoleState == null -> MaterialTheme.colorScheme.surfaceVariant
+                        multiRoleEnabled -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.secondaryContainer
+                    },
+                    contentColor = when {
+                        multiRoleState?.failure != null -> MaterialTheme.colorScheme.onErrorContainer
+                        multiRoleState == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        multiRoleEnabled -> MaterialTheme.colorScheme.onPrimary
+                        else -> MaterialTheme.colorScheme.onSecondaryContainer
+                    }
+                ) {
+                    Box {
+                        Icon(
+                            imageVector = Icons.Rounded.RecordVoiceOver,
+                            contentDescription = multiRoleDescription
+                        )
+                        if (multiRoleEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .align(Alignment.TopEnd)
+                                    .background(
+                                        MaterialTheme.colorScheme.tertiary,
+                                        CircleShape
+                                    )
+                            )
+                        }
+                    }
+                }
+                FloatingActionButton(
+                    onClick = { viewModel.openConfigSheet() },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = stringResource(R.string.cd_settings_button)
+                    )
+                }
             }
         },
         topBar = {
@@ -413,6 +461,29 @@ fun MainScreen(
                 AboutPageHintBanner(
                     onClick = { aboutHintDismissed = true }
                 )
+            }
+
+            AnimatedVisibility(
+                visible = multiRoleEnabled && multiRoleState?.failure == null &&
+                    startupState == StartupState.Completed,
+                enter = slideInVertically(
+                    initialOffsetY = { -it },
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntOffset.VisibilityThreshold)
+                ),
+                exit = slideOutVertically(
+                    targetOffsetY = { -it },
+                    animationSpec = TalkifyMotion.spatialDefaultOf(IntOffset.VisibilityThreshold)
+                )
+            ) {
+                val profile = multiRoleActiveProfile
+                if (profile != null) {
+                    MultiRoleBanner(
+                        profileName = profile.name,
+                        providerName = TtsProviderRegistry.getProvider(profile.providerId)?.name
+                            ?: profile.providerId,
+                        onClick = onMultiRoleClick,
+                    )
+                }
             }
 
             AnimatedVisibility(
@@ -621,10 +692,12 @@ fun MainScreen(
                             onStopClick = {
                                 viewModel.stopPreview()
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            titleRes = R.string.voice_preview_single_voice,
                         )
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        // 两个浮动按钮同排显示，末尾预留足够空间避免遮挡最后一项
+                        Spacer(modifier = Modifier.height(88.dp))
                     }
                 }
             }
@@ -846,6 +919,57 @@ fun DefaultProviderBanner(
                     text = stringResource(R.string.default_provider_banner_content),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MultiRoleBanner(
+    profileName: String,
+    providerName: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.RecordVoiceOver,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(
+                        R.string.multirole_home_banner,
+                        profileName,
+                        providerName,
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.multirole_home_banner_content),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                 )
             }
         }

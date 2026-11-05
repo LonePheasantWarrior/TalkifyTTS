@@ -164,7 +164,7 @@ class TtsPreviewPlayer(
                 provider.getKnownModelIds(),
             ),
             TelemetryIds.voice(
-                provider.getEffectiveVoiceId(config),
+                provider.getEffectiveVoiceId(config, params.voiceOverride),
                 provider::isVoiceIdCorrect,
             ),
             text.length

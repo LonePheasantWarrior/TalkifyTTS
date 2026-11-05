@@ -13,6 +13,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.AzureParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.Mp3StreamDecoder
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -377,7 +379,7 @@ class AzureProvider : AbstractTtsProvider() {
             // 1. 获取或复用持久化 WebSocket 连接
             val (webSocket, wsListener) = getOrCreateConnection(pipedOutputStream, pipeClosed)
 
-            val voice = config.voiceId.ifEmpty { DEFAULT_VOICE }
+            val voice = resolveRequestVoiceId(config.voiceId, params).ifEmpty { DEFAULT_VOICE }
             val rate = AzureParamMapper.convertRate(params.speechRate)
             val volume = AzureParamMapper.convertVolume(params.volume)
             val pitch = AzureParamMapper.convertPitch(params.pitch)
@@ -910,6 +912,17 @@ class AzureProvider : AbstractTtsProvider() {
     // ==================== 供应商元数据 ====================
 
     override fun getAudioConfig(): AudioConfig = AudioConfig.MICROSOFT_TTS
+
+    /**
+     * Azure 的音频由 MP3 解码得到，真实采样率来自 MP3 头；预检无法为任意音色
+     * 保证固定输出格式，因此多角色不支持该供应商（不虚报能力）。
+     */
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability = VoiceOutputCapability.Unsupported(
+        VoiceCapabilityReason.OUTPUT_FORMAT_UNKNOWN
+    )
 
     override fun getSupportedLanguages(): Set<String> {
         return SUPPORTED_LANGUAGES.toSet()

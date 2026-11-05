@@ -5,23 +5,28 @@ import android.content.Intent
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import com.github.lonepheasantwarrior.talkify.domain.model.TtsProviderRegistry
+import com.github.lonepheasantwarrior.talkify.domain.model.multirole.MultiRoleState
+import com.github.lonepheasantwarrior.talkify.domain.repository.MultiRoleRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.MultiRoleRepositoryProvider
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.SharedPreferencesAppConfigRepository
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
+import com.github.lonepheasantwarrior.talkify.service.multirole.EffectiveTtsTargetResolver
+import com.github.lonepheasantwarrior.talkify.service.multirole.MultiRoleRuntimeValidator
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsProviderFactory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * TTS 数据检查 Activity
  *
- * 响应系统或其他应用的 CHECK_TTS_DATA 请求，返回当前供应商支持的语言列表。
- * 语言列表经 [TtsProviderFactory] 创建供应商实例后动态获取——手写 when 映射会随
- * 新增供应商漂移（历史上 9 家供应商只有 3 家被覆盖，其余全部误报为阿里云语言表），
- * 兜底默认值亦与服务层 [TtsProviderRegistry.defaultProvider] 对齐（P1-8）。
+ * 响应系统或其他应用的 CHECK_TTS_DATA 请求，返回**当前生效供应商**支持的语言列表。
+ * 生效供应商与系统发现/合成入口使用同一决策：多角色开启且方案有效时使用方案
+ * 绑定供应商，否则使用主界面普通供应商。方案音色/格式不兼容时回退普通单音色。
  *
- * 契约诚实性（N18）：当前供应商未配置时返回 CHECK_VOICE_DATA_FAIL，不再无条件
- * PASS 虚报就绪——避免系统客户端选中 Talkify 后首次合成才报错。
- * ⚠️ 真机验证前提：部分系统客户端对 FAIL 的处理可能把引擎移出可选列表（影响
- * 首次发现），发版前须真机确认；回退方案为恢复无条件 PASS（见重构方案 §5 风险表）。
+ * 配置读取在后台线程完成并有界；Activity 完成前不会阻塞主线程等待磁盘。
  */
 class TalkifyCheckDataActivity : Activity() {
 
@@ -29,88 +34,122 @@ class TalkifyCheckDataActivity : Activity() {
         TtsLogger.d("CHECK_TTS_DATA: TalkifyCheckDataActivity started")
         super.onCreate(savedInstanceState)
 
-        if (!isCurrentProviderConfigured()) {
-            TtsLogger.i("CHECK_TTS_DATA: current provider is not configured, returning FAIL")
-            setResult(TextToSpeech.Engine.CHECK_VOICE_DATA_FAIL)
-            finish()
-            return
-        }
-
-        val supportedLanguages = getSupportedLanguagesForCurrentProvider()
-        TtsLogger.d("CHECK_TTS_DATA: Supported languages = $supportedLanguages")
-
-        // 客户端可携带 EXTRA_CHECK_VOICE_DATA_FOR 只询问特定 locale；
-        // 未携带时报告全量支持语言（P3-6）
-        // 该框架常量已弃用且无替代 API，但仍是 CHECK_TTS_DATA 协议字段，客户端照常下发
-        @Suppress("DEPRECATION")
-        val requested = intent?.getStringExtra(TextToSpeech.Engine.EXTRA_CHECK_VOICE_DATA_FOR)
-        val (available, unavailable) = partitionByRequestedLanguage(supportedLanguages, requested)
-
-        val returnData = Intent()
-        returnData.putStringArrayListExtra(TextToSpeech.Engine.EXTRA_AVAILABLE_VOICES, available)
-        returnData.putStringArrayListExtra(TextToSpeech.Engine.EXTRA_UNAVAILABLE_VOICES, unavailable)
-
-        setResult(TextToSpeech.Engine.CHECK_VOICE_DATA_PASS, returnData)
-        finish()
+        Thread {
+            val result = runCatching { resolveEffectiveProvider() }
+            if (result.isFailure) {
+                TtsLogger.e("CHECK_TTS_DATA: resolve failed", result.exceptionOrNull())
+            }
+            val target = result.getOrNull()
+            if (target == null || !target.configured) {
+                TtsLogger.i("CHECK_TTS_DATA: effective provider is not configured, returning FAIL")
+                finishWithResult(TextToSpeech.Engine.CHECK_VOICE_DATA_FAIL, null)
+                return@Thread
+            }
+            val supportedLanguages = target.languages
+            // 客户端可携带 EXTRA_CHECK_VOICE_DATA_FOR 只询问特定 locale；
+            // 未携带时报告全量支持语言。
+            @Suppress("DEPRECATION")
+            val requested = intent?.getStringExtra(TextToSpeech.Engine.EXTRA_CHECK_VOICE_DATA_FOR)
+            val (available, unavailable) =
+                partitionByRequestedLanguage(supportedLanguages, requested)
+            val returnData = Intent()
+            returnData.putStringArrayListExtra(
+                TextToSpeech.Engine.EXTRA_AVAILABLE_VOICES, available
+            )
+            returnData.putStringArrayListExtra(
+                TextToSpeech.Engine.EXTRA_UNAVAILABLE_VOICES, unavailable
+            )
+            finishWithResult(TextToSpeech.Engine.CHECK_VOICE_DATA_PASS, returnData)
+        }.start()
     }
 
-    /**
-     * 当前（用户选择或默认兜底）供应商是否已完成配置
-     *
-     * 复用供应商自述的 [TtsProviderApi.isConfigured] 判定，与合成入口的就绪语义
-     * 同源——Azure 等免配置供应商恒为 true，不受本收紧影响
-     */
-    private fun isCurrentProviderConfigured(): Boolean {
-        return try {
-            val appConfigRepository = SharedPreferencesAppConfigRepository(this)
-            val selectedProviderId = appConfigRepository.getSelectedProviderId()
-                ?: TtsProviderRegistry.defaultProvider.id
-            val provider = TtsProviderFactory.createProvider(selectedProviderId) ?: return false
-            val config = TtsProviderFactory.createConfigRepository(selectedProviderId, this)
-                ?.getConfig(selectedProviderId)
-            provider.isConfigured(config)
-        } catch (e: Exception) {
-            TtsLogger.e("CHECK_TTS_DATA: provider configuration check failed", e)
-            false
-        }
-    }
+    private data class Target(
+        val providerId: String,
+        val configured: Boolean,
+        val languages: ArrayList<String>,
+    )
 
     /**
-     * 获取当前选择供应商支持的语言列表
-     *
-     * 经工厂创建供应商实例读取接口语言表，返回格式为供应商原始定义的
-     * 语言代码（如 "zho", "eng"）
+     * 读取多角色快照并决策生效供应商，随后创建一次 Provider 校验配置、取语言表。
      */
-    private fun getSupportedLanguagesForCurrentProvider(): ArrayList<String> {
+    private fun resolveEffectiveProvider(): Target {
         val appConfigRepository = SharedPreferencesAppConfigRepository(this)
-        // 兜底与服务层一致：TtsProviderRegistry.defaultProvider（此前误写为阿里云）
-        val selectedProviderId = appConfigRepository.getSelectedProviderId()
+        val mainProviderId = appConfigRepository.getSelectedProviderId()
             ?: TtsProviderRegistry.defaultProvider.id
+        val multiRoleRepository: MultiRoleRepository =
+            MultiRoleRepositoryProvider.get(applicationContext)
+        val state: MultiRoleState? = try {
+            runBlocking {
+                withTimeoutOrNull(400.milliseconds) { multiRoleRepository.snapshot() }
+            }
+        } catch (_: CancellationException) {
+            null
+        } catch (_: Exception) {
+            null
+        }
+        var base = EffectiveTtsTargetResolver.resolve(mainProviderId, state)
+        var provider = TtsProviderFactory.createProvider(base.providerId)
+        var config = TtsProviderFactory.createConfigRepository(base.providerId, this)
+            ?.getConfig(base.providerId)
+        var configured = provider != null && config != null && provider.isConfigured(config)
 
-        TtsLogger.d("CHECK_TTS_DATA: Selected provider = $selectedProviderId")
+        if (base.profile != null && provider == null) {
+            // 方案供应商实例创建失败：回退主界面普通供应商
+            base = EffectiveTtsTargetResolver.Target(
+                providerId = mainProviderId,
+                profile = null,
+                settings = base.settings,
+            )
+            provider = TtsProviderFactory.createProvider(base.providerId)
+            config = TtsProviderFactory.createConfigRepository(base.providerId, this)
+                ?.getConfig(base.providerId)
+            configured = provider != null && config != null && provider.isConfigured(config)
+        }
 
-        val provider = TtsProviderFactory.createProvider(selectedProviderId)
-            ?: TtsProviderFactory.createProvider(TtsProviderRegistry.defaultProvider.id)
-        return ArrayList(provider?.getSupportedLanguages()?.toList().orEmpty())
+        if (base.profile != null && provider != null) {
+            val check = MultiRoleRuntimeValidator.validateWithProvider(
+                base.profile, provider, config
+            )
+            if (!check.ok) {
+                // 方案在发现阶段已失效：回退普通单音色，与合成入口一致
+                provider.release()
+                base = EffectiveTtsTargetResolver.Target(
+                    providerId = mainProviderId,
+                    profile = null,
+                    settings = base.settings,
+                )
+                provider = TtsProviderFactory.createProvider(base.providerId)
+                config = TtsProviderFactory.createConfigRepository(base.providerId, this)
+                    ?.getConfig(base.providerId)
+                configured = provider != null && config != null && provider.isConfigured(config)
+            }
+        }
+        val languages = ArrayList(provider?.getSupportedLanguages()?.toList().orEmpty())
+        try {
+            provider?.release()
+        } catch (_: Exception) {
+        }
+        return Target(base.providerId, configured, languages)
+    }
+
+    private fun finishWithResult(resultCode: Int, data: Intent?) {
+        runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            setResult(resultCode, data)
+            finish()
+        }
     }
 
     /**
      * 按客户端询问的 locale 拆分可用/不可用语言
-     *
-     * @param supported 当前供应商支持的语言代码（ISO 639-2/639-3）
-     * @param requestedTag EXTRA_CHECK_VOICE_DATA_FOR 携带的 locale 标签，可为空
      */
     private fun partitionByRequestedLanguage(
         supported: ArrayList<String>,
-        requestedTag: String?
+        requestedTag: String?,
     ): Pair<ArrayList<String>, ArrayList<String>> {
         if (requestedTag.isNullOrBlank()) {
             return Pair(supported, arrayListOf())
         }
-
-        // getISO3Language 对无 ISO3 映射的语码按契约抛 MissingResourceException；
-        // requestedTag 来自任意第三方客户端的 EXTRA_CHECK_VOICE_DATA_FOR，不可信，
-        // 失败时降级为标签语言前缀参与匹配，绝不在 CHECK_TTS_DATA 链路抛异常
         val language = runCatching {
             Locale.forLanguageTag(requestedTag).getISO3Language()
         }.getOrDefault("")

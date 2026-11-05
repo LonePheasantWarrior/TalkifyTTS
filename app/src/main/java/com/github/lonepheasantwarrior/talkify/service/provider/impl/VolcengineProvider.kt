@@ -10,6 +10,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.HttpStreamingTtsProvider
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import com.github.lonepheasantwarrior.talkify.service.provider.VolcengineErrorParser
 import com.github.lonepheasantwarrior.talkify.service.provider.VolcengineParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.toMaskedString
@@ -63,6 +65,11 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
 
     override fun getAudioConfig(): AudioConfig = AudioConfig.SEED_TTS2
 
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability = knownPcmCapability(voiceId, AudioConfig.SEED_TTS2)
+
     override fun validateConfig(config: BaseProviderConfig): String? {
         if (config !is VolcengineConfig) {
             return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
@@ -81,11 +88,12 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
         params: SynthesisParams
     ): Request {
         val volcConfig = config as VolcengineConfig
-        val voiceId = if (volcConfig.voiceId.isNotEmpty()) {
+        val configuredVoice = if (volcConfig.voiceId.isNotEmpty()) {
             extractRealVoiceName(volcConfig.voiceId) ?: volcConfig.voiceId
         } else {
             voiceIds.firstOrNull() ?: fallbackVoiceId
         }
+        val voiceId = resolveRequestVoiceId(configuredVoice, params)
 
         val speechRate = VolcengineParamMapper.convertSpeechRate(params.speechRate)
         logDebug("ttsSpeechRate: ${params.speechRate}, seedSpeechRate: $speechRate")
@@ -136,10 +144,8 @@ class VolcengineProvider : HttpStreamingTtsProvider() {
             .header("Connection", "keep-alive")
             .build()
 
-        // 打印请求详情（Headers 脱敏处理仅用于日志显示，实际发送的是原始值）
         logDebug("HTTP Request URL: ${request.url}")
         logDebug("HTTP Request Headers (masked for log): ${request.headers.toMaskedString()}")
-        logDebug("HTTP Request Body: ${requestBody.toString(2)}")
 
         return request
     }

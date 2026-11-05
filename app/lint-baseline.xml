@@ -1,22 +1,532 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<issues format="6" by="lint 9.4.1" type="baseline" client="gradle" dependencies="false" name="AGP (9.4.1)" variant="all" version="9.4.1">
+<issues format="6" by="lint 9.5.0" type="baseline" client="gradle" dependencies="false" name="AGP (9.5.0)" variant="all" version="9.5.0">
 
     <issue
-        id="AndroidGradlePluginVersion"
-        message="A newer version of Gradle than 9.7.1 is available: 9.8.0"
-        errorLine1="distributionUrl=https\://services.gradle.org/distributions/gradle-9.7.1-bin.zip"
-        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.provider.Settings.Panel#ACTION_INTERNET_CONNECTIVITY`"
+        errorLine1="            context.startActivity(Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY).apply {"
+        errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="../gradle/wrapper/gradle-wrapper.properties"
-            line="4"
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/ui/viewmodel/MainViewModel.kt"
+            line="130"
+            column="42"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 26 (current min is 24): `android.provider.Settings#ACTION_APP_NOTIFICATION_SETTINGS`"
+        errorLine1="            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {"
+        errorLine2="                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/ui/viewmodel/MainViewModel.kt"
+            line="172"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 26 (current min is 24): `android.provider.Settings#EXTRA_APP_PACKAGE`"
+        errorLine1="                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)"
+        errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/ui/viewmodel/MainViewModel.kt"
+            line="173"
+            column="26"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 29 (current min is 24): `android.net.wifi.WifiManager#WIFI_MODE_FULL_LOW_LATENCY`"
+        errorLine1="        wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, &quot;Talkify:WifiLock&quot;)"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TalkifyTtsService.kt"
+            line="85"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="InlinedApi"
+        message="Field requires API level 26 (current min is 24): `android.media.AudioAttributes#USAGE_ASSISTANT`"
+        errorLine1="                    .setUsage(android.media.AudioAttributes.USAGE_ASSISTANT)"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TtsPreviewPlayer.kt"
+            line="513"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.format.DateTimeFormatter#ofPattern`"
+        errorLine1="            DateTimeFormatter.ofPattern("
+        errorLine2="                              ~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/provider/impl/AzureProvider.kt"
+            line="117"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.format.DateTimeFormatter#withZone`"
+        errorLine1="            ).withZone(ZoneOffset.UTC)"
+        errorLine2="              ~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/provider/impl/AzureProvider.kt"
+            line="120"
+            column="15"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 26, or core library desugaring (current min is 24): `java.time.ZoneOffset#UTC`"
+        errorLine1="            ).withZone(ZoneOffset.UTC)"
+        errorLine2="                       ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/provider/impl/AzureProvider.kt"
+            line="120"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.Instant#now`"
+        errorLine1="            return utcDateTimeFormatter.format(Instant.now())"
+        errorLine2="                                                       ~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/provider/impl/AzureProvider.kt"
+            line="123"
+            column="56"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.format.DateTimeFormatter#format`"
+        errorLine1="            return utcDateTimeFormatter.format(Instant.now())"
+        errorLine2="                                        ~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/provider/impl/AzureProvider.kt"
+            line="123"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.util.Base64#getEncoder`"
+        errorLine1="        return ENC_PREFIX + Base64.getEncoder().encodeToString(blob)"
+        errorLine2="                                   ~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/security/CipherTextFormat.kt"
+            line="28"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.util.Base64.Encoder#encodeToString`"
+        errorLine1="        return ENC_PREFIX + Base64.getEncoder().encodeToString(blob)"
+        errorLine2="                                                ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/security/CipherTextFormat.kt"
+            line="28"
+            column="49"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.util.Base64#getDecoder`"
+        errorLine1="            Base64.getDecoder().decode(value.removePrefix(ENC_PREFIX))"
+        errorLine2="                   ~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/security/CipherTextFormat.kt"
+            line="37"
+            column="20"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.util.Base64.Decoder#decode`"
+        errorLine1="            Base64.getDecoder().decode(value.removePrefix(ENC_PREFIX))"
+        errorLine2="                                ~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/security/CipherTextFormat.kt"
+            line="37"
+            column="33"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.util.Base64#getMimeDecoder`"
+        errorLine1="        java.util.Base64.getMimeDecoder().decode(data)"
+        errorLine2="                         ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/provider/impl/GoogleApiSpec.kt"
+            line="78"
+            column="26"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.util.Base64.Decoder#decode`"
+        errorLine1="        java.util.Base64.getMimeDecoder().decode(data)"
+        errorLine2="                                          ~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/provider/impl/GoogleApiSpec.kt"
+            line="78"
+            column="43"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.content.ContextWrapper#startForegroundService`"
+        errorLine1="        application.startForegroundService(intent)"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/ui/viewmodel/localmodel/LocalModelDownloadController.kt"
+            line="116"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel()`"
+        errorLine1="        val channel = android.app.NotificationChannel("
+        errorLine2="                                  ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="718"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel#setDescription`"
+        errorLine1="        channel.description = CHANNEL_DESC"
+        errorLine2="                ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="723"
             column="17"/>
     </issue>
 
     <issue
-        id="ObsoleteSdkInt"
-        message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 30. Merge all the resources in this folder into `mipmap-anydpi`.">
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel#setDescription`"
+        errorLine1="        channel.description = CHANNEL_DESC"
+        errorLine2="                            ~">
         <location
-            file="src/main/res/mipmap-anydpi-v26"/>
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="723"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel#setShowBadge`"
+        errorLine1="        channel.setShowBadge(false)"
+        errorLine2="                ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="724"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel#setSound`"
+        errorLine1="        channel.setSound(null, null)"
+        errorLine2="                ~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="726"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationManager#deleteNotificationChannel`"
+        errorLine1="        manager.deleteNotificationChannel(CHANNEL_ID)"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="729"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationManager#createNotificationChannel`"
+        errorLine1="        manager.createNotificationChannel(channel)"
+        errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="730"
+            column="17"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.PendingIntent#getForegroundService`"
+        errorLine1="        val cancelIntent = PendingIntent.getForegroundService("
+        errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/provider/local/LocalModelDownloadService.kt"
+            line="778"
+            column="42"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel()`"
+        errorLine1="        val notificationChannel = android.app.NotificationChannel("
+        errorLine2="                                              ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/notification/NotificationHelper.kt"
+            line="54"
+            column="47"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel#setDescription`"
+        errorLine1="        notificationChannel.description = channelDescription"
+        errorLine2="                            ~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/notification/NotificationHelper.kt"
+            line="59"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel#setDescription`"
+        errorLine1="        notificationChannel.description = channelDescription"
+        errorLine2="                                        ~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/notification/NotificationHelper.kt"
+            line="59"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationChannel#setShowBadge`"
+        errorLine1="        notificationChannel.setShowBadge(false)"
+        errorLine2="                            ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/notification/NotificationHelper.kt"
+            line="60"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.app.NotificationManager#createNotificationChannel`"
+        errorLine1="        notificationManager.createNotificationChannel(notificationChannel)"
+        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/notification/NotificationHelper.kt"
+            line="62"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 26, or core library desugaring (current min is 24): `java.time.format.DateTimeFormatter#RFC_1123_DATE_TIME`"
+        errorLine1="        DateTimeFormatter.RFC_1123_DATE_TIME,"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="19"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.format.DateTimeFormatter#ofPattern`"
+        errorLine1="        DateTimeFormatter.ofPattern(&quot;EEEE, dd-MMM-yy HH:mm:ss zzz&quot;, Locale.US),"
+        errorLine2="                          ~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="20"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.format.DateTimeFormatter#ofPattern`"
+        errorLine1="        DateTimeFormatter.ofPattern(&quot;EEE MMM d HH:mm:ss yyyy&quot;, Locale.US)"
+        errorLine2="                          ~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="23"
+            column="27"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.ZonedDateTime#parse`"
+        errorLine1="            runCatching { ZonedDateTime.parse(header, formatter) }.getOrNull()"
+        errorLine2="                                        ~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="32"
+            column="41"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.Instant#toEpochMilli`"
+        errorLine1="        val targetMillis = zoned?.toInstant()?.toEpochMilli()"
+        errorLine2="                                               ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="34"
+            column="48"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.chrono.ChronoZonedDateTime#toInstant`"
+        errorLine1="        val targetMillis = zoned?.toInstant()?.toEpochMilli()"
+        errorLine2="                                  ~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="34"
+            column="35"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.LocalDateTime#parse`"
+        errorLine1="                LocalDateTime.parse(header, ASCTIME_FORMATTER)"
+        errorLine2="                              ~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="37"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.chrono.ChronoLocalDateTime#toInstant`"
+        errorLine1="                    .toInstant(ZoneOffset.UTC)"
+        errorLine2="                     ~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="38"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 26, or core library desugaring (current min is 24): `java.time.ZoneOffset#UTC`"
+        errorLine1="                    .toInstant(ZoneOffset.UTC)"
+        errorLine2="                               ~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="38"
+            column="32"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26, or core library desugaring (current min is 24): `java.time.Instant#toEpochMilli`"
+        errorLine1="                    .toEpochMilli()"
+        errorLine2="                     ~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/infrastructure/app/telemetry/RetryGate.kt"
+            line="39"
+            column="22"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.media.AudioFocusRequest.Builder()`"
+        errorLine1="        val request = audioFocusRequest ?: android.media.AudioFocusRequest.Builder("
+        errorLine2="                                                                           ~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TtsPreviewPlayer.kt"
+            line="508"
+            column="76"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.media.AudioFocusRequest.Builder#setAudioAttributes`"
+        errorLine1="            .setAudioAttributes("
+        errorLine2="             ~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TtsPreviewPlayer.kt"
+            line="511"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.media.AudioFocusRequest.Builder#setOnAudioFocusChangeListener`"
+        errorLine1="            .setOnAudioFocusChangeListener { change ->"
+        errorLine2="             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TtsPreviewPlayer.kt"
+            line="517"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.media.AudioFocusRequest.Builder#build`"
+        errorLine1="            .build()"
+        errorLine2="             ~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TtsPreviewPlayer.kt"
+            line="522"
+            column="14"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.media.AudioManager#requestAudioFocus`"
+        errorLine1="        return manager.requestAudioFocus(request) == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED"
+        errorLine2="                       ~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TtsPreviewPlayer.kt"
+            line="524"
+            column="24"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 26 (current min is 24): `android.media.AudioManager#abandonAudioFocusRequest`"
+        errorLine1="        audioManager()?.abandonAudioFocusRequest(request)"
+        errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/java/com/github/lonepheasantwarrior/talkify/service/TtsPreviewPlayer.kt"
+            line="530"
+            column="25"/>
+    </issue>
+
+    <issue
+        id="UnusedAttribute"
+        message="Attribute `enableOnBackInvokedCallback` is only used in API level 33 and higher (current min is 24)"
+        errorLine1="        android:enableOnBackInvokedCallback=&quot;true&quot;"
+        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/AndroidManifest.xml"
+            line="28"
+            column="9"/>
+    </issue>
+
+    <issue
+        id="GradleDependency"
+        message="A newer version of androidx.datastore:datastore-preferences than 1.1.7 is available: 1.3.0"
+        errorLine1="datastore = &quot;1.1.7&quot;"
+        errorLine2="            ~~~~~~~">
+        <location
+            file="$HOME/Workspace/Android/TalkifyTTS/gradle/libs.versions.toml"
+            line="19"
+            column="13"/>
     </issue>
 
     <issue
@@ -165,7 +675,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="75"
+            line="74"
             column="13"/>
     </issue>
 
@@ -176,7 +686,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="76"
+            line="75"
             column="13"/>
     </issue>
 
@@ -187,9 +697,10 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="77"
+            line="76"
             column="13"/>
     </issue>
+
 
     <issue
         id="UnusedResources"
@@ -198,7 +709,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="80"
+            line="296"
             column="13"/>
     </issue>
 
@@ -209,7 +720,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="81"
+            line="297"
             column="13"/>
     </issue>
 
@@ -220,7 +731,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="82"
+            line="298"
             column="13"/>
     </issue>
 
@@ -231,7 +742,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="83"
+            line="299"
             column="13"/>
     </issue>
 
@@ -242,7 +753,18 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="86"
+            line="302"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tts_error_provider_not_found` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tts_error_provider_not_found&quot;>供应商不存在&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="303"
             column="13"/>
     </issue>
 
@@ -253,7 +775,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="88"
+            line="304"
             column="13"/>
     </issue>
 
@@ -264,7 +786,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="90"
+            line="306"
             column="13"/>
     </issue>
 
@@ -275,7 +797,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="92"
+            line="308"
             column="13"/>
     </issue>
 
@@ -286,7 +808,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="93"
+            line="309"
             column="13"/>
     </issue>
 
@@ -297,7 +819,18 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="94"
+            line="310"
+            column="13"/>
+    </issue>
+
+    <issue
+        id="UnusedResources"
+        message="The resource `R.string.tts_error_provider_init_failed` appears to be unused"
+        errorLine1="    &lt;string name=&quot;tts_error_provider_init_failed&quot;>供应商初始化失败&lt;/string>"
+        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="src/main/res/values/strings.xml"
+            line="311"
             column="13"/>
     </issue>
 
@@ -308,7 +841,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="96"
+            line="312"
             column="13"/>
     </issue>
 
@@ -319,7 +852,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="97"
+            line="313"
             column="13"/>
     </issue>
 
@@ -330,7 +863,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="98"
+            line="314"
             column="13"/>
     </issue>
 
@@ -341,7 +874,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="99"
+            line="315"
             column="13"/>
     </issue>
 
@@ -352,7 +885,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="105"
+            line="321"
             column="13"/>
     </issue>
 
@@ -363,7 +896,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="121"
+            line="335"
             column="13"/>
     </issue>
 
@@ -374,7 +907,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="150"
+            line="363"
             column="13"/>
     </issue>
 
@@ -385,7 +918,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="203"
+            line="415"
             column="13"/>
     </issue>
 
@@ -396,7 +929,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
-            line="204"
+            line="416"
             column="13"/>
     </issue>
 

@@ -6,6 +6,9 @@ import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.lonepheasantwarrior.talkify.domain.model.BaseProviderConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.multirole.MultiRoleState
+import com.github.lonepheasantwarrior.talkify.domain.repository.MultiRoleRepository
+import com.github.lonepheasantwarrior.talkify.infrastructure.app.repo.MultiRoleRepositoryProvider
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel.DownloadProgress
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.localmodel.LocalModelDownloadController
@@ -13,8 +16,10 @@ import com.github.lonepheasantwarrior.talkify.ui.viewmodel.preview.PreviewPlayba
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup.StartupCoordinator
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.startup.StartupState
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * 主界面 ViewModel —— 组合根
@@ -34,6 +39,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val startup = StartupCoordinator(application, viewModelScope)
     private val previewPlayback = PreviewPlaybackController()
     private val modelDownload = LocalModelDownloadController(application)
+    private val multiRoleRepository: MultiRoleRepository =
+        MultiRoleRepositoryProvider.get(application)
 
     // --- 启动流程状态（委托 StartupCoordinator）---
     val startupState: StateFlow<StartupState> = startup.startupState
@@ -43,6 +50,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isPreviewPlaying: StateFlow<Boolean> = previewPlayback.isPreviewPlaying
     val previewErrorMessage: StateFlow<String?> = previewPlayback.previewErrorMessage
     val previewWaveform: StateFlow<FloatArray> = previewPlayback.previewWaveform
+
+    // --- 多角色状态（首页只需方案名/供应商/开关，不展示角色内容）---
+    val multiRoleState: StateFlow<MultiRoleState?> = multiRoleRepository.state
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null,
+        )
 
     // --- 下载进度状态（委托 LocalModelDownloadController）---
     val downloadProgress: StateFlow<DownloadProgress?> = modelDownload.downloadProgress

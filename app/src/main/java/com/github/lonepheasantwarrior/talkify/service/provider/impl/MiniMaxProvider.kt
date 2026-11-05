@@ -16,6 +16,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.Mp3StreamDecoder
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -108,6 +110,11 @@ class MiniMaxProvider : AbstractTtsProvider() {
     override fun getDefaultModelId(): String = ProviderIds.MiniMax.defaultModelId
 
     override fun getAudioConfig(): AudioConfig = AudioConfig.MINIMAX_TTS
+
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability = knownPcmCapability(voiceId, AudioConfig.MINIMAX_TTS)
 
     override fun synthesize(
         text: String,
@@ -314,10 +321,15 @@ class MiniMaxProvider : AbstractTtsProvider() {
     ) : WebSocketListener() {
 
         private val voiceId: String by lazy {
-            if (config.voiceId.isNotEmpty()) {
+            val configured = if (config.voiceId.isNotEmpty()) {
                 extractRealVoiceName(config.voiceId) ?: config.voiceId
             } else {
                 resolveVoiceForLanguage(config.voiceId, params.language)
+            }
+            if (params.voiceOverride.isNullOrBlank()) {
+                configured
+            } else {
+                extractRealVoiceName(params.voiceOverride) ?: params.voiceOverride
             }
         }
 

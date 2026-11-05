@@ -166,6 +166,31 @@ abstract class AbstractTtsProvider : TtsProviderApi {
     }
 
     /**
+     * 为「具体配置 + 音色」构造已知输出格式能力。
+     * 子类仅在真实请求路径会尊重 `voiceOverride` 且输出格式可靠时调用。
+     */
+    protected fun knownPcmCapability(
+        voiceId: String,
+        audioConfig: AudioConfig,
+    ): VoiceOutputCapability {
+        if (voiceId.isBlank() || !isVoiceIdCorrect(voiceId)) {
+            return VoiceOutputCapability.Unsupported(VoiceCapabilityReason.VOICE_UNSUPPORTED)
+        }
+        return VoiceOutputCapability.Known(audioConfig)
+    }
+
+    /** 请求级音色覆盖优先；传入的覆盖值先剥离 Android Voice 展示后缀。 */
+    protected fun resolveRequestVoiceId(
+        configuredVoiceId: String,
+        params: SynthesisParams,
+    ): String {
+        val override = params.voiceOverride
+            ?.let { extractRealVoiceName(it) ?: it }
+            ?.takeIf { it.isNotBlank() }
+        return override ?: configuredVoiceId
+    }
+
+    /**
      * 默认 API 地址，返回空字符串表示供应商不支持自定义 API 地址。
      * 子类可按需重写。
      */
@@ -202,11 +227,19 @@ abstract class AbstractTtsProvider : TtsProviderApi {
     }
 
     /**
-     * 检查文本是否包含可朗读的文字内容
-     * @return true 如果文本中至少包含一个文字字符（任意语言）
+     * 检查文本是否包含可朗读的文字内容。
+     *
+     * 按 Unicode 码点识别字母或数字：纯数字台词（如 `“123。”`）和补充平面文字
+     * （如 U+20000）都是可朗读内容，不能因 UTF-16 逐字符判定而静默跳过。
      */
     protected fun containsReadableText(text: String): Boolean {
-        return text.any { Character.isLetter(it.code) }
+        var i = 0
+        while (i < text.length) {
+            val cp = text.codePointAt(i)
+            if (Character.isLetter(cp) || Character.isDigit(cp)) return true
+            i += Character.charCount(cp)
+        }
+        return false
     }
 
     /**

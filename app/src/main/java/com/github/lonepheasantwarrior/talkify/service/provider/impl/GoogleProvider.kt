@@ -13,6 +13,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.ProxyParseResult
 import com.github.lonepheasantwarrior.talkify.service.provider.ProxySettings
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import com.github.lonepheasantwarrior.talkify.service.provider.toMaskedString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -86,6 +88,11 @@ class GoogleProvider : HttpStreamingTtsProvider() {
 
     override fun getAudioConfig(): AudioConfig = AudioConfig.GEMINI_TTS
 
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability = knownPcmCapability(voiceId, AudioConfig.GEMINI_TTS)
+
     override fun validateConfig(config: BaseProviderConfig): String? {
         if (config !is GoogleConfig) {
             return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
@@ -118,7 +125,7 @@ class GoogleProvider : HttpStreamingTtsProvider() {
     ): Request {
         val googleConfig = config as GoogleConfig
         val spec = specFor(googleConfig)
-        val voiceId = resolveVoiceId(googleConfig)
+        val voiceId = resolveVoiceId(googleConfig, params)
         val effectiveModel = googleConfig.modelId.ifBlank { getDefaultModelId() }
         val style = buildStyle(googleConfig.styleInstruction, params.speechRate)
         if (style != null) {
@@ -144,10 +151,8 @@ class GoogleProvider : HttpStreamingTtsProvider() {
             .header("Accept", "text/event-stream")
             .build()
 
-        // 打印请求详情（Headers 脱敏处理仅用于日志显示，实际发送的是原始值）
         logDebug("HTTP Request URL: ${request.url}")
         logDebug("HTTP Request Headers (masked for log): ${request.headers.toMaskedString()}")
-        logDebug("HTTP Request Body: ${requestBody.toString(2)}")
 
         return request
     }
@@ -243,13 +248,17 @@ class GoogleProvider : HttpStreamingTtsProvider() {
         }
     }
 
-    /** 解析生效音色：配置音色（剥离 Android Voice 展示后缀）> 预置列表首个 > 兜底音色 */
-    private fun resolveVoiceId(config: GoogleConfig): String {
-        return if (config.voiceId.isNotEmpty()) {
+    /**
+     * 解析生效音色：请求级覆盖 > 配置音色（剥离 Android Voice 展示后缀）
+     * > 预置列表首个 > 兜底音色。
+     */
+    private fun resolveVoiceId(config: GoogleConfig, params: SynthesisParams): String {
+        val configured = if (config.voiceId.isNotEmpty()) {
             extractRealVoiceName(config.voiceId) ?: config.voiceId
         } else {
             voiceIds.firstOrNull() ?: fallbackVoiceId
         }
+        return resolveRequestVoiceId(configured, params)
     }
 
     /**

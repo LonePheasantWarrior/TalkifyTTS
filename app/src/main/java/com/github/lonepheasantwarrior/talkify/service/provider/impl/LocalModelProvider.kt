@@ -21,6 +21,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.AbstractTtsProvid
 import com.github.lonepheasantwarrior.talkify.service.provider.AudioConfig
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import com.github.lonepheasantwarrior.talkify.service.provider.VOICE_NAME_SEPARATOR
 import com.github.lonepheasantwarrior.talkify.service.provider.impl.LocalModelProvider.Companion.scheduleEngineIdleRelease
 import kotlinx.coroutines.CoroutineScope
@@ -187,6 +189,24 @@ class LocalModelProvider : AbstractTtsProvider() {
         return AudioConfig.createStandard(sampleRate = modelInfo.sampleRate)
     }
 
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability {
+        val lc = config as? LocalModelConfig
+            ?: return VoiceOutputCapability.Unsupported(VoiceCapabilityReason.PROVIDER_UNSUPPORTED)
+        val modelInfo = resolveModelInfo(lc.modelId)
+        val realVoice = extractRealVoiceName(voiceId) ?: voiceId
+        val bundled = LocalVoiceCatalog.getVoices()
+        val voices = if (bundled.isNotEmpty()) bundled else modelInfo.voiceList
+        if (realVoice.isBlank() || voices.none { it.voiceId == realVoice }) {
+            return VoiceOutputCapability.Unsupported(VoiceCapabilityReason.VOICE_UNSUPPORTED)
+        }
+        return VoiceOutputCapability.Known(
+            AudioConfig.createStandard(sampleRate = modelInfo.sampleRate)
+        )
+    }
+
     // ==================== 配置检查 ====================
 
     override fun isConfigured(config: BaseProviderConfig?): Boolean {
@@ -267,7 +287,8 @@ class LocalModelProvider : AbstractTtsProvider() {
                     // ZipVoice 音色 = 参考音频 + 逐字稿；音色以内置目录为准，
                     // 历史持久化的 voiceId（如已隐藏的雷军音色）不在目录内时
                     // 透明迁移到目录默认音色，用户侧体验不变
-                    val requestedVoiceName = extractRealVoiceName(lc.voiceId) ?: lc.voiceId
+                    val configuredVoice = extractRealVoiceName(lc.voiceId) ?: lc.voiceId
+                    val requestedVoiceName = resolveRequestVoiceId(configuredVoice, params)
                     val bundledVoices = LocalVoiceCatalog.getVoices()
                     val voice = bundledVoices.firstOrNull { it.voiceId == requestedVoiceName }
                         ?: bundledVoices.firstOrNull()

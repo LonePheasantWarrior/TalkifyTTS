@@ -15,6 +15,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.TencentErrorParse
 import com.github.lonepheasantwarrior.talkify.service.provider.TencentParamMapper
 import com.github.lonepheasantwarrior.talkify.service.provider.TextChunkSplitter
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import com.tencent.cloud.stream.tts.FlowingSpeechSynthesizer
 import com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerListener
 import com.tencent.cloud.stream.tts.FlowingSpeechSynthesizerRequest
@@ -82,6 +84,23 @@ class TencentCloudProvider : AbstractTtsProvider() {
     )
 
     override fun getAudioConfig(): AudioConfig = AudioConfig.TENCENT_TTS
+
+    /**
+     * 腾讯云音色的采样率由 XML 的 "8k/16k/24k" 档位决定；多角色要求所有选中
+     * 音色最终采样率完全一致，因此能力必须按真实目标音色返回。
+     */
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability {
+        val realVoiceId = extractRealVoiceName(voiceId) ?: voiceId
+        if (realVoiceId.isBlank() || !isVoiceIdCorrect(realVoiceId)) {
+            return VoiceOutputCapability.Unsupported(VoiceCapabilityReason.VOICE_UNSUPPORTED)
+        }
+        return VoiceOutputCapability.Known(
+            AudioConfig.createStandard(sampleRate = getSampleRateForVoice(realVoiceId))
+        )
+    }
 
     private val voiceSampleRateMap: MutableMap<String, Int> by lazy {
         loadVoiceSampleRatesFromResource()
@@ -163,7 +182,9 @@ class TencentCloudProvider : AbstractTtsProvider() {
             return
         }
 
-        val realVoiceId = extractRealVoiceName(tencentConfig.voiceId) ?: voiceIds.firstOrNull() ?: DEFAULT_VOICE_ID.toString()
+        val configuredVoice = extractRealVoiceName(tencentConfig.voiceId)
+            ?: voiceIds.firstOrNull() ?: DEFAULT_VOICE_ID.toString()
+        val realVoiceId = resolveRequestVoiceId(configuredVoice, params)
         val sampleRate = getSampleRateForVoice(realVoiceId)
 
         logInfo("Starting synthesis: textLength=${text.length}, voiceId=$realVoiceId, sampleRate=$sampleRate, pitch=${params.pitch}, speechRate=${params.speechRate}")

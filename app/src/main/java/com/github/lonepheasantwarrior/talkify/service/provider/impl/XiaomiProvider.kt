@@ -11,6 +11,8 @@ import com.github.lonepheasantwarrior.talkify.service.provider.HttpStreamingTtsP
 import com.github.lonepheasantwarrior.talkify.service.provider.OpenAIErrorParser
 import com.github.lonepheasantwarrior.talkify.service.provider.SynthesisParams
 import com.github.lonepheasantwarrior.talkify.service.provider.TtsSynthesisListener
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceCapabilityReason
+import com.github.lonepheasantwarrior.talkify.service.provider.VoiceOutputCapability
 import com.github.lonepheasantwarrior.talkify.service.provider.toMaskedString
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,6 +65,11 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
 
     override fun getAudioConfig(): AudioConfig = AudioConfig.XIAOMI_MIMO_TTS
 
+    override fun getVoiceOutputCapability(
+        config: BaseProviderConfig,
+        voiceId: String,
+    ): VoiceOutputCapability = knownPcmCapability(voiceId, AudioConfig.XIAOMI_MIMO_TTS)
+
     override fun validateConfig(config: BaseProviderConfig): String? {
         if (config !is XiaomiConfig) {
             return TtsErrorCode.getErrorMessage(TtsErrorCode.ERROR_PROVIDER_NOT_CONFIGURED)
@@ -81,13 +88,19 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
         params: SynthesisParams
     ): Request {
         val mimoConfig = config as XiaomiConfig
-        val voiceId = if (mimoConfig.voiceId.isNotEmpty()) {
+        val configuredVoice = if (mimoConfig.voiceId.isNotEmpty()) {
             extractRealVoiceName(mimoConfig.voiceId) ?: mimoConfig.voiceId
         } else {
             voiceIds.firstOrNull() ?: fallbackVoiceId
         }
+        val voiceId = resolveRequestVoiceId(configuredVoice, params)
 
-        val effectiveVoice = resolveVoiceForLanguage(voiceId, params.language)
+        // 请求级覆盖即明确角色音色，不能被“语言默认音色”再次改写
+        val effectiveVoice = if (params.voiceOverride.isNullOrBlank()) {
+            resolveVoiceForLanguage(voiceId, params.language)
+        } else {
+            voiceId
+        }
 
         // 构建请求体 - 小米 MiMo v2.5 Speech Synthesis 格式
         // v2.5 API 支持 user role 用于风格指令（自然语言描述朗读风格、语气等）
@@ -127,10 +140,8 @@ class XiaomiProvider : HttpStreamingTtsProvider() {
             .header("Connection", "keep-alive")
             .build()
 
-        // 打印请求详情（Headers 脱敏处理仅用于日志显示，实际发送的是原始值）
         logDebug("HTTP Request URL: ${request.url}")
         logDebug("HTTP Request Headers (masked for log): ${request.headers.toMaskedString()}")
-        logDebug("HTTP Request Body: ${requestBody.toString(2)}")
 
         return request
     }
