@@ -41,6 +41,8 @@ class TalkifyCheckDataActivity : Activity() {
 
         // 客户端可携带 EXTRA_CHECK_VOICE_DATA_FOR 只询问特定 locale；
         // 未携带时报告全量支持语言（P3-6）
+        // 该框架常量已弃用且无替代 API，但仍是 CHECK_TTS_DATA 协议字段，客户端照常下发
+        @Suppress("DEPRECATION")
         val requested = intent?.getStringExtra(TextToSpeech.Engine.EXTRA_CHECK_VOICE_DATA_FOR)
         val (available, unavailable) = partitionByRequestedLanguage(supportedLanguages, requested)
 

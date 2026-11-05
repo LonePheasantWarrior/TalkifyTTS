@@ -518,7 +518,7 @@ class TalkifyTtsService : TextToSpeechService() {
         buildMap {
             for (iso2 in Locale.getISOCountries()) {
                 // 少数历史代码（如 AN）无 ISO3 对应，getISO3Country 返回空串，跳过
-                val iso3 = Locale("", iso2).isO3Country
+                val iso3 = Locale.Builder().setRegion(iso2).build().isO3Country
                 if (iso3.isNotEmpty()) put(iso3, iso2)
             }
         }
